@@ -1,0 +1,99 @@
+# Camera and HUD (priority 2, step 6)
+
+Scope: the cameras of the flight scene (player views, replay and death cameras) and everything drawn on top of the 3D view: HUD gauges, markers, reticles, radar, map, messages and warnings. HUD module 0x0015E7B0–0x0016CF88, camera library 0x001026B8–0x001031C0, view cameras 0x0010C850–0x0010D760, view control `func_00125B70`. Every function has a row in `coverage-functions.csv`.
+
+## Cameras
+
+### Camera object (library, `core` module)
+
+- `func_001026B8` init: unit matrices, default projection (640×480 screen, near/far), viewport = draw buffer.
+- Projection `func_00102810` (+0x160..+0x170: screen width/height, distance, aspect, far), viewport `func_001028D8` (x, y, w, h, z range, GS screen centre 2048 − size/2).
+- `func_001029E0` per frame: world→view from position + rotation, view→screen (`sceVu0ViewScreenMatrix`), clip matrix (`func_001031C0`), combined world→screen matrix at +0xE0.
+- Look-at helpers: `func_00102B68` (reset, distance 512), `func_00102B90` (direction → pitch/yaw), `func_00102C08` (eye→target rotation, roll, orbit).
+
+### View cameras (flight scene, 5 views of 0x440, `mission-flow.md`)
+
+- `func_0010C9D0`: one view per player; split screen halves the viewport when `game[0x26]` is set; widths depend on the 16:9 flag (ctx 0x10000).
+- `UpdateViewCameras` 0x0010CB80: picks the camera by player state:
+  - view +0x149 = 0: cockpit/HUD view;
+  - 1, 2: third-person views;
+  - mission end and replay: presets 0x002A1700 / 0x002A1730.
+- `func_0010D760` solves the camera from flags in +8: attach point (4), up vector (2), follow offsets (1), look-at (8). It keeps the eye above the terrain with a ray test (`func_0013D698`).
+- `func_0010C868` death camera: tries up to 4 orbit angles until the terrain ray test is clear.
+- `func_00125B70` (player view control): cycles views, looks at the target, camera shake from the random table 0x00411998 (not `rand`).
+
+## HUD
+
+### State
+
+Per player: 0x74 bytes, pointer table 0x00410AA0 (`func_0015E7B0`), current player in gp `D_004117D0`:
+
+| Offset | Use |
+|---|---|
+| +0x00..+0x1F | kill-message ring: unit index per entry |
+| +0x20..+0x3F | kill-message ages |
+| +0x40 / +0x41 | ring read / write index |
+| +0x42 | damage flash timer (bullet 8, missile 32, flak 16 frames) |
+| +0x44..+0x63 | explored-map bits: 16 rows × u16 (16 × 16 grid of 32768-unit squares), set around the player each frame, initial bits from the mission (`func_0015E8C0`) |
+| +0x64 | warning blink frame counter |
+| +0x6C / +0x6E / +0x70 | shown warning, requested warning, blink phase |
+| +0x72 | radar mode (SELECT cycles it; analog/digital pad modes handled separately) |
+
+### Per frame
+
+- `UpdateHud` 0x0015E928 (simulation step): flash timer, explored bits, kill-message ageing (`func_00162F98`, 120 frames), `SelectHudWarning` 0x0016CF88, `func_0016D688`.
+- `DrawHud` 0x0015EAE0 (draw lists, per player):
+  1. HUD colour in globals 0x00420680..0x00420683: green (0, 0x80, 0x40, alpha 0x60); **red** (0x80, 0, 0) while a missile is incoming or the player is locked (+0x50 & 0x3000000), or while the damage flash bit 4 is set.
+  2. Screen frame from the camera (centre +0x178/+0x17C, size +0x18C/+0x18E, in GS 1/16-pixel units), nose position projected (`sceVu0RotTransPers`) and tested inside the frame.
+  3. GS state packets for buckets 0, 1, 2, 4 (`func_0015F2B0` RGBAQ, `func_0015F350` alpha mode, `func_0015F420` alpha test, `func_0015F4F0` register 0x14), with variants for the 16:9 flag.
+  4. Always: timer/score panel `func_001633C8`, weapon panel `func_00162958`, target info `func_00162D98`, kill messages `func_001630A0`, aircraft status `func_00163C08`, damage `func_00163818`, flight-path marker `func_00160598`.
+  5. Mission kind 1: progress panel `func_00167758`; kind 2 (two players): score indicator `func_00167D68`.
+  6. Third-person view (+0x149 = 2): speed and altitude readouts `func_00160E78`/`func_00161720`. Other views, when the nose is on screen: pitch ladder, heading tape, speed gauge, altitude gauge, throttle ladder, right ladder, nose marker (`func_00162030`, `func_00161BB0`, `func_001609D8`, `func_00161250`, `func_00160FF8`, `func_00161890`, `func_00160698`). Cockpit view (+0x149 = 0) adds look-around reference lines `func_00160200`.
+  7. Sub-state 0x15: landing guidance `func_00166A10`.
+  8. Target direction arrow `func_00166588`.
+  9. Unless a scripted segment runs (flag 0x10000000): gun pipper `func_00164440` (with gun ammo), special-weapon / bomb reticle `func_00164F00` (when the special weapon is selected), multi-lock boxes `func_00164BD8`.
+  10. Target markers for all units `func_00165AB8`.
+  11. Radar (`DrawRadar` 0x00169010) or full map (`DrawRadarMap` 0x0016BC68) by mode +0x72. Mission kind 2 has 3 modes, the others 4.
+  12. `func_0016D348` (not in sub 0x1D) and `func_0016D778` (not in segments).
+- The whole HUD is skipped when ctx flag 0x20000 is set.
+
+### Units and options
+
+- Speed and altitude use option byte 0x002A15CC bit 2 (UNITS, `frontend.md`) to choose between two conversion constants. Speed = |velocity| × constant × 3600 × 60 / 1000; altitude = −y × constant.
+- Digit counts adapt to the value (1–5 digits).
+
+### 16:9 mode (ctx flag 0x10000, option SCREEN RATIO)
+
+Every HUD element has two layouts. In 16:9 mode:
+- sprite widths are multiplied by **3/4** (`DrawHudSprite` 0x0015FEE0), and offsets from the centre are smaller (e.g. −0x90 instead of −0xC0);
+- font and digit tables switch to narrower variants (`func_0015F6A0`, `func_0015FA18`);
+- the view cameras use a 16:9-aware width (`func_0010C9D0`).
+
+So the HUD is drawn **anamorphically**: the 512-pixel-wide frame is meant to be stretched to 16:9 by the TV. This confirms the ADR-006 finding: in this mode the port's output pass must present the frame at 16:9, otherwise the HUD looks squeezed. Presentation only (category 1, original behaviour).
+
+### Warnings (`SelectHudWarning`)
+
+Priority order, then an 8-frame fade-in/hold/fade-out cycle per change:
+
+| Id | Condition |
+|---|---|
+| 3 | missile incoming (hit flags 0x3000000) |
+| 2 | locked by an enemy (0x60000000) |
+| 4 / 5 | below the mission altitude limit (`D_004104F0[7]`); 5 for aircraft ids 2, 4, 8, 14, 21 (same set as the mask 0x00204114 in `mission-flow.md`) |
+| 6 | player state flag 0x1000000, or near the ceiling / out of the speed range in segments |
+| 7 | player state flag 0x2000000 |
+| 8 | close to the ground in scripted segments |
+| 0xFF | none |
+
+The on-screen text of each id is a HYPOTHESIS until checked in PCSX2 (open question).
+
+## Things the port must keep
+
+- HUD drawing happens in the draw-list phase. It reads simulation state but never changes it, except the radar mode byte (+0x72, pad input in `DrawHud`) and the kill-message ring read side. These are game state and must still run once per simulated frame, not once per presented frame (ADR-002 interpolation: HUD logic stays on the simulation tick; only its drawing may be re-run).
+- Camera shake uses the random table 0x00411998, not `rand`.
+- 16:9 layout rules above.
+
+## Open points
+
+- Text of the warning ids 2–8 (PCSX2: trigger a missile lock, fly low, stall; compare the screen with `D_004117D0+0x6E`).
+- `func_0016D348` / `func_0016D778`: already counted as understood in milestone 2 (`mission-flow.md`); listed here for completeness.

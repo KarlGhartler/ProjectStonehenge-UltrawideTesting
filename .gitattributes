@@ -1,0 +1,4 @@
+# Shell scripts and git hooks must keep LF line endings, also on Windows with core.autocrlf=true,
+# otherwise Git Bash fails on the trailing CR.
+tools/hooks/* text eol=lf
+*.sh text eol=lf

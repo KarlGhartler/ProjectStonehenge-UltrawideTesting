@@ -1,0 +1,117 @@
+#!/bin/sh
+# pre-commit: refuse commits that would add Ace Combat 04 game data to the repo.
+#
+# Enable once per clone (not enabled automatically):
+#     git config core.hooksPath tools/hooks
+#
+# Rejects staged files (added, copied, modified, renamed, type-changed) that
+#   1. have a game-data name: *.iso *.cdp *.tbl *.smv *.vpk *.irx *.img *.p2s (PCSX2 save state) SLUS_* (any case),
+#   2. are larger than 1 MiB (1048576 bytes), except files under third_party/ (vendored
+#      dependencies, .claude/rules/third-party.md); checks 1 and 3 still apply there,
+#   3. start with a signature of a known game file format (docs/formats/*.md):
+#      SMV movie, DATA.CDP container, TBL index, VAG audio, raw MPEG video,
+#      PS2 MIPS ELF (SLUS/IRX), IOPRP image, TIM2 / GIM / PS2I sub-blocks.
+# Works with the sh shipped with Git for Windows (Git Bash) and on Linux/macOS.
+
+MAX_SIZE=1048576
+HEAD_BYTES=4096
+
+report() {
+    echo "pre-commit: BLOCKED $1: $2" >&2
+}
+
+# Signature check on the first HEAD_BYTES of a blob, given as one lowercase hex string.
+# Prints a reason if the data matches a game format, nothing otherwise.
+detect() {
+    awk -v hex="$1" -v size="$2" '
+    function byte(i) { return substr(hex, 2*i+1, 2) }
+    function hexval(h,   n, k, c) {
+        n = 0
+        for (k = 1; k <= length(h); k++) {
+            c = index("0123456789abcdef", substr(h, k, 1)) - 1
+            n = n * 16 + c
+        }
+        return n
+    }
+    function u32(i) { return hexval(byte(i+3) byte(i+2) byte(i+1) byte(i)) }
+    BEGIN {
+        n = length(hex) / 2
+        if (n < 4) exit
+        m4 = substr(hex, 1, 8)
+        if (m4 == "56414770") { print "VAG audio (VAGp)"; exit }
+        if (m4 == "54494d32") { print "TIM2 texture"; exit }
+        if (m4 == "47494d00") { print "GIM sub-block (DATA.CDP)"; exit }
+        if (m4 == "50533249") { print "PS2I block (DATA.CDP)"; exit }
+        if (m4 == "000001b3" || m4 == "000001ba") { print "MPEG video stream"; exit }
+        if (substr(hex, 1, 10) == "5245534554" && index(hex, "524f4d444952") > 0) { print "IOPRP image (RESET/ROMDIR)"; exit }
+        if (m4 == "7f454c46" && n >= 20 && byte(18) == "08" && byte(19) == "00") { print "MIPS ELF (PS2 executable or IRX)"; exit }
+
+        # SMV: u32 size of chunk 0 (sector multiple), zeros to 0x800, MPEG-2 sequence header at 0x810
+        if (n >= 0x814 && u32(0) > 0 && u32(0) % 2048 == 0 && substr(hex, 2*0x810+1, 8) == "000001b3") {
+            zero = 1
+            for (i = 4; i < 0x800; i++) if (byte(i) != "00") { zero = 0; break }
+            if (zero) { print "SMV movie container"; exit }
+        }
+
+        # TBL: {u32 sector, u32 size}[] starting at sector 0, entries packed sector after sector
+        if (size >= 16 && size % 8 == 0 && u32(0) == 0) {
+            cnt = int(size / 8); lim = int(n / 8); if (cnt > lim) cnt = lim
+            ok = (cnt >= 2)
+            for (i = 0; ok && i + 1 < cnt; i++) {
+                s = u32(8*i); z = u32(8*i + 4); nx = u32(8*i + 8)
+                if (z == 0 || nx != s + int((z + 2047) / 2048)) ok = 0
+            }
+            if (ok) { print "TBL archive index"; exit }
+        }
+
+        # DATA.CDP container: u32 count, then count ascending offsets inside the file
+        c = u32(0)
+        if (size >= 2048 && c >= 1 && c <= 4096 && 4 + 4*c <= n && 4 + 4*c <= size) {
+            prev = 4 + 4*c; ok = 1
+            for (i = 0; i < c; i++) {
+                o = u32(4 + 4*i)
+                if (o < prev || o >= size || o % 4 != 0) { ok = 0; break }
+                prev = o
+            }
+            if (ok) { print "DATA.CDP count+offsets container"; exit }
+        }
+    }'
+}
+
+git diff --cached --name-only --diff-filter=ACMRT | while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    base=$(basename "$file")
+    lower=$(printf '%s' "$base" | tr 'A-Z' 'a-z')
+
+    case "$lower" in
+        *.iso|*.cdp|*.tbl|*.smv|*.vpk|*.irx|*.img|*.p2s|slus_*)
+            report "$file" "game-data file name"
+            continue ;;
+    esac
+
+    size=$(git cat-file -s ":$file" 2>/dev/null) || continue
+    case "$file" in
+        third_party/*) size_limited=0 ;;
+        *) size_limited=1 ;;
+    esac
+    if [ "$size_limited" -eq 1 ] && [ "$size" -gt "$MAX_SIZE" ]; then
+        report "$file" "larger than 1 MiB ($size bytes)"
+        continue
+    fi
+
+    hex=$(git cat-file blob ":$file" 2>/dev/null | head -c "$HEAD_BYTES" | od -An -tx1 -v | tr -d ' \n')
+    reason=$(detect "$hex" "$size")
+    if [ -n "$reason" ]; then
+        report "$file" "content matches $reason"
+    fi
+done > /dev/null 2> "${TMPDIR:-/tmp}/ac04-precommit.$$"
+
+errors="${TMPDIR:-/tmp}/ac04-precommit.$$"
+if [ -s "$errors" ]; then
+    cat "$errors" >&2
+    rm -f "$errors"
+    echo "pre-commit: game data must never enter the repo (CLAUDE.md, 'Game files'). Unstage the files above." >&2
+    exit 1
+fi
+rm -f "$errors"
+exit 0

@@ -1,68 +1,34 @@
-# Prerequisites
-*.d
+# Local Claude Code instructions
+CLAUDE.local.md
+.claude/settings.local.json
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# Visual Studio
+.vs/
+*.user
+*.suo
+x64/
+Debug/
+Release/
+out/build/
 
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-*.so.*
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-# Build directories
+# Build output
 build/
-Build/
-build-*/
+out/
 
-# CMake generated files
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
-install_manifest.txt
-compile_commands.json
+# Never commit game data
+*.iso
+*.ISO
+SLUS_*
+*.IRX
+*.irx
+IOPRP*.IMG
+*.CDP
+*.TBL
+*.SMV
+*.VPK
+*.vag
+*.VAG
+orig/
 
-# Temporary files
-*.tmp
-*.log
-*.bak
-*.swp
-
-# vcpkg
-vcpkg_installed/
-
-# debug information files
-*.dwo
-
-# test output & cache
-Testing/
-.cache/
+# PCSX2 save states (contain game memory)
+*.p2s
