@@ -539,3 +539,4 @@ address,name,kind,status
 0x00410C68,g_CdFsState,data,confirmed
 0x00410E7C,g_MenuPage,global,confirmed
 0x00410E7E,g_MenuSubPage,global,confirmed
+0x0016D348,DrawHudWarning,game,confirmed

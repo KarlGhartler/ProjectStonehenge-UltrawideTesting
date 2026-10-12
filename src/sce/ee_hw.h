@@ -1,0 +1,31 @@
+// Explicit EE hardware register access for translated game code (.claude/rules/game-code.md:
+// game code never touches 0x1000xxxx addresses itself). A few game functions program EE timer 0
+// and the DMAC directly instead of through an SDK call; they use these functions, named after the
+// register, and the port implements them on the register model in hw_registers.cpp.
+#pragma once
+
+#include "common/types.h"
+
+namespace ac04::sce {
+
+enum class EeReg {
+    kT0Count,   // RCNT0_COUNT 0x10000000
+    kT0Mode,    // RCNT0_MODE  0x10000010
+    kD2Tadr,    // GIF channel TADR 0x1000A030
+    kD8Chcr,    // fromSPR channel CHCR 0x1000D000
+    kD8Madr,    // fromSPR MADR 0x1000D010
+    kD8Qwc,     // fromSPR QWC 0x1000D020
+    kD8Sadr,    // fromSPR SADR 0x1000D080
+    kDmacCtrl,  // D_CTRL 0x1000E000
+    kDmacRbsr,  // D_RBSR 0x1000E040
+    kDmacRbor,  // D_RBOR 0x1000E050
+};
+
+u32 EeHwRead(EeReg reg);
+void EeHwWrite(EeReg reg, u32 value);
+
+// CHCR of a DMA channel identified by the handle sceDmaGetChan returned (its register block).
+u32 EeDmaReadChcr(u32 chan);
+void EeDmaWriteChcr(u32 chan, u32 value);
+
+}  // namespace ac04::sce

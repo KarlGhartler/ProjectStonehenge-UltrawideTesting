@@ -1,15 +1,15 @@
 # ADR-003: Rendering architecture
 
-Status: **Proposed** (rev. 2026-10-10). The decision is the project owner's.
+Status: **Accepted** (owner decision, 2026-10-11): **Option C, own Vulkan renderer for the AC04 GS subset.** Addendum decided 2026-10-11: VU0 micro-mode skinning is a C++ rewrite of the 9 entry points, checked against PCSX2 test vectors (later phase). The renderer has an internal scale factor from day one, fixed at 1× (`../port/internal-resolution.md`).
 
 ## Context
 
-From `docs/research/render-boundary.md`, `gs-subset.md`, `docs/formats/MISSION.md`:
+From `../subsystems/rendering.md`, `../subsystems/vu-programs.md`, `../platform/gs-subset.md`, `../formats/MISSION.md`:
 - **Transport** is centralised: ordering-table buckets and DMA tag helpers at 0x00103FD8–0x00104438, two chains per frame (VIF1 with VU1; GIF PATH3), kicked by the main loop one frame late, plus the DrawEnv/DispEnv packet and an interlace field copy.
 - **Content** is written by about 233 functions (GIF tags, A+D register writes, primitive streams, VIF codes). Loaded data also contains ready-to-send packets (mission blocks 0, 2, 23, 25, 26; aircraft blocks 4, 5).
-- **VU1**: about 6 microprograms in `.vutext`, re-sent inline every frame via DMA `ref` tags. One VU0 micro program (VIF0 DMA, 0x0029C200). VU0 macro math in ~311 functions is ordinary C++ math (`vu0_math.h`), not a rendering issue.
+- **VU1**: 5 microprograms in `.vutext`, re-sent inline every frame via DMA `ref` tags. One VU0 micro program (VIF0 DMA, 0x0029C200). VU0 macro math in ~311 functions is ordinary C++ math (`vu0_math.h`), not a rendering issue.
 - **No direct GS privileged-register access in game code**; libgraph does that.
-- **GS subset used** (EE side, `gs-subset.md`):
+- **GS subset used** (EE side, `../platform/gs-subset.md`):
   - both drawing contexts;
   - general blend `(A−B)·C+D` incl. destination alpha, FIX, subtractive; COLCLAMP;
   - alpha test (incl. AFAIL ZB_ONLY); destination alpha test (DATE); depth GEQUAL/GREATER/ALWAYS with ZMSK;
@@ -18,7 +18,7 @@ From `docs/research/render-boundary.md`, `gs-subset.md`, `docs/formats/MISSION.m
   - sprites, lines/line strips (some anti-aliased), triangles/strips; PACKED/REGLIST/IMAGE.
   - **The 3D path drawn by VU1 is still unknown** (needs PCSX2 GS dumps).
 - Output: NTSC 640×448 interlaced; field mode in game/menus, frame mode for movies.
-- Guest memory is the proposed memory model (ADR-001 rev.), so the renderer can read packets straight from guest RAM.
+- Guest memory is the accepted memory model (ADR-001), so the renderer can read packets straight from guest RAM.
 
 ## Options
 
@@ -45,7 +45,7 @@ Embed PCSX2's GS (GIF/GS state, texture cache, Vulkan hardware renderer) and fee
 | Scope | Far larger than AC04 needs (all GS features, all games' hacks and CRC fixes) |
 
 ### C. Own lightweight Vulkan renderer for the AC04 GS subset, at the packet level (owner's proposal)
-Game code is unchanged; it builds the same packets in guest memory. At the DMA kick, our renderer walks the chains (DMA tags → VIF1 → VU1 HLE → GIF) and draws with Vulkan, implementing **only the GS features AC04 uses** (`gs-subset.md`, completed by GS dumps for the VU1 path).
+Game code is unchanged; it builds the same packets in guest memory. At the DMA kick, our renderer walks the chains (DMA tags → VIF1 → VU1 HLE → GIF) and draws with Vulkan, implementing **only the GS features AC04 uses** (`../platform/gs-subset.md`, completed by GS dumps for the VU1 path).
 
 Effort estimate per feature (one experienced developer, working days, rough):
 
@@ -64,7 +64,7 @@ Effort estimate per feature (one experienced developer, working days, rough):
 | **GS local memory model**: page/block swizzling for the formats used (CT32, CT16S, T8, T4, T8H, Z24), uploads (IMAGE), CLUT loads, render-target ↔ texture reuse, small targets | 10–15 | the largest item; needed for render-to-texture and depth-as-texture |
 | Region clamp/repeat, bilinear without mipmaps, TEXA | 2–3 | shader-side addressing |
 | FBMSK, fog (FGE/FOGCOL) | 2 | |
-| Interlace field copy / display (field and frame modes, `func_001049B0`) | 2 | |
+| Interlace field copy / display (field and frame modes, `DrawDisplayTransfer` (H) 0x001049B0) | 2 | |
 | VU1 programs (≈6), see below | 10–20 | depends on program complexity |
 | Test harness: GS-dump replay, frame diff against PCSX2 | 5 | |
 | **Total** | **≈ 60–90 days** | plus unknowns from the 3D path |
@@ -89,27 +89,29 @@ Options:
    - \+ No per-program understanding needed.
    - − It is emulation; needs the microcode from `.vutext` at runtime (fine under the asset rule) and a VU interpreter (own or third-party).
 
-Proposal: **CPU HLE in C++ first** (option 1), each program checked against PCSX2 output. Move a program to compute only if profiling shows a need. The vu-microcode rules apply: analyse the microcode as data, never disassemble `.vutext` in Ghidra.
+Approach: **CPU HLE in C++ first** (option 1), each program checked against PCSX2 output. Move a program to compute only if profiling shows a need. The vu-microcode rules apply: analyse the microcode as data, never disassemble `.vutext` in Ghidra.
 
-## Recommendation
+## Decision
 
-**Option C**: own Vulkan renderer for the AC04 GS subset at the packet level, with CPU-HLE VU1 programs.
+**Option C** (accepted 2026-10-11): own Vulkan renderer for the AC04 GS subset at the packet level, with CPU-HLE VU1 programs.
 - PCSX2's GS code is used only as a reference for understanding and as a test oracle (frame and GS-dump comparison), never copied.
 - **Vulkan 1.2 as the minimum.**
   - It provides timeline semaphores, descriptor indexing (many small textures), scalar block layout, 8/16-bit storage, on all target platforms including MoltenVK.
   - Nothing found so far needs 1.3: dynamic rendering and sync2 are nice-to-have and may be used when present.
 - Option B (PCSX2 extraction) stays the fallback if the 3D path turns out to need large parts of general GS emulation (e.g. heavy VRAM format reinterpretation), or if option C's effort grows beyond the estimate.
 
-Blocking input: PCSX2 GS dumps of the 3D path (steps in `gs-subset.md`).
+Input: eight PCSX2 GS dumps of whole frames, including the 3D path (`../platform/gs-subset.md`, "Measured in GS dumps").
 
 ## Consequences
 
 - `src/platform/render/`: DMA walker, VIF1, VU1 HLE, GIF, GS state, Vulkan backend, GS-dump replay tool.
 - `tools/`: a research parser for `.gs` dump files (to list the registers, values and primitives actually used).
-- Output scaling to the screen is a baseline feature (ADR-006). A higher internal resolution and widescreen are only candidates (`port-baseline.md`), not approved.
+- Output scaling to the screen is a baseline feature (ADR-006). Widescreen stays in the modding layer; MSAA is "later" (`port-baseline.md`).
+- The renderer carries an **internal scale factor from the start**, fixed at 1× until each draw path is validated at higher values (`../port/internal-resolution.md`, a proposal; higher internal resolution is not approved yet).
 
-## Research findings since the owner's working assumption (2026-10-10)
+## Research findings
 
 - **Output.** The renderer draws at native resolution (512×448 game, 640×448 movies). The final output pass that scales to the screen is ADR-006 (Accepted).
-- **Interpolation (ADR-002, baseline feature).** The renderer records a per-step draw list and replays it at presentation time with interpolated matrices. So the **VU1 HLE runs at presentation time**, and its matrix inputs must be identifiable per draw. Priority 2, step 9 records the matrix source and object identity for every draw path.
-- **Both GIF paths.** The renderer must accept `sceDmaSend` chains and the scratchpad → GIF ring (`FlushSprWorkBuffer`, DMAC `D_RBOR`/`D_RBSR`). The users of the ring are listed in priority 2, step 9.
+- **Interpolation (ADR-002, baseline feature).** The renderer records a per-step draw list and replays it at presentation time with interpolated matrices. So the **VU1 HLE runs at presentation time**, and its matrix inputs must be identifiable per draw. The matrix source and object identity of every draw path are in `../subsystems/rendering.md`.
+- **One GIF path.** Live code sends graphics only through `sceDmaSend` chains. The scratchpad → GIF ring (`FlushSprWorkBuffer`, DMAC `D_RBOR`/`D_RBSR`) is set up at boot but only dead code uses it (`../subsystems/rendering.md`), so the renderer does not need it.
+- **GS dumps (3D path).** The VU1 output uses triangle fans and strips with Gouraud, STQ perspective and fog; textures include CT24 and Z24-as-texture; 512×512 terrain-like geometry uses **trilinear mipmapping with automatic mip addresses** (TEX1 MTBA). The game never copies local → local and never reads GS memory back: every transfer is a host → local upload. That keeps the local-memory model to uploads, render targets reused as textures (off-screen targets at FBP 0x120–0x1C0) and depth sampled as a texture (`../platform/gs-subset.md`).

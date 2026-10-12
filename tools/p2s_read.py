@@ -17,6 +17,8 @@ Usage:
     p2s_read.py STATE.p2s find HEXBYTES [ENTRY]  offsets of a byte pattern in an entry (default eeMemory.bin)
     p2s_read.py STATE.p2s dump ADDR LEN OUTFILE  raw bytes to a file under out/
     p2s_read.py STATE.p2s list                   zip entries
+    p2s_read.py STATE.p2s vu0                    VU0 registers VF00-VF31 (x y z w), VI00-VI15
+                                                 (from "PCSX2 Internal Structures.dat", 2.8.2 only)
 """
 import os
 import struct
@@ -26,6 +28,11 @@ import zipfile
 EE_RAM = 'eeMemory.bin'
 IOP_RAM = 'iopMemory.bin'
 SPR = 'Scratchpad.bin'
+INTERNAL = 'PCSX2 Internal Structures.dat'
+# Offset of VU0's VURegs (VF[32] 16 bytes each, then VI[] 16 bytes each) inside
+# INTERNAL for PCSX2 2.8.2. Found by matching the debugger's VU0f/VU0i tabs
+# against vu0_00225110_before.p2s (docs/pcsx2/sessions-05.md). Version-specific.
+VU0_REGS_OFF_282 = 0x36FE
 
 
 class State:
@@ -95,6 +102,19 @@ def main(argv):
         os.makedirs(os.path.dirname(out), exist_ok=True)
         with open(out, 'wb') as f:
             f.write(st.read(argv[3], int(argv[4], 0)))
+    elif cmd == 'vu0':
+        version = st.entry('PCSX2 Savestate Version.id')
+        if b'v2.8.2' not in version:
+            raise SystemExit('vu0: register offset known only for PCSX2 2.8.2 states')
+        data = st.entry(INTERNAL)
+        off = VU0_REGS_OFF_282
+        if struct.unpack_from('<4I', data, off) != (0, 0, 0, 0x3F800000):
+            raise SystemExit('vu0: VF00 is not (0, 0, 0, 1.0); offset does not match this state')
+        for r in range(32):
+            x, y, z, w = struct.unpack_from('<4I', data, off + 16 * r)
+            print(f'vf{r:02d}  x {x:08X}  y {y:08X}  z {z:08X}  w {w:08X}')
+        for r in range(16):
+            print(f'vi{r:02d}  {struct.unpack_from("<I", data, off + 0x200 + 16 * r)[0] & 0xFFFF:04X}')
     else:
         print(__doc__)
         return 2

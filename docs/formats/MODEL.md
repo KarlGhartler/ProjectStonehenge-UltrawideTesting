@@ -1,6 +1,6 @@
 # Model data (`SM` + space + NUL), Namco in-house format
 
-Priority 2, step 10. Layout derived from the loader code (`BindModelData` 0x00144618, `func_00144238`, `func_00144340`, `CreateModelInstance` 0x0013F018, `EmitModelInstance` 0x001404A8, `func_00143C10`) and checked against one aircraft-viewer model (DATA 206, sub-block 0, item 0). Runtime behaviour: `docs/research/render.md`.
+Layout derived from the loader code (`BindModelData` 0x00144618, `func_00144238`, `func_00144340`, `CreateModelInstance` 0x0013F018, `EmitModelInstance` 0x001404A8, `func_00143C10`) and checked against one aircraft-viewer model (DATA 206, sub-block 0, item 0). Runtime behaviour: `../subsystems/rendering.md`.
 
 ## Where models are found
 
@@ -8,10 +8,10 @@ Models are sub-blocks of DATA containers, usually next to their GIM textures (`G
 
 | Source | Path | Loader |
 |---|---|---|
-| mission map objects | mission block 16 (`MISSION.md`) | `func_00139718` / `func_00139B70` |
+| mission map objects | mission block 16 (`MISSION.md`) | `func_00139718` / `SetupMapFromMissionData` (H) 0x00139B70 |
 | mission unit model sets | mission block 21 | `func_001457E0` / `func_001459E0` |
 | mission shared model sets | mission block 3 | `func_00149FB8` |
-| aircraft (flight) | aircraft block 0/2 (`AIRCRAFT.md`) | `func_00147BF0` |
+| aircraft (flight) | aircraft block 0/2 (`AIRCRAFT.md`) | `SetupAircraftModels` (H) 0x00147BF0 |
 | aircraft viewer (menus) | DATA 206–227 (0xCD + aircraft id), sub-block 0 = container {model, 3 GIM} | `func_0022E1F0`, `func_0014AEF8` |
 | weapon models (menus) | DATA 228–258 (0xE4 + weapon id) | `func_0022E218` |
 | hangar scene | DATA 205 (5 sub-blocks) | `func_0022E1A8` |

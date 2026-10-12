@@ -1,12 +1,12 @@
 # ADR-006: Presentation resolution and output scaling
 
-Status: **Accepted** (owner decision, 2026-10-10). Two sub-decisions are open for the owner: the scaling filter (§3) and the interlace handling (§4).
+Status: **Accepted** (owner decision, 2026-10-10; §3 and §4 decided 2026-10-11). No open sub-decisions.
 
 ## Context (confirmed facts)
 
 - `InitGraphics` 0x001044A8:
   - `sceGsResetGraph(0, 1, 2, 1)`, i.e. NTSC, interlaced, field mode;
-  - a **512×448 draw buffer** and a **512×224 display buffer** (`main-context.md`: `draw_w/h`, `disp_w/h`).
+  - a **512×448 draw buffer** and a **512×224 display buffer** (`../game/main-context.md`: `draw_w/h`, `disp_w/h`).
 - Every frame, `UpdateDisplayFrame` 0x00104950 calls `DrawDisplayTransfer` (H) 0x001049B0.
   - It copies or blends the 448-line draw buffer into the 224-line display buffer for the current field, in 32-pixel strips.
   - It uses `LerpRgba` with the factors at `ctx+0x80..0x88`, which looks like a flicker filter (H).
@@ -28,7 +28,15 @@ Status: **Accepted** (owner decision, 2026-10-10). Two sub-decisions are open fo
    - Whether the output pass mirrors that offset on the PC screen is part of sub-decision §4.
    - Default proposal: ignore it, since there is no TV overscan to correct.
 
-## 3. Sub-decision: scaling filter (owner)
+## 3. Scaling filter (decided 2026-10-11)
+
+**Decision:** the port implements **two filters**, selected in `settings.json` (`"presentation": {"filter": "sharp" | "smooth"}`):
+- `sharp` = sharp bilinear (A below): integer nearest pre-scale, then bilinear to the final size;
+- `smooth` = plain bilinear (C below).
+
+Default: `sharp` (owner decision, 2026-10-11). There is no settings menu in the skeleton; the settings code is structured so one can be added later (see "Settings architecture").
+
+Options considered:
 
 | Filter | How | Pros | Cons |
 |---|---|---|---|
@@ -38,9 +46,13 @@ Status: **Accepted** (owner decision, 2026-10-10). Two sub-decisions are open fo
 | D. Nearest neighbour | one nearest pass | sharpest | uneven pixel widths (shimmer when things move), most visible with the 1.167 aspect |
 | E. Area / Lanczos / bicubic | higher-order resampling | good detail on downscale or odd ratios | ringing (Lanczos), more shader work, softer than A at large factors |
 
-Recommendation: **A, sharp bilinear, as the default**, with C and D as user options (a setting, not a feature beyond presentation). B is not recommended as the default, because the 4:3 aspect cannot be kept with integer factors on both axes.
+B (integer) and D (nearest) are not implemented: B cannot keep 4:3 with integer factors on both axes, and D shimmers with the 1.167 pixel aspect. E is not needed at these scale factors.
 
-## 4. Sub-decision: interlaced / field output → output image (owner)
+## 4. Interlaced / field output → output image (decided 2026-10-11)
+
+**Decision: option A**, present the full 448-line draw buffer. The field copy still executes in guest terms; its output is not presented. Movies (frame mode) are presented at 640×448.
+
+Options considered:
 
 On the PS2, the game draws a full 448-line frame every 1/59.94 s. The field copy then sends only one 224-line field (copied or blended from that frame) to the TV per vblank. Options for the port:
 
@@ -51,7 +63,7 @@ On the PS2, the game draws a full 448-line frame every 1/59.94 s. The field copy
 | C. Bob (line-double the current field) | scale the 224-line field to 448 | exactly what one field showed, simple | half vertical resolution; flicker of thin lines between fields |
 | D. Field output + blend/motion-adaptive deinterlacing | CRT-like processing | closest to a TV look | complexity; it is a look, which belongs to the modding layer |
 
-Recommendation: **A** as the default, since the game already renders a full progressive 448-line frame every tick. Movies (frame mode) are presented directly at 640×448.
+Reason for A: the game already renders a full progressive 448-line frame every tick. Movies (frame mode) are presented directly at 640×448.
 - Confirmation needed: a PCSX2 GS dump showing what the field-copy packet does in each `disp_flags` mode, so we know the draw buffer is complete when the copy starts.
 - B/C stay available for comparison testing against PCSX2.
 
@@ -61,16 +73,23 @@ Recommendation: **A** as the default, since the game already renders a full prog
   - input is the native framebuffer (512×448 or 640×448);
   - output is the swapchain image, with the selected filter, 4:3 and black bars.
 - The renderer's GS emulation stays at native resolution. ADR-003 option C is unaffected.
-- A higher internal resolution, widescreen or other changes are not part of this ADR. They are possible baseline candidates (`port-baseline.md`) and need the owner's approval.
+- A higher internal resolution is studied in `../port/internal-resolution.md` (not approved; the renderer keeps a scale factor fixed at 1×). Widescreen stays in the modding layer (`port-baseline.md`).
 
-## Research finding (2026-10-10, front end): the game has its own 16:9 mode
+### Settings architecture
+- One `Settings` struct (plain data, defaults in code) owned by `src/platform/`; `settings.json` under `%LOCALAPPDATA%\AC04Port\` (ADR-005).
+- JSON load at startup and save on change; missing or invalid keys fall back to defaults and are logged; unknown keys are kept.
+- A change notification (subscribers per section: presentation, window, input, audio, debug) so a later settings menu or the debug overlay can change values at run time without restarting. The output pass re-reads the filter on notification.
+- No settings menu in the skeleton. Game code never sees settings.
+
+## Research findings
+
+### The game has its own 16:9 mode
 
 - The options page has **SCREEN RATIO** (option byte 0x002A15CC bit 0). Turning it on sets ctx flag 0x10000.
-- Menu layouts, the aircraft-viewer camera aspect, text boxes and the briefing map all branch on that flag (`frontend.md`). On the PS2 this produces an **anamorphic 16:9** picture for widescreen TVs: the same 512/640-wide frame, drawn for a 16:9 display.
+- Menu layouts, the aircraft-viewer camera aspect, text boxes and the briefing map all branch on that flag (`../subsystems/frontend.md`). On the PS2 this produces an **anamorphic 16:9** picture for widescreen TVs: the same 512/640-wide frame, drawn for a 16:9 display.
 - Consequence for this ADR: the output pass must use **16:9 when the in-game SCREEN RATIO option is on**, and 4:3 otherwise. That is original behaviour (category 1), not a new feature. The 4:3 rule above applies to the default setting.
-- The flight-scene handling of the flag (projection, HUD) is checked in priority 2, steps 3–6.
 
-## Research finding (2026-10-11, flight HUD and cameras): 16:9 mode confirmed in the flight scene
+### 16:9 mode in the flight scene
 
-- In 16:9 mode (ctx flag 0x10000) every HUD sprite is drawn 3/4 as wide, fonts switch to narrower tables, and the view cameras use a 16:9-aware width (`hud.md`). The picture is anamorphic: the same 512-pixel frame is meant to be shown at 16:9.
-- This confirms the rule above: the output pass presents at 16:9 when SCREEN RATIO is on.
+- In 16:9 mode (ctx flag 0x10000) every HUD sprite is drawn 3/4 as wide, fonts switch to narrower tables, and the view cameras use a 16:9-aware width (`../subsystems/camera-hud.md`). The picture is anamorphic: the same 512-pixel frame is meant to be shown at 16:9.
+- So the rule above applies to the flight scene too: the output pass presents at 16:9 when SCREEN RATIO is on.

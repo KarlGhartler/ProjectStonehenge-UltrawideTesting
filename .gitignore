@@ -1,6 +1,7 @@
 # Local Claude Code instructions
 CLAUDE.local.md
 .claude/settings.local.json
+settings.local.json
 
 # Visual Studio
 .vs/
@@ -32,3 +33,6 @@ orig/
 
 # PCSX2 save states (contain game memory)
 *.p2s
+
+# Python caches
+__pycache__/

@@ -1,0 +1,28 @@
+start,end,category,reason
+0x00000000,0x00100000,kernel,EE kernel RAM (BIOS kernel code and data); the port has no EE kernel and the game never reads it
+0x0010FFC8,0x0010FFE0,pcsx2-patch,PCSX2 GameDB patch: COP2 reorder in func_0010FFB8 (validation.md B-2)
+0x0017C0C4,0x0017C0D8,pcsx2-patch,PCSX2 GameDB patch: COP2 reorder in func_0017C020 (validation.md B-2)
+0x0017C6C4,0x0017C6D8,pcsx2-patch,PCSX2 GameDB patch: COP2 reorder in func_0017C688 (validation.md B-2)
+0x0029D180,0x0029D190,sdk,last 16 bytes of the 0x810-byte sceCdGetToc copy: IOP memory leftovers on the PS2; the game never reads them
+0x0029F1D0,0x0029F1D4,timing,CD queue poll counter (CD state +0x50): the port's reads complete on the next poll (validation.md C-1)
+0x002A0080,0x002A0280,sdk,libpad DMA buffers of scePadPortOpen; the port answers scePadRead directly
+0x0033E58C,0x0033E5B8,sdk,SOUND sceSifClientData (rpcd paddr/pid/tid/mode and SIF internals)
+0x00353F94,0x00353FC0,sdk,VAG sceSifClientData (rpcd paddr/pid/tid/mode and SIF internals)
+0x003FABD0,0x003FABD8,sdk,libkernel heap/sbrk pointers (FUN_002646F8); the port's malloc keeps its arena on the host
+0x003FB380,0x003FCF30,sdk,SDK .data: sceSifInitRpc / sceSifInitIopHeap / scePadInit / libmc / libcdvd state
+0x003FF600,0x003FF750,sdk,C++ runtime constructor 0x0027C680 data (not run by the port)
+0x00401D78,0x00401D84,sdk,newlib malloc state (__malloc_av_ / sbrk base)
+0x00402190,0x004021AC,sdk,newlib malloc top/trim state
+0x00411980,0x004119E0,sdk,libgcc __register_frame_info object (registration is a no-op in the port)
+0x004121E0,0x004121E8,timing,pad record state and id: libpad reports the pad stable after some frames on the PS2 and at once in the port
+0x00420400,0x0042042C,sdk,USBJOY sceSifClientData (rpcd and SIF internals)
+0x00425024,0x00425028,stack-garbage,SOUND id-7 record +8: uninitialised stack word on the PS2 (2 from the preceding id-6 record); GuestFrame zero-fills; SOUND.IRX never reads it
+0x00429800,0x00429E00,timing,SOUND reply buffers: PCSX2 still holds the fno 0 reply because the async fno 1 reply has not arrived; the port's RPC completes at the call
+0x0042CD90,0x0042CE00,timing,VAG fno 1 reply buffer: the async reply has not arrived on PCSX2 yet; the port's RPC completes at the call
+0x004C55C0,0x004C5620,sdk,crt0 argument block (argc/argv "cdrom0:\SLUS_201.52;1") written by the kernel; main never reads it
+0x004C5B80,0x004CBB10,sdk,SDK .bss: SIF packets and RPC tables / IOP heap / libpad / libmc / libcdvd (search-file cache / TOC buffer)
+0x004CC5B8,0x004CC5BC,sdk,libgcc object list head (__register_frame_info)
+0x01EFE008,0x01EFE010,sdk,newlib top-chunk header after the work heap (0xFF8-byte slack not modelled)
+0x01FFE000,0x01FFED40,stack,guest stack below main's sp: dead frames of SDK and game calls (host locals stay on the host)
+0x01FFED40,0x01FFED60,stack,main's frame: saved registers (the port keeps them on the host)
+0x01FFED60,0x02000000,kernel,above the initial sp: kernel thread setup area

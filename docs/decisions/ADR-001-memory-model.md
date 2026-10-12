@@ -1,12 +1,12 @@
 # ADR-001: Memory model for translated game code
 
-Status: **Proposed** (rev. 2026-10-10). The decision is the project owner's.
+Status: **Accepted** (owner decision, 2026-10-11): **Option B, guest memory with 32-bit PS2 addresses.**
 
 ## Context
 
-From `docs/research/memory-model.md` and later findings:
+From `../game/memory.md`, `../subsystems/rendering.md` and `../formats/MISSION.md`:
 - Game structs store 32-bit pointers everywhere and do pointer arithmetic through `int`.
-- **Initialised pointers in the executable** (counted 2026-10-10, `.data` 0x0029C980–0x004021E7):
+- **Initialised pointers in the executable** (`.data` 0x0029C980–0x004021E7):
   - 1,058 words point to function entries (939 distinct functions, 531 of them game code): dispatch tables, callbacks;
   - 790 point to other code addresses (case labels or mid-function);
   - 2,268 point to data (1,130 into `.data`, 1,138 into `.rodata`/`.sdata`/`.bss`);
@@ -14,8 +14,8 @@ From `docs/research/memory-model.md` and later findings:
   - `.rodata`/`.sdata` hold another 2,636 code addresses (compiler switch tables) and 196 data pointers.
   - Some hits are coincidental integers, so these are upper bounds.
 - **Asset rule** (CLAUDE.md): `.data`/`.rodata`/`.vutext`/`.vudata` must be loaded from the ELF inside the user's ISO at runtime, never copied into `src/`.
-- Loaded DATA entries are not relocated in place. Offsets are resolved at access time or into pointer tables (`memory-model.md`). Several mission blocks are **ready-to-send DMA/GS packets**, sent by physical address (`block & 0x0FFFFFFF`) or linked with `call` tags (`docs/formats/MISSION.md`).
-- About 233 functions build DMA chains whose tags hold **32-bit addresses** (`render-boundary.md`).
+- Loaded DATA entries are not relocated in place. Offsets are resolved at access time or into pointer tables (`../game/memory.md`). Several mission blocks are **ready-to-send DMA/GS packets**, sent by physical address (`block & 0x0FFFFFFF`) or linked with `call` tags (`../formats/MISSION.md`).
+- About 233 functions build DMA chains whose tags hold **32-bit addresses** (`../subsystems/rendering.md`).
 - **481 game functions (~20 %) pass stack addresses as arguments** (2,362 sites): mostly `sceVu0*` math on local vectors and matrices, plus buffers for SIF/DMA (e.g. `sceSifSetDma` descriptors on the stack).
 - 128-bit `lq`/`sq` in ~400 functions; scratchpad (0x70000000) used directly by 73 functions.
 - Goal: exact behaviour; PCSX2 is the reference.
@@ -52,16 +52,16 @@ Translate structs with native pointers. Fixed-layout data (files, DMA, IOP, save
 
 ## Assessment
 
-My earlier recommendation (A, with B locally for packets) did not weigh three things that the later findings make decisive:
+Option A with B used locally for packets was also considered. Three findings decide against it:
 1. The **asset rule** forces `.data` to be loaded from the ISO. Under A that means relocating ~4,100 words with an int/pointer ambiguity that can't be resolved statically with certainty. Under B it is a `memcpy`.
 2. **Ready-to-send packets in loaded data** and ≈233 packet builders mean the renderer needs guest addresses anyway, so A would end up as A+B with conversions at every boundary.
 3. **Byte-level comparison with PCSX2** is the most valuable test oracle for a translation that must behave exactly like the original, and only B provides it.
 
 Where A is genuinely better: readability of math-heavy code, native tooling, and no guest stack. These are real costs of B, but they are mechanical and can be reduced with good wrapper types.
 
-## Recommendation
+## Decision
 
-**Option B (guest memory)**, with these rules:
+**Option B (guest memory)**, accepted by the owner on 2026-10-11, with these rules:
 - `GuestMemory`: 32 MB RAM + 16 KB scratchpad. Address decode `0x0xxxxxxx`/`0x2xxxxxxx`/`0x3xxxxxxx` → RAM (mask 0x01FFFFFF), `0x70000000` → scratchpad, anything else → hardware handlers or a hard error.
 - The ELF segments from the ISO are loaded at their original addresses; `.bss` zeroed; `gp` value kept for reference.
 - `ps2ptr<T>`: a 32-bit value type with `operator->`/`operator*`/`operator[]`, alignment-preserving; `static_assert` on every guest struct's size and field offsets (shared with the Ghidra struct definitions).
@@ -75,17 +75,17 @@ Where A is genuinely better: readability of math-heavy code, native tooling, and
 - `src/common/` gets `GuestMemory`, `ps2ptr<T>`, `GuestFrame`, `CallGuest`.
 - `src/sce/` shims take guest addresses.
 - A RAM-diff tool (PCSX2 RAM dump vs. port RAM dump at the same frame) becomes possible and should be planned with the test strategy.
-- `.claude/rules/game-code.md` (struct/pointer rules) must be rewritten to the guest-memory model when this ADR is accepted.
+- `.claude/rules/game-code.md` (struct/pointer rules) is written for the guest-memory model (updated 2026-10-11).
 
-## Research findings since the owner's working assumption (2026-10-10)
+## Research findings
 
 The owner's working assumption is guest memory: one 32 MB buffer, 32-bit PS2 pointers, `ps2ptr<T>`, a function-pointer table and a guest stack.
 
-- **Work heap (`pcsx2-sessions-03.md`).** `InitWorkHeap` gets base **0x004CC760** and size **0x01A318A4** (end 0x01EFE004). The port sets these values directly instead of running `ProbeLargestMallocSize` against the host libc.
+- **Work heap (`../pcsx2/sessions-03.md`).** `InitWorkHeap` gets base **0x004CC760** and size **0x01A318A4** (end 0x01EFE004). The port sets these values directly instead of running `ProbeLargestMallocSize` against the host libc.
 - **The heap is almost full in play.** Mission 1 uses 0x019C5180 bytes (98.4 %), with only about 434 KiB free. `WorkHeapAlloc` returns 0 when exhausted, and callers do not check. This confirms the guest-memory design: every structure placed in the work heap must keep its exact PS2 size and alignment. A host-sized struct (e.g. with 64-bit pointers) would overflow the heap.
 - Boot-time allocations before `SetWorkHeapMark`: 0x3820 bytes. They persist across scenes.
 
-## Research finding (2026-10-10, front end): large and frame-dependent heap allocations
+### Large and frame-dependent heap allocations (front end)
 
 - The in-menu movie player allocates 6 MiB (`StartMenuMovie`), and the HDD install page 10 MiB, from the work heap.
 - The records page allocates `((frame_count & 0xF) + 1) * 0x10` bytes before its object (0x002414E0). From that point on, work-heap offsets depend on the frame count. A byte-for-byte RAM comparison with PCSX2 therefore needs identical frame counts (input replay), which ADR-002's fixed step already gives.

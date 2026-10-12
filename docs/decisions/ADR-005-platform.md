@@ -1,6 +1,6 @@
 # ADR-005: Platform, saves and logging
 
-Status: **Accepted** (owner decision, 2026-10-10). One sub-point is still open: the fallback location when the executable's directory is not writable (see "Open").
+Status: **Accepted** (owner decision 2026-10-10; storage revised by the owner 2026-10-11: everything under `%LOCALAPPDATA%\AC04Port\`). No open sub-points.
 
 ## Context
 
@@ -15,49 +15,53 @@ Status: **Accepted** (owner decision, 2026-10-10). One sub-point is still open: 
 - OS-specific code is isolated in `src/platform/`, behind interfaces. `src/game/` and `src/sce/` contain no OS calls.
 - **File names are case-sensitive.** ISO file names are matched exactly as stored on the disc (uppercase, e.g. `DATA.CDP`, `SLUS_201.52`). The port never relies on case-insensitive lookup, not even on Windows.
 
-### 2. Saves
-- Location: a `saves` folder in the directory that contains the game executable.
-- Format: compatible with **PCSX2's Folder Memory Card**.
-  - Each save is a folder holding the raw save files exactly as the PS2 writes them to the card.
-  - Save folders can be copied between the port and PCSX2 in both directions.
-  - Layout and PCSX2's metadata files: `docs/formats/folder-memcard.md`, researched from the PCSX2 source for compatibility only, no code copied.
-- The game's own save logic (`sceMc*` calls, file names, file contents) is reproduced exactly. The research is in priority 2, step 7. `src/sce/` maps `sceMc*` onto host files.
+### 2. User data location
+- All files the port writes go under one per-user folder: **`%LOCALAPPDATA%\AC04Port\`** on Windows.
+  - Linux later: `$XDG_DATA_HOME/ac04port/` (fallback `~/.local/share/ac04port/`); macOS later: `~/Library/Application Support/AC04Port/`.
+  - The path is resolved only in `src/platform/` (a paths interface: `UserDataDir()`, `SavesDir()`, `SettingsFile()`, `LogsDir()`), so another OS is one new implementation.
+  - Nothing is written next to the executable. This replaces the earlier "executable directory" rule and removes the non-writable-directory question.
+- Layout:
 
-### 3. Logging
-- Each run writes a session log to a `logs` folder in the executable's directory:
-  - `logs/last_session.log`, replaced at each start;
-  - the previous one is kept as `logs/previous_session.log`.
-- Content:
-  - build version;
-  - OS and GPU information;
-  - ISO verification result;
-  - settings;
-  - warnings and errors;
-  - unimplemented `sce*` calls (logged once each, including the stubs for SDK functions reached only from dead game code).
+```
+%LOCALAPPDATA%\AC04Port\
+  saves\           PCSX2 Folder Memory Card root (slot 1)
+  settings.json    all settings
+  logs\            log of the last session only
+```
+
+### 3. Saves
+- `saves\` is a complete **PCSX2 Folder Memory Card**: a `_pcsx2_superblock` file in the root and one host folder per PS2 directory (AC04: `BASLUS-20152AC04\` with `icon.sys`, `icon1.ico`, `BASLUS-20152AC04` and `_pcsx2_index`).
+  - The whole `saves\` folder can be used as a PCSX2 folder card, and single save folders can be copied between the port and PCSX2 in both directions.
+  - Each save file holds the raw bytes exactly as the PS2 writes them to the card.
+  - Reference layout: the owner's example card (`CLAUDE.local.md`, "Memory Card Folder example"), described in `../formats/folder-memcard.md` §9. Layout and PCSX2's metadata files were researched from the PCSX2 source for compatibility only, no code copied.
+- Memory card port 2 reports **empty** (no card); only port 1 maps to `saves\` (owner decision 2026-10-11).
+- The game's own save logic (`sceMc*` calls, file names, file contents) is reproduced exactly. Save layers: `../subsystems/save.md`; file contents: `../formats/SAVE.md`. `src/sce/` maps `sceMc*` onto the folder card.
+
+### 4. Settings
+- `settings.json` holds every port setting (presentation, frame cap, v-sync, window mode, filter, debug flags, key bindings when approved).
+- Code: one `Settings` struct with defaults, JSON load/save, and a change notification so a settings menu can be added later without rework (ADR-006). Missing or invalid values fall back to defaults and are logged. Unknown keys are kept on save.
+- Game code never reads settings: they only affect the platform layer (presentation, input mapping, audio output).
+
+### 4b. Audio output
+- The port opens the **system default audio device**. Device selection is a later baseline candidate. On focus loss audio **keeps playing** by default (setting `audio.on_focus_loss`, approved baseline 2026-10-11).
+
+### 5. Logging
+- `logs\` holds **only the log of the last session**. Older logs are deleted at start.
+- The log records:
+  - build version, OS and GPU information, ISO verification result, the settings in effect;
+  - errors and problems in the main modules: startup, ISO check, renderer, audio, file I/O, saves, IOP stand-ins (SOUND/VAG/USBJOY services);
+  - unimplemented `sce*` calls, **once each** (including the stubs for SDK functions reached only from dead game code);
+  - crashes, through a crash handler in `src/platform/` (exception code, address, guest PC/scene when known, a short host stack trace).
+- It is **not** written per call or per frame.
 - **No game data in logs** (no memory dumps, no file contents, no text extracted from the disc).
-
-### 4. Non-writable executable directory
-- If the executable's directory is not writable (e.g. under `C:\Program Files`), the fallback location for `saves` and `logs` is **not decided**.
-- The port must not pick one on its own. See "Open".
 
 ## Consequences
 
 - `src/platform/` provides:
-  - paths: the executable directory, `saves/` and `logs/`;
+  - paths: the user data folder, `saves\`, `settings.json`, `logs\` (per OS);
   - case-exact ISO lookup;
-  - the log sink;
-  - the folder-card storage behind `sceMc*`.
+  - the log sink and the crash handler;
+  - the folder-card storage behind `sceMc*`;
+  - settings load/save and change notification.
 - Portable code uses only C++17 and the approved dependencies (decided at the skeleton phase).
 - Tests can compare save folders byte for byte with folders written by PCSX2.
-
-## Open (owner's decision)
-
-Proposed fallback options when the executable directory is not writable:
-
-| Option | Pros | Cons |
-|---|---|---|
-| A. `%LOCALAPPDATA%\AC04Port\` (Linux later: `$XDG_DATA_HOME/ac04port/`) | standard per-user location, always writable, survives reinstall | saves are no longer next to the executable, so copying to PCSX2 means finding the folder (the log states the path) |
-| B. Refuse to start, with a message asking to move the program or run it from a writable folder | one location only, never ambiguous | worse first-run experience under Program Files |
-| C. `%USERPROFILE%\Documents\AC04Port\` | easy to find for users | Documents may be redirected or synced (OneDrive), which can corrupt partially written saves |
-
-Recommendation: **A**. The path in use is written to the session log and shown once in a message.

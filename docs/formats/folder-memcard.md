@@ -1,6 +1,6 @@
 # PCSX2 Folder Memory Card layout
 
-Purpose: the port stores saves so that a save folder can be copied between the port's `saves/` folder and a PCSX2 Folder Memory Card, in both directions (ADR-005).
+Purpose: the port stores saves so that a save folder can be copied between the port's `saves\` folder (`%LOCALAPPDATA%\AC04Port\saves\`, ADR-005) and a PCSX2 Folder Memory Card, in both directions (ADR-005).
 
 Source: PCSX2 source code, `pcsx2/SIO/Memcard/MemoryCardFolder.h` and `.cpp` (GPL-3.0+, PCSX2 Dev Team), `master` branch, read on 2026-10-10.
 - Read for compatibility only. **No code is copied.** The port writes its own implementation from this description.
@@ -110,7 +110,7 @@ PS2 names are up to 32 bytes. On the host, PCSX2 replaces the following with `_`
 - `\ % : | " < >`;
 - a trailing space or dot.
 
-AC04's directory name `BASLUS-20152AC04` needs no cleaning. Its files (confirmed 2026-10-11, `results-save.md`) are `icon.sys` (0x3C4 bytes), `icon1.ico` (0xCB98) and `BASLUS-20152AC04` (0x4B10, the save image), written in that order by `CreateMcSave`. None of the names needs cleaning.
+AC04's directory name `BASLUS-20152AC04` needs no cleaning. Its files (confirmed from code, `../subsystems/save.md`) are `icon.sys` (0x3C4 bytes), `icon1.ico` (0xCB98) and `BASLUS-20152AC04` (0x4B10, the save image), written in that order by `CreateMcSave`. None of the names needs cleaning.
 
 ## 7. Filter
 
@@ -121,13 +121,52 @@ When "filter by game" is enabled, PCSX2 loads only top-level directories whose n
 
 ## 8. What the port does (design notes for the save layer, not decided code)
 
-- `saves/` = the port's folder card root. It holds one host folder per PS2 directory and a `_pcsx2_superblock`, so the whole `saves/` folder can also be used directly as a PCSX2 folder card. Copying single save folders works in both directions.
+- `saves\` (under `%LOCALAPPDATA%\AC04Port\`, ADR-005) = the port's folder card root. It holds one host folder per PS2 directory and a `_pcsx2_superblock`, so the whole `saves` folder can also be used directly as a PCSX2 folder card. Copying single save folders works in both directions.
 - `sceMc*` (written in `src/sce/`) map onto host file operations. The raw save files are written byte for byte as the game passes them to `sceMcWrite`. The port writes `_pcsx2_index` with `order` and times so PCSX2 shows the same order. It writes `_pcsx2_meta*` only in the cases PCSX2 would.
 - `sceMcGetDir` results (sizes, times, attributes) are synthesised from the host files plus the metadata, exactly as PCSX2 would present them.
-- Memory card port 1 vs. 2: H. The port could use `saves/` as port 1 only and report port 2 as empty. Owner decision when the save layer is designed.
+- Memory card port 1 vs. 2: H. The port could use `saves` as port 1 only and report port 2 as empty. Owner decision when the save layer is designed.
+
+## 9. Observed in a real folder card (owner's example, 2026-10-11)
+
+Card `AceCombat4Saves_converted.ps2` (path in `CLAUDE.local.md`), converted by PCSX2 from a file card and holding one AC04 save. Only structure and field values are recorded here; no bytes are copied into the repo.
+
+Files:
+
+| Path | Size | Notes |
+|---|---|---|
+| `_pcsx2_superblock` | **0x2000** (one erase block) | not 0x200: PCSX2 keeps the first whole block |
+| `BASLUS-20152AC04/icon.sys` | 0x3C4 | matches §6 |
+| `BASLUS-20152AC04/icon1.ico` | 0xCB98 | matches §6 |
+| `BASLUS-20152AC04/BASLUS-20152AC04` | 0x4B10 | save image (`SAVE.md`) |
+| `BASLUS-20152AC04/_pcsx2_index` | 278 bytes | below |
+
+No `_pcsx2_meta*` files: every entry uses the default modes and the names need no cleaning, as predicted in §6.
+
+`_pcsx2_index` is **YAML flow style on one line**, no spaces after commas, keys unquoted:
+`{$ROOT: {timeCreated: T,timeModified: T},icon.sys: {order: 1,timeCreated: T,timeModified: T},icon1.ico: {order: 2,...},BASLUS-20152AC04: {order: 3,...}}`
+- Times are **Unix seconds (UTC)** as integers.
+- `order` 1/2/3 follows the write order of `CreateMcSave` (icon.sys, icon1.ico, save image).
+- `$ROOT.timeModified` equals the save image's times (last file written). (H: PCSX2 updates `$ROOT` on every write in the directory.)
+
+Superblock field values (§4 layout):
+
+| Field | Value |
+|---|---|
+| magic + version | "Sony PS2 Memory Card Format " + "1.2.0.0" |
+| page_len / pages_per_cluster / pages_per_block | 0x200 / 2 / 16 |
+| unused (0x2E) | 0xFF00 |
+| clusters_per_card | 0x2000 |
+| alloc_offset / alloc_end | 0x29 / 0x1FC7 |
+| rootdir_cluster | 0 |
+| backup_block1 / backup_block2 | 0x3FF / 0x3FE |
+| ifc_list[0] | 8 (rest 0) |
+| bad_block_list | all 0xFFFFFFFF |
+| card_type / card_flags | 2 / 0x2B |
+
+Bytes 0x154–0x1FFF are not zero (rest of the original card's first block). Whether PCSX2 accepts a superblock file that holds only the 0x154-byte header plus zero padding is untested (H); until then the port writes a full 0x2000-byte file with the field values above and zeros elsewhere, and the round-trip test (open point 2) confirms it.
 
 ## Open points
 
-1. Verify against tag `v2.8.2`: file names, YAML format (scalar types, key quoting), superblock bytes.
+1. Verify against tag `v2.8.2`: file names and YAML format are confirmed by the example card (§9); whether a zero-padded superblock is accepted is still open.
 2. Round trip test: create a save in PCSX2 on a folder card, copy the folder into the port, load it; and the reverse.
 3. Which times the game itself sets (`sceMcSetFileInfo`?) and whether the port must reproduce JST/UTC handling.

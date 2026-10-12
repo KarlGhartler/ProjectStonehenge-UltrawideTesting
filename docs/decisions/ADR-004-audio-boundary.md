@@ -1,10 +1,10 @@
 # ADR-004: Audio boundary (SOUND.IRX / VAG.IRX replacement)
 
-Status: **Proposed** (rev. 2026-10-10). The decision is the project owner's.
+Status: **Accepted** (owner decision, 2026-10-11): **Option B, HLE at the RPC boundary with our own mixer.**
 
 ## Context
 
-From `docs/research/iop-interface.md` (EE side) and `docs/research/iop-sound.md` (IOP side, from the modules' own symbol tables):
+From `../game/iop-interface.md` (EE side) and `../subsystems/iop-sound.md` (IOP side, from the modules' own symbol tables):
 
 **SOUND.IRX** (`NAMCO_GV79_SOUND_TEST`, RPC 0x81000101) is a thin command interpreter over Sony's libsd. Once per frame the EE sends a batch of up to 0x2400 bytes:
 - voice requests (ids 1–4, 72 bytes): key on/off, volume, ADSR1/2, note/fine and sample rate → pitch, SPU start address;
@@ -33,7 +33,7 @@ Run SOUND/VAG/LIBSD in an R3000 interpreter on an SPU2 emulator.
 - − Brings back console emulation (IOP kernel, libsd, SIF), against the project's direction. **Rejected.**
 
 ### B. HLE at the RPC boundary with our own SPU2-subset mixer (recommended)
-`sceSifCallRpc` for the three server ids calls PC services that implement exactly the command sets documented in `iop-sound.md`:
+`sceSifCallRpc` for the three server ids calls PC services that implement exactly the command sets documented in `../subsystems/iop-sound.md`:
 - **SOUND service:**
   - 48 voices with SPU-ADPCM decoding, ADSR envelopes, the pitch formula `Note2Pitch(centre, fine, note, fine) × rate / 48000`, volumes and the phase-invert sign;
   - two cores with master volumes, reverb (mode/depth/on/off), and the sound-data input stream for PCM;
@@ -59,9 +59,9 @@ Use PCSX2's SPU2 emulation (voices, ADPCM, ADSR, reverb) as the mixer behind the
 | Maintenance | A fork of part of PCSX2 (same issues as ADR-003 option B) |
 | Policy | Would be copied and modified code, so `third_party/` rules apply (CLAUDE.md, `.claude/rules/third-party.md`) |
 
-## Recommendation
+## Decision
 
-**Option B with our own mixer** for voices, ADPCM, ADSR, pitch, volumes and the PCM input. This is a small, well-documented subset: about 48 voices, two cores, block input.
+**Option B with our own mixer** (accepted 2026-10-11) for voices, ADPCM, ADSR, pitch, volumes and the PCM input. This is a small, well-documented subset: about 48 voices, two cores, block input.
 
 **Reverb**: start with our own implementation of the SPU2 reverb algorithm (it is documented: a fixed set of filters driven by mode presets), verified against PCSX2 output.
 - If exactness turns out to be hard, adopt **option D only for the reverb unit**, after a per-file license check and under the third-party rules.
@@ -77,9 +77,9 @@ Test strategy:
 - `src/sce/`: `sceSifBindRpc`/`sceSifCallRpc`/`sceSifCheckStatRpc` routing for the three game-owned server ids; `sceCdReadIOPm` writes into the IOP ring pool (guest "IOP RAM" handles, ADR-001).
 - Open items (do not block the decision): the exact VAG mode 4 vs. mode 8 semantics, the 0x200-byte L/R interleave of the PCM input (PCSX2 check), and the reverb presets used by the game.
 
-## Research findings since the owner's working assumption (2026-10-10)
+## Research findings
 
-Measured in PCSX2 (`pcsx2-sessions-03.md`); these are the exact replies the HLE must give at boot:
+Measured in PCSX2 (`../pcsx2/sessions-03.md`); these are the exact replies the HLE must give at boot:
 - **SOUND fno 0:** reply buffer = u32 count **2**, then zeros (0x600 bytes). `InitSoundRpc` returns 1 after this.
 - **VAG fno 0:**
   - `+0x00` = IOP address of the stream area (0x0008DA40 on the PS2);

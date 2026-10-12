@@ -1,6 +1,8 @@
-# Proposed third-party dependencies
+# Third-party dependencies
 
-Status: **Proposed, none approved.** Each dependency needs the project owner's approval before it is added (CLAUDE.md, Build section).
+Status: **Approved by the owner on 2026-10-11**: SDL3, Vulkan-Headers, volk, VulkanMemoryAllocator, glslang, doctest, nlohmann/json, Dear ImGui, libmpeg2 (not used before the movie phase). MoltenVK stays "later" (macOS). Any dependency not in this list still needs the owner's approval.
+
+When a dependency is added, its exact version and the license file shipped in that version are checked again and recorded in the table "Added" below and in `../../THIRD_PARTY_NOTICES.md`.
 
 Repo license: **GPL-3.0** (`LICENSE`). A dependency is compatible if its license can be combined into a GPL-3.0 work: GPL-3.0(-or-later), GPL-2.0-**or-later**, LGPL-2.1+/3, Apache-2.0, MIT, BSD, zlib, BSL-1.0. Not compatible: GPL-2.0-**only**, proprietary, "non-commercial" licenses.
 
@@ -15,6 +17,8 @@ Repo license: **GPL-3.0** (`LICENSE`). A dependency is compatible if its license
 | **VulkanMemoryAllocator** (VMA) | GPU memory allocation | MIT | yes | single header |
 | **MoltenVK** | Vulkan on macOS (best effort target) | Apache-2.0 | yes | runtime library, not vendored |
 | **MPEG-2 video decoder** (for SMV, see below) | decode MIS/SS/INTRO/STAFF movies | see options | — | must handle MPEG-2 MP@ML 640×448 elementary streams |
+| **JSON library** for `settings.json` (ADR-005/006) | read/write settings | see options below | — | added 2026-10-11 |
+| **Dear ImGui** (debug overlay only, `../port/debug-overlay.md`) | immediate-mode UI for the optional debug layer; its repo includes SDL3 and Vulkan backends | MIT | yes | added in milestone D (v1.92.9b); fetched by FetchContent pinned to the release archive with checksum; compiled only into the debug layer, inactive unless the overlay is opened |
 
 ### MPEG-2 decoder options
 
@@ -26,6 +30,24 @@ Repo license: **GPL-3.0** (`LICENSE`). A dependency is compatible if its license
 | In-house decoder | GPL-3.0 (ours) | yes | no dependency | a correct MPEG-2 decoder is a lot of work |
 
 Recommendation: **libmpeg2**, fetched by CMake FetchContent pinned with a checksum (copied into `third_party/` only if we have to modify it; `.claude/rules/third-party.md`), because it matches the IPU feature set and is small. FFmpeg is the fallback if libmpeg2 turns out to be insufficient (e.g. a stream feature it does not handle).
+
+### JSON options (settings.json)
+
+| Option | License | Compatible | Pros | Cons |
+|---|---|---|---|---|
+| **nlohmann/json** (3.12.x) | MIT | yes | single header, widely used, easy struct mapping (`to_json`/`from_json`), keeps unknown keys when round-tripping a `json` object | slower compile; heavier than needed for ~30 keys |
+| In-house reader/writer | GPL-3.0 (ours) | yes | no dependency | a correct JSON parser (escapes, numbers, UTF-8) is ~600 lines plus tests |
+| RapidJSON | MIT | yes | fast | verbose API |
+
+Recommendation: **nlohmann/json**, pinned by FetchContent with a checksum. Settings are read once at startup and written on change, so speed does not matter.
+
+### Debug overlay UI options
+
+| Option | License | Notes |
+|---|---|---|
+| **Dear ImGui** | MIT | recommended: SDL3 + Vulkan backends maintained upstream, tables, child windows and plotting widgets in the main branch (docking only on its docking branch), widely used in emulator debuggers; square look by setting every rounding style value to 0 |
+| Nuklear | MIT (or public domain) | single header, but no maintained Vulkan backend and fewer widgets (tables, memory editor) |
+| RmlUi | MIT | HTML/CSS-like, heavier, aimed at game UIs rather than debug tools |
 
 ## Build and test only
 
@@ -40,11 +62,23 @@ Recommendation: **libmpeg2**, fetched by CMake FetchContent pinned with a checks
 | Component | Why in-house |
 |---|---|
 | ISO 9660 reader | Only the primary volume descriptor, the directory records and 2048-byte sector reads are needed (the game looks files up by path, like `sceCdSearchFile`). About 300 lines. libcdio (GPL-3.0+) would be compatible but is far larger than needed |
-| SHA-1 for the startup check | about 150 lines, standard algorithm (`supported-version.md`) |
+| SHA-1 for the startup check | about 150 lines, standard algorithm (`../platform/supported-version.md`) |
 | SPU ADPCM decoder, ADSR, voice mixer | small, documented, and must match the game's SOUND/VAG semantics (ADR-004) |
-| Config file | a simple INI/TOML subset; toml++ (MIT) would be the dependency if a full parser is wanted |
 
 ## Not allowed
 
 - Any Sony SDK code or headers. `src/sce/` is written from observed behaviour only.
 - PCSX2 source code is not proposed. Its GPL-3.0+ license would be compatible, but copying emulator internals is a separate decision for the project owner. Using PCSX2 as a behaviour reference is the existing practice.
+
+## Added
+
+| Dependency | Version | License file checked | GPL-3.0 compatible | Added in |
+|---|---|---|---|---|
+| SDL3 | 3.4.16 | `LICENSE.txt`: zlib | yes | milestone A |
+| Vulkan-Headers | vulkan-sdk-1.4.363.0 | `LICENSE.md` + `LICENSES/`: Apache-2.0, MIT | yes | milestone A |
+| volk | vulkan-sdk-1.4.363.0 | `LICENSE.md`: MIT | yes | milestone A |
+| VulkanMemoryAllocator | v3.4.0 | `LICENSE.txt`: MIT | yes | milestone A |
+| glslang | vulkan-sdk-1.4.363.0 | `LICENSE.txt` + `LICENSES/`: BSD-3, BSD-2, MIT, Apache-2.0, NVIDIA AML (permissive), GPL-3.0-or-later with Bison exception | yes; build tool only, its output (SPIR-V of our shaders) is ours | milestone A |
+| nlohmann/json | v3.12.0 | `LICENSE.MIT`: MIT | yes | milestone A |
+| doctest | v2.5.3 | `LICENSE.txt`: MIT | yes | milestone A |
+| Dear ImGui | v1.92.9b | `LICENSE.txt`: MIT (Omar Cornut, 2014-2026) | yes | milestone D |

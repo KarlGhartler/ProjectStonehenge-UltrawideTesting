@@ -13,7 +13,7 @@
   1. **Original behaviour**: game logic, simulation, rules and content reproduce the original exactly.
   2. **Modern-port baseline**: features intrinsic to a PC port, built into the port. They may change presentation only, never game logic or simulation results. Only features approved by the owner and listed in `docs/decisions/port-baseline.md`.
   3. **Everything else** that departs from the original goes only into the optional modding/debug layer.
-- **All original game code is kept and translated**, including dead, unreachable and debug code (e.g. scenes 1 and 3). In the default build it stays unreachable exactly as on the PS2. It may only be exposed through the optional debug/modding layer (e.g. a debug menu to explore cut content). Catalogue: `docs/research/dead-code.md`; keep it updated.
+- **All original game code is kept and translated**, including dead, unreachable and debug code (e.g. scenes 1 and 3). In the default build it stays unreachable exactly as on the PS2. It may only be exposed through the optional debug/modding layer (e.g. a debug menu to explore cut content). Catalogue: `docs/port/dead-code.md`; keep it updated.
 - This applies to **game code only** (0x001000D8–0x002616E7). Sony SDK and C runtime code is not translated: `src/sce/` implements what the game calls. SDK functions reached only from dead game code (e.g. the HDD path) get stubs that log the call and return an error.
 
 ## Platform (ADR-005, Accepted)
@@ -21,10 +21,19 @@
 - Windows first; Linux is deferred until the port is complete. Do not choose libraries or APIs that would clearly be hard to make work on Linux later.
 - OS-specific code stays in `src/platform/`, behind interfaces.
 - Never rely on case-insensitive file lookup: match ISO file names exactly as stored (uppercase, e.g. `DATA.CDP`).
-- Saves: folder `saves/` in the executable's directory, in PCSX2 Folder Memory Card layout (`docs/formats/folder-memcard.md`). Each save folder holds the raw files exactly as the PS2 writes them, so folders can be copied between the port and PCSX2 both ways.
-- Logs: folder `logs/` in the executable's directory; `last_session.log` (replaced at each start) and `previous_session.log`. Content: build version, OS/GPU info, ISO verification result, settings, warnings, errors, unimplemented `sce*` calls (once each). No game data in logs.
-- If the executable's directory is not writable, the fallback location is the owner's decision (open, ADR-005): never decide it in code.
-- Presentation (ADR-006, Accepted): render at the native internal resolution; a final output pass scales to the host screen, keeping 4:3 (pillarbox).
+- User data (ADR-005): everything the port writes goes under `%LOCALAPPDATA%\AC04Port\`, resolved only in `src/platform/` (Linux equivalent added later). Nothing is written next to the executable.
+  - `saves\`: a PCSX2 Folder Memory Card root (`_pcsx2_superblock` + one folder per PS2 directory; `docs/formats/folder-memcard.md`). Each save folder holds the raw files exactly as the PS2 writes them, so folders can be copied between the port and PCSX2 both ways.
+  - `settings.json`: all settings. One settings struct with JSON load/save and change notification; no settings menu in the skeleton. Game code never reads settings.
+  - `logs\`: only the last session's log; older logs are deleted at start. It records errors and problems in the main modules (startup, ISO check, renderer, audio, file I/O, saves, IOP stand-ins), unimplemented `sce*` calls once each, and crashes (crash handler in `src/platform/`). Never per call or per frame. No game data in logs.
+- Presentation (ADR-006, Accepted): render at the native internal resolution; a final output pass scales to the host screen, keeping 4:3 (pillarbox), with a `sharp` (sharp bilinear) or `smooth` (bilinear) filter from `settings.json`. Interlace handling is still open (ADR-006 §4).
+- Simulation and presentation (ADR-002, Accepted): one game thread, fixed 59.94 Hz step; presentation decoupled and interpolated, v-sync on/off, frame cap 60/120/144/240 with 360 as the default upper limit.
+- Approved PC-port features: `docs/decisions/port-baseline.md`.
+
+## Architecture (ADR-001, ADR-003, ADR-004: Accepted 2026-10-11)
+
+- Memory (ADR-001): guest memory, 32 MB RAM + scratchpad at 32-bit PS2 addresses; `ps2ptr<T>`, guest stack for escaping locals, `CallGuest` for indirect calls.
+- Rendering (ADR-003): own Vulkan renderer for the AC04 GS subset at the packet level; VU1 programs as CPU HLE. Internal scale factor kept in the design, fixed at 1× (`docs/port/internal-resolution.md`).
+- Audio (ADR-004): HLE of SOUND.IRX/VAG.IRX at the SIF RPC boundary with our own SPU2-subset mixer.
 
 ## Working rules
 
@@ -39,14 +48,14 @@ These replace any older per-phase stop conditions where they conflict.
 - **Always ask before destructive Ghidra operations**: clearing analysis, deleting functions or programs, re-importing a program that already exists.
 - **PCSX2 questions**: give the owner exact steps (breakpoints, registers, memory, what to do in the game) and continue with other work while waiting, unless the answer blocks you.
 - **No git commits.** The owner reviews and commits.
-- Log every Ghidra rename and comment in `docs/research/rename-log.csv`, and write findings to the docs as you go, not only at the end.
+- Log every Ghidra rename and comment in `docs/rename-log.csv`, and write findings to the docs as you go, not only at the end.
 
 ## Game files and local paths
 
 - Absolute paths to the ISO, the extracted disc files and the Ghidra project are in `CLAUDE.local.md` (machine-specific, not committed).
 - Treat every folder outside this repo as read-only.
 - **The port reads all game data at runtime from the user's own original disc image** (ISO 9660, path from configuration). That includes the executable's initialised data (`.data`, `.rodata`, `.vutext`, `.vudata`): translate code, never copy tables into `src/`.
-- The port accepts only the supported image and verifies its SHA-1 at startup (`docs/research/supported-version.md`).
+- The port accepts only the supported image and verifies its SHA-1 at startup (`docs/platform/supported-version.md`).
 - The extracted-disc folder is for research tools (`tools/`) only. The port never reads it.
 - Never copy or commit game data: the ISO, `SLUS_201.52`, `*.IRX`, `IOPRP23.IMG`, `*.CDP`, `*.TBL`, `*.SMV`, `*.VPK`, PCSX2 save states (`*.p2s`, they contain game memory; read them with `tools/p2s_read.py`), or anything extracted or converted from them (textures, models, audio, video, archives, tables). Generated output goes in `build/` or `out/` (both gitignored).
 - Enforcement: `tools/hooks/pre-commit` (game-data names, files > 1 MiB outside `third_party/`, known format signatures). Enable per clone with `git config core.hooksPath tools/hooks`.
@@ -63,7 +72,7 @@ These replace any older per-phase stop conditions where they conflict.
 | `tools/hooks/` | Git hooks (`pre-commit` blocks game data) |
 | `third_party/` | Only third-party code we modify (rules in `.claude/rules/third-party.md`); listed in `THIRD_PARTY_NOTICES.md` |
 | `tests/` | Behaviour tests using values captured in PCSX2 |
-| `docs/research/` | Findings about the executable, VU code, open questions |
+| `docs/` | Index `docs/README.md`; status `docs/STATUS.md`; `docs/game/` core structure, `docs/subsystems/` game systems, `docs/platform/` executable and SDK, `docs/port/` coverage, dead code, risks, `docs/pcsx2/` reference runs and pending checks |
 | `docs/formats/` | One file per reverse-engineered data format |
 | `docs/decisions/` | Architecture decision records (`ADR-NNN-*.md`) and the proposed dependency list |
 | `docs/symbols.csv` | `address,name,kind,status` for every symbol we name |
@@ -73,10 +82,10 @@ Folders and files in this table that don't exist yet are created when first need
 ## Build and test
 
 - Build system: **CMake ≥ 3.24**. Language standard: **C++17**.
-- Rendering: **Vulkan** (minimum version set in ADR-003, proposed 1.2). Window, input and audio output: **SDL3**.
+- Rendering: **Vulkan 1.2** minimum (ADR-003). Window, input and audio output: **SDL3**.
 - Targets: Windows (MSVC) first. Linux (GCC, Clang) after the port is complete (ADR-005); macOS via MoltenVK is best effort.
 - Dependencies are decided at the skeleton phase, within the platform requirements (ADR-005).
-- Every third-party dependency needs the owner's approval and a GPL-3.0 compatibility check before it is added. Proposed list with licenses: `docs/decisions/dependencies.md`.
+- Every third-party dependency needs the owner's approval and a GPL-3.0 compatibility check before it is added. List with licenses: `docs/decisions/dependencies.md`.
 - Third-party code rules (details: `.claude/rules/third-party.md`):
   - unmodified dependencies are fetched by CMake `FetchContent`, pinned to an exact version/commit with a checksum, never copied;
   - only code we modify is copied, into `third_party/<name>/`, with its original license, an `UPSTREAM.md`, and the original headers plus a "Modified by the AC04 port project" note;
@@ -84,22 +93,29 @@ Folders and files in this table that don't exist yet are created when first need
   - `THIRD_PARTY_NOTICES.md` is updated in the same change; `python tools/check_notices.py` must pass.
 - When a new tool or project is used as a reference, add it to the README "Acknowledgements" in the same change.
 - Architecture decisions: `docs/decisions/ADR-*.md`. Status `Proposed` means not decided: do not build on a proposed ADR without asking.
-- The build is not set up yet. When it is, record the exact build and test commands in this section.
+- Dependencies (approved 2026-10-11): `docs/decisions/dependencies.md`, pinned in `cmake/Dependencies.cmake`. Any other dependency still needs the owner's approval.
+- Build and test (from a "Developer PowerShell for VS 2026", which puts the bundled CMake on PATH; first configure downloads the pinned dependencies):
+  - `cmake --preset windows`
+  - `cmake --build --preset dev` (RelWithDebInfo, development build), `--preset debug`, or `--preset release`
+  - `ctest --preset dev` (or `debug` / `release`)
+  - executable: `build\windows\src\<Config>\ac04port.exe`; parameters: `docs/port/command-line.md`
+- Development build = every configuration except Release (`AC04_DEV_BUILD=1`): console window, debug overlay on by default, Vulkan validation when the layer is installed.
+- After any dependency change: `python tools/check_notices.py`.
 
 ## Facts about SLUS_201.52
 
-Full section table: `docs/research/elf-sections.md`.
+Full section table: `docs/platform/elf-sections.md`.
 
 - Fully stripped: no `.symtab`, `.mdebug` or `.comment`. No original names exist; every name in this project is ours.
 - Sony SDK 2.3.0 (libmc 2.3.2). Compiler: GCC 2.9x `ee-gcc` with g++ (exact version is a hypothesis; not needed for the port).
-- Game code is C++ written as "C with classes": no vtables, no `new`/`delete`, very few indirect calls. Details: `docs/research/toolchain.md`.
+- Game code is C++ written as "C with classes": no vtables, no `new`/`delete`, very few indirect calls. Details: `docs/platform/toolchain.md`.
 - No `.lit8`: game math is single-precision `float`.
 - `.text` 0x00100000–0x00297B33 (~1.6 MB) also contains statically linked Sony SDK, libc and libgcc code.
 - `.vutext` 0x00297C00–0x0029C8FF, `.vudata` 0x004021F0–0x004036EF and the 17 `.DVP.overlay.*` sections are VU microcode/data, not R5900 code.
 - `.data` 0x0029C980–0x004021E7 (~1.4 MB) is unexplored; likely contains game tables.
 - `gp` = 0x004159F0 (from `.reginfo` and crt0), used for `.sdata`/`.sbss` access. Set in Ghidra as one register-context range over `.text`.
-- Boot and main loop (`docs/research/boot.md`): `main` 0x001001F0; main loop 0x00100290–0x001003BC inside `main`; scene table 0x0029FDA0; game bump allocator 0x00101000.
-- Architecture facts for the port: `docs/research/memory-model.md`, `threads-timing.md` (single game thread, frame-locked 60 Hz NTSC), `render-boundary.md`, `iop-interface.md`.
+- Boot and main loop (`docs/game/boot.md`): `main` 0x001001F0; main loop 0x00100290–0x001003BC inside `main`; scene table 0x0029FDA0; game bump allocator 0x00101000.
+- Architecture facts for the port: `docs/game/memory.md`, `docs/game/threads-timing.md` (single game thread, frame-locked 60 Hz NTSC), `docs/subsystems/rendering.md`, `docs/game/iop-interface.md`, `docs/game/random.md`.
 - Ghidra memory blocks `registers.io`, `vu0.*`, `vu1.*`, `registers.gs`, `iop_ram`, `scratchpad`, `RAM(uncached*)` and `BIOS/*` are added by the Emotion Engine plugin, not by the ELF.
 
 ## Disc files
@@ -112,11 +128,11 @@ All "read" entries below mean: read from the ISO image at runtime, never from ex
 | `SYSTEM.CNF` | Boot config | Reference only |
 | `IOPRP23.IMG` | Sony IOP kernel update image | Not used |
 | `IRX/LIBSD, MCMAN, MCSERV, PADMAN, SIO2MAN, USBD` | Stock Sony IOP modules | Not used; replaced by `src/sce/` + `src/platform/` |
-| `IRX/SOUND.IRX`, `IRX/VAG.IRX` | Namco sound drivers: SOUND = RPC 0x81000101 (SFX command batches), VAG = RPC 0x81000102 (6 streaming slots) (`docs/research/iop-interface.md`) | Not used; their RPC interface is reimplemented in the audio backend (ADR-004) |
+| `IRX/SOUND.IRX`, `IRX/VAG.IRX` | Namco sound drivers: SOUND = RPC 0x81000101 (SFX command batches), VAG = RPC 0x81000102 (6 streaming slots) (`docs/game/iop-interface.md`, `docs/subsystems/iop-sound.md`) | Not used; their RPC interface is reimplemented in the audio backend (ADR-004) |
 | `IRX/USBJOY.IRX` | USB joystick driver, RPC 0x80000210 | Not used; replaced by the input backend |
 | `BIN/DATA.CDP+TBL`, `BIN/BD.CDP+TBL` | Packed archives: TBL = `{u32 sector, u32 size}[]`, CDP = sector-aligned entries, loaded by index (`docs/formats/CDP.md`). DATA = 360 `count+offsets` containers (missions, aircraft, menus, sound headers); BD = 13 raw SPU ADPCM banks | Read by index like the game (`tools/cdp_extract.py` is for research only) |
-| `MIS/MIS01–18.SMV` | 18 files for the game's 18 missions (confirmed count) | The 18 MIS/*.SMV files are not mission data. They contain MPEG-2 video in a Namco chunked container, the same format as the cutscenes in SMV/ (which also carry audio). Read and demux from the ISO at runtime; decode MPEG-2 |
-| `SMV/*.SMV` | INTRO, SS01–SS12 cutscenes, STAFF roll. Namco chunk container (0x800 header sector, then chunks `{next_size, video_bytes, audio_off, audio_bytes}`), MPEG-2 video (640×448, SS 640×336) plus 0x4000-byte PCM audio blocks (48 kHz s16 stereo, layout unconfirmed); `docs/formats/SMV.md` | Read and demux at runtime; decode MPEG-2; PCM goes to VAG slot 0 in the audio backend |
+| `MIS/MIS01–18.SMV` | Briefing movies: MISnn belongs to campaign mission nn (confirmed from code) | The 18 MIS/*.SMV files are not mission data. They contain MPEG-2 video in a Namco chunked container, the same format as the cutscenes in SMV/ (which also carry audio). Read and demux from the ISO at runtime; decode MPEG-2 |
+| `SMV/*.SMV` | INTRO, SS01–SS12 cutscenes, STAFF roll. Namco chunk container (0x800 header sector, then chunks `{next_size, video_bytes, audio_off, audio_bytes}`), MPEG-2 video (640×448, SS 640×336) plus 0x4000-byte PCM audio blocks (48 kHz s16 stereo, layout unconfirmed); `docs/formats/SMV.md` | Read and demux at runtime; decode MPEG-2; PCM goes to the SPU2 core-0 sound-data input through SOUND.IRX (`docs/subsystems/iop-sound.md`) |
 | `VAG/*.VPK` | Packs of VAG (Sony ADPCM) audio, streamed through VAG.IRX slots | Stream from the ISO at runtime; decode in the audio backend |
 
 Statements marked "probably", "suggest" or "unverified" are hypotheses. Confirm them from code before building on them, then update this table.
@@ -128,7 +144,7 @@ Statements marked "probably", "suggest" or "unverified" are hypotheses. Confirm 
 - If globals appear as `gp + offset` instead of named addresses, the `gp` register value is wrong: compare it with `.reginfo` before continuing.
 - Never create functions or run disassembly inside `.vutext`, `.vudata` or `.DVP.overlay.*`.
 - Destructive operations (clearing analysis, deleting functions or programs, re-importing an existing program) need the owner's OK (see Working rules).
-- Rename policy: rename in Ghidra only when the behaviour is confirmed. Otherwise add a `HYPOTHESIS:` plate comment and a `status=hypothesis` row in `docs/symbols.csv`. Log every rename and comment in `docs/research/rename-log.csv`.
+- Rename policy: rename in Ghidra only when the behaviour is confirmed. Otherwise add a `HYPOTHESIS:` plate comment and a `status=hypothesis` row in `docs/symbols.csv`. Log every rename and comment in `docs/rename-log.csv`.
 
 ## Naming
 
@@ -150,4 +166,4 @@ One convention for Ghidra, docs and C++ code. **No type prefixes** (no Hungarian
 - Prioritise: (1) label Sony SDK and runtime functions, (2) boot path from the entry point, (3) main loop, (4) file loading, (5) gameplay systems.
 - No commits by Claude (see Working rules). Changes should still be grouped so the owner can commit one subsystem or one source file at a time.
 - Ask before large refactors, renaming files, or changing the repo layout above.
-- Open research questions are tracked in `docs/research/open-questions.md`; update it when one is answered.
+- Open research questions are tracked in `docs/open-questions.md`, pending PCSX2 checks in `docs/pcsx2/procedures.md`; update them when one is answered.

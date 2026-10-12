@@ -21,4 +21,11 @@ One row per dependency:
 | Name | Version / commit | License | URL | Modified | Included as |
 |---|---|---|---|---|---|
 
-*(none yet)*
+| SDL3 | 3.4.16 (release archive) | zlib | https://github.com/libsdl-org/SDL | no | FetchContent (URL_HASH SHA256) |
+| Vulkan-Headers | vulkan-sdk-1.4.363.0 | Apache-2.0 (some files MIT) | https://github.com/KhronosGroup/Vulkan-Headers | no | FetchContent (URL_HASH SHA256) |
+| volk | vulkan-sdk-1.4.363.0 | MIT | https://github.com/zeux/volk | no | FetchContent (URL_HASH SHA256) |
+| VulkanMemoryAllocator | v3.4.0 | MIT | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator | no | FetchContent (URL_HASH SHA256) |
+| glslang | vulkan-sdk-1.4.363.0 | BSD-3-Clause, BSD-2-Clause, MIT, Apache-2.0, NVIDIA AML, GPL-3.0-or-later with Bison exception (build tool only, not linked) | https://github.com/KhronosGroup/glslang | no | FetchContent (URL_HASH SHA256) |
+| nlohmann_json | v3.12.0 (json.tar.xz release asset) | MIT | https://github.com/nlohmann/json | no | FetchContent (URL_HASH SHA256) |
+| doctest | v2.5.3 | MIT | https://github.com/doctest/doctest | no | FetchContent (URL_HASH SHA256) |
+| imgui | v1.92.9b | MIT | https://github.com/ocornut/imgui | no | FetchContent (URL_HASH SHA256); core + `imgui_impl_sdl3` + `imgui_impl_vulkan` compiled by us, debug overlay only |
