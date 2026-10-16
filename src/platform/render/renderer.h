@@ -6,9 +6,13 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "platform/render/gs/gs_state.h"
+#include "platform/render/gs/gs_vulkan.h"
+#include "platform/render/movie_upscaler.h"
 #include "platform/render/vk_context.h"
 #include "platform/settings.h"
 
@@ -24,7 +28,9 @@ public:
 
     ~Renderer();
 
-    bool Init(SDL_Window* window, const platform::PresentationSettings& presentation, std::string& error);
+    // `validation`: request the Vulkan validation layer (development builds; used when installed).
+    bool Init(SDL_Window* window, const platform::PresentationSettings& presentation, bool validation,
+              std::string& error);
     void Shutdown();
 
     void ApplySettings(const platform::PresentationSettings& presentation);
@@ -40,6 +46,32 @@ public:
     uint32_t SwapchainImageCount() const { return static_cast<uint32_t>(ctx_.swapchain_images.size()); }
     int InternalScale() const { return internal_scale_; }
 
+    // GS data of completed game steps (in order) with their source marks (same order, may be
+    // shorter); processed now, drawn with the next frame.
+    // Processes the steps' GIF data; the emptied step buffers go to `pool` (kept for reuse).
+    void SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps, std::vector<std::vector<gs::SourceMark>>& marks,
+                       std::vector<std::vector<uint8_t>>& pool);
+
+    // Display registers of the last sceGsPutDispEnv (DISPFB2, DISPLAY2), taken with the GS steps.
+    void SetDisplay(uint64_t dispfb, uint64_t display) { gs_backend_.SetDisplay(dispfb, display); }
+
+    // Movie upscaling stage (ADR-006 §5). The factor is the internal scale; 1 = passthrough (the
+    // decoder side path is not needed). Development builds can set it for the stage alone
+    // (--movie-upscale), with the GS still drawn at 1x, to inspect the stage output.
+    int MovieUpscaleFactor() const { return movie_factor_; }
+    void SetMovieUpscaleFactor(int factor) { movie_factor_ = factor < 1 ? 1 : factor; }
+    // A new decoded picture from the side path (row-major RGBA8; `rgba` is taken). Upscaled once,
+    // with the next frame, when the factor is above 1.
+    void SubmitMoviePicture(uint64_t serial, int width, int height, std::vector<uint8_t>& rgba);
+    // Reads back the last upscaled picture (RGBA8). False when there is none. Waits idle.
+    bool CaptureMovieUpscaled(std::vector<uint8_t>& rgba, int& width, int& height);
+    // Native (pre-output-pass) image size: the draw buffer size the game uses.
+    int NativeWidth() const { return native_width_; }
+    int NativeHeight() const { return native_height_; }
+    VkImage NativeImage() const { return native_image_; }
+    // Reads back the native image (RGBA8, rows top to bottom) for the native screenshot. Waits idle.
+    bool CaptureNative(std::vector<uint8_t>& rgba, int& width, int& height);
+
     // Display aspect of the game image (4:3, or 16:9 when the game's SCREEN RATIO flag is set).
     void SetDisplayAspect(int w, int h) { aspect_w_ = w; aspect_h_ = h; }
 
@@ -48,9 +80,11 @@ private:
 
     bool RecreateSwapchain(std::string& error);
     void DestroySwapchainResources();
-    bool CreateNativeTarget(std::string& error);
+    bool CreateNativeTarget(std::string& error, int width = 0, int height = 0);
+    bool ResizeNativeTarget(int width, int height);
     bool CreatePipeline(std::string& error);
     bool UploadTestPattern(std::string& error);
+    bool ReadbackImage(VkImage image, int width, int height, std::vector<uint8_t>& rgba);
 
     SDL_Window* window_ = nullptr;
     VkContext ctx_;
@@ -82,6 +116,21 @@ private:
     int frame_ = 0;
 
     OverlayHook overlay_hook_;
+
+    gs::GsState gs_state_;
+    gs::GsBackend gs_backend_;
+    bool gs_ready_ = false;
+    std::vector<gs::DrawCommand> gs_pending_;
+    int native_request_w_ = 0, native_request_h_ = 0;
+    float present_scale_[3] = {1.0f, 1.0f, 1.0f};  // field-copy colour scale (brightness option)
+
+    // Movie upscaling stage
+    std::unique_ptr<MovieUpscaler> movie_upscaler_;
+    bool movie_upscaler_ready_ = false;
+    int movie_factor_ = 1;
+    uint64_t movie_serial_ = 0, movie_done_serial_ = 0;
+    int movie_width_ = 0, movie_height_ = 0;
+    std::vector<uint8_t> movie_rgba_;
 };
 
 }  // namespace ac04::render

@@ -76,6 +76,20 @@ u32 WorkHeapAlloc(s32 size, u64 align) {
     return result;
 }
 
+// EE: 0x00101080
+// Free bytes: heap size - used offset.
+u32 GetWorkHeapFree() {
+    return g_WorkHeapSize() - g_WorkHeapOffset();
+}
+
+// EE: 0x00101090
+// Rewinds the heap to an absolute address returned earlier by WorkHeapAlloc(0, 0) (the mission
+// retry mark S+0x1664) and returns it.
+u32 RewindWorkHeapTo(u32 addr) {
+    g_WorkHeapOffset() = addr - g_WorkHeapBase();
+    return addr;
+}
+
 // EE: 0x001010A8
 u32 SetWorkHeapMark() {
     const u32 offset = g_WorkHeapOffset();
@@ -92,6 +106,28 @@ u32 ResetWorkHeapToMark() {
     g_WorkHeapOffset() = mark;
     for (s32 i = 3; i >= 0; --i) GRef<u32>(0x00412198 + 4u * static_cast<u32>(i)) = 0;
     return mark;
+}
+
+// EE: 0x00101138
+// Pushes the current heap offset on the 4-entry mark stack (0x00412198, depth byte 0x00411794,
+// unchecked) and returns the free size.
+u32 PushWorkHeapMark() {
+    const u32 offset = g_WorkHeapOffset();
+    u8& depth = GRef<u8>(0x00411794);
+    GRef<u32>(0x00412198 + 4u * static_cast<u32>(static_cast<s32>(static_cast<s8>(depth)))) = offset;
+    depth = static_cast<u8>(depth + 1);
+    return g_WorkHeapSize() - offset;
+}
+
+// EE: 0x00101170
+// Pops the last pushed mark (if any) back into the heap offset and returns the free size.
+u32 PopWorkHeapMark() {
+    u8& depth = GRef<u8>(0x00411794);
+    if (static_cast<s8>(depth) > 0) {
+        depth = static_cast<u8>(depth - 1);
+        g_WorkHeapOffset() = GRef<u32>(0x00412198 + 4u * static_cast<u32>(static_cast<s32>(static_cast<s8>(depth))));
+    }
+    return g_WorkHeapSize() - g_WorkHeapOffset();
 }
 
 // EE: 0x00102668

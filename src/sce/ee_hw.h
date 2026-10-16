@@ -24,6 +24,10 @@ enum class EeReg {
 u32 EeHwRead(EeReg reg);
 void EeHwWrite(EeReg reg, u32 value);
 
+// Called from a game busy-wait loop on timer 0 that has not reached its count: one H-blank passes,
+// or the vblank at the end of the field (the loop then reads the advanced count).
+void EeHwWaitTimer();
+
 // CHCR of a DMA channel identified by the handle sceDmaGetChan returned (its register block).
 u32 EeDmaReadChcr(u32 chan);
 void EeDmaWriteChcr(u32 chan, u32 value);

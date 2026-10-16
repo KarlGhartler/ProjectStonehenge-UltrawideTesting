@@ -1,0 +1,449 @@
+address,name,slice,subsystem,bytes,features,status,note
+0x001001C0,FUN_001001c0,S5a,core,48,,documented-full,crt: __deregister_frame_info
+0x00100DB8,SetRandomIndex,S5b,core,12,,documented-full,set random-table index (0..511)
+0x00100DC8,NextRandomFloat,S5a,core,40,,documented-full,next value from the 512-float random table 0x00411998 (index 0x00411780 wraps)
+0x00101080,FUN_00101080,S5a,core,16,,documented-full,work heap: bytes remaining
+0x00101090,FUN_00101090,S5a,core,20,,documented-full,work heap: set current offset from a pointer (rewind)
+0x001025C8,FUN_001025c8,S5b,core,88,,documented-full,"pad: request vibration (motor on flag, strength, 16-frame timer) unless locked"
+0x00102838,FUN_00102838,S5b,camera,52,,documented-full,camera: copy projection params
+0x00102990,FUN_00102990,S5b,camera,76,,documented-full,camera: copy viewport params
+0x00102EF0,FUN_00102ef0,S5b,core,380,,documented-full,compose two Euler rotations -> Euler angles (asin/atan2)
+0x00103070,FUN_00103070,S5b,core,128,,documented-full,"point = base + rotate(euler, offset)"
+0x001030F0,FUN_001030f0,S5b,core,96,,documented-full,rotate vector by Euler angles
+0x00103290,FUN_00103290,S5b,core,160,,documented-full,"rotation matrix -> Euler angles (yaw atan2, pitch asin, roll acos)"
+0x00103818,FUN_00103818,S5b,core,300,lq/sq,documented-full,"Euler orientation for a line between two points (pitch, yaw, roll from third point)"
+0x00103948,FUN_00103948,S5b,core,140,,documented-full,relative pitch angle to a point in a yaw frame (result in f0)
+0x001039D8,FUN_001039d8,S5b,core,136,,documented-full,relative heading angle to a point in a yaw frame
+0x00104090,FUN_00104090,S5b,render,112,lq/sq mmi,documented-full,link a bucket list into bucket n of another list
+0x00104250,FUN_00104250,S5b,render,80,lq/sq mmi,documented-full,append an empty cnt tag with VIF words into bucket n
+0x001042A0,FUN_001042a0,S5b,render,44,,documented-full,allocate a cnt packet of n qwords from the frame buffer
+0x00104338,FUN_00104338,S5b,render,120,lq/sq mmi,documented-full,"append a DMA call tag (0x50000000 | qwc, address) with qwc inline qwords, then a next tag, into bucket n"
+0x001043E8,FUN_001043e8,S5b,render,44,,documented-full,append a bucket list to a packet list
+0x00104FA8,FUN_00104fa8,S5b,core,28,,documented-full,horizontal vector length
+0x001050D8,FUN_001050d8,S5b,core,156,lq/sq mmi,documented-full,"RGBA x2 lerp (MMI, 8 bytes)"
+0x00109658,FUN_00109658,S5a,core,80,vu0,documented-full,"VU0 unit normal of a triangle (cross product, rsqrt)"
+0x0010A130,FUN_0010a130,S5a,mission,36,,documented-full,"set view fade target/time for player n (+0x1680/+0x1678), returns current level (+0x1670)"
+0x0010A668,CreateFlightScene,S5a,mission,560,heap,documented-full,"create flight scene object (0x1810, gp 0x004104C4): 5 views of 0x440, timers, display 512x448 / 512x224 field mode, PSMZ 0x31, ztest 3; split-screen flag game[0x26] for 2 players; replay kind game[0x2A]=1 -> 0x00239640"
+0x0010A898,FlightSceneEnter,S5a,mission,252,,documented-full,"scene 2 subs 0/1: create scene, mission kind +0x1653 (0 campaign, 1 trial 0x15-0x19, 2 VS, 3 tutorial 0x20-0x27, 4 special 0x23-0x25), -> sub 2"
+0x0010A998,FUN_0010a998,S5a,mission,184,,documented-full,"scene 2 sub 0x1E: loading screen (NOW LOADING / mission objectives, PRESS START after 120 frames when kind 1), fade, -> sub 7"
+0x0010AA50,CreateFlightSystems,S5a,mission,260,heap,documented-full,"scene 2 sub 7: create all flight subsystems (terrain/world 0x0013EA28, objects 0x0011B948, effects, HUD, sound, mission script 0x00176908 ...), mission-specific setup (ids 1, 8), heap mark at +0x1664 -> sub 8"
+0x0010AB58,StartFlightSystems,S5a,mission,548,,documented-full,"scene 2 sub 8: start subsystems (sound banks, streams, objects, terrain, HUD, players 0x00257630(n), mission 8 extra), -> sub 0x13 (kind 4), 0x10 (demo), 0xD (mission 10 pre-sequence), else 0xA"
+0x0010AD80,FUN_0010ad80,S5a,mission,192,,documented-full,"loading screen draw (0x00239310 / 0x00239B60 with objectives), counter +0x166C"
+0x0010B038,StoreFlightDataPointers,S5a,mission,276,,documented-full,"scene 2 subs 2-5: draw the loading frame (0x0010AD80); when IsDataLoadDone, turn the loaded container {count, offsets[]} at *0x004117A8 into pointers in the table for this sub (2 -> +0x1694, 3 -> +0x1754, 4 -> +0x1794, 5 -> +0x17D4) and request the next sub (3; after 3: 4 if game[0x25] == 2, 5 if game[0x29] == 4, else 6; 4/5 -> 6)"
+0x0010C840,FUN_0010c840,S5a,mission,8,,documented-full,empty hook
+0x0010C850,FUN_0010c850,S5b,camera,20,,documented-full,view: set orbit parameters (+0x430..+0x43C)
+0x0010C868,FUN_0010c868,S5b,camera,360,,documented-full,view death camera: find a free orbit angle by terrain ray test (4 tries)
+0x0010C9D0,FUN_0010c9d0,S5b,camera,432,,documented-full,"init view cameras per player (split screen halves when game[0x26]), 16:9 width aware"
+0x0010CB80,UpdateViewCameras,S5b,camera,2284,lq/sq,documented-full,"UpdateViewCameras: per-player camera by state: cockpit/HUD/third person (+0x149), mission-end/replay presets 0x002A1700/0x002A1730, death orbit, FOV and terrain clearance"
+0x0010D5E8,FUN_0010d5e8,S5b,camera,8,,documented-full,view: set camera flags byte
+0x0010D5F0,FUN_0010d5f0,S5b,camera,32,lq/sq,documented-full,view: set eye and target
+0x0010D610,FUN_0010d610,S5b,camera,32,lq/sq,documented-full,view: set attach offset (flag 4)
+0x0010D630,FUN_0010d630,S5b,camera,32,lq/sq,documented-full,view: set up vector (flag 2)
+0x0010D650,FUN_0010d650,S5b,camera,44,lq/sq,documented-full,view: set follow offsets (flag 1)
+0x0010D680,FUN_0010d680,S5b,camera,32,lq/sq,documented-full,view: set look-at point (flag 8)
+0x0010D6A0,FUN_0010d6a0,S5a,camera,168,lq/sq,documented-full,view reset
+0x0010D748,FUN_0010d748,S5b,camera,20,lq/sq,documented-full,"view: set extra look offset (+0xA0), clear flag byte +10"
+0x0010D760,FUN_0010d760,S5b,camera,3220,lq/sq,documented-full,"view camera solve: eye/target from attach + offsets + look-at (flags in +8), up vector, terrain clearance (ray test 0x0013D698), Euler angles for both camera objects (+0xB0, +0x270)"
+0x0010E3F8,FUN_0010e3f8,S5a,mission,452,heap,documented-full,unit placement header: build pointer table (0x68) of 22+ sub-tables from short offsets
+0x0010E5C0,FUN_0010e5c0,S5a,mission,404,,documented-full,"unit record -> unit struct: position, Euler rotation (deg -> rad), side bits, flags 0x80/0x40"
+0x0010E758,SetupMissionUnits,S5a,mission,4884,heap rnd-table,documented-full,"mission block 22 (difficulty variant container for game[0x28] 0-1 / 2 / 3+): 0x18-byte placement records, type 0..10 -> typed definition tables; fills unit structs 0x002A1F70[i] (class +0x54: 0 player, 1 aircraft, 2 ground/naval), flags, players get selected aircraft/weapon, models 0x001459E0, aircraft sounds 0x00216550 [reads the random table (NextRandomFloat) at 3 call sites; validation.md V-8]"
+0x0010FA70,FUN_0010fa70,S5a,mission,188,,documented-full,"mission setup: stop stream slots, SetupMissionUnits, HUD radar init 0x0024CBE0, objectives from block 28 (0x0011A3D8 into gp 0x004104F8) and wingman/second table 0x0015E8C0"
+0x0010FDE8,FUN_0010fde8,S5a,mission,460,,documented-full,"scene 2 sub 6: load the player aircraft sounds: SPU bank per player (0x00216570), BD entry per aircraft (0x002A1878 table) via 0x00219C80 -> sub 0x1E"
+0x0010FFB8,FUN_0010ffb8,S5b,render,184,mmi vu0,documented-full,"project a point with the current VU0 matrix (vf4-vf7), clip test, returns screen x/y (ftoi4) [VU0 MAC flag read at 0x0010FFDC depends on the COP2 flag pipeline delay: on hardware it returns the flags of the op before vmaddw; PCSX2 patches this site; validation.md B-2]"
+0x001100A0,FUN_001100a0,S5b,render,208,,documented-full,"sky/fog colour for the camera pitch: lerp between horizon and zenith colour sets (render settings block 24, gp 0x004104D4)"
+0x00110170,FUN_00110170,S5b,render,208,lq/sq,documented-full,sun/sky direction factor for a view direction (0..1)
+0x00110240,FUN_00110240,S5b,render,108,vu0,documented-full,direction vector from pitch/yaw
+0x001102B0,FUN_001102b0,S5b,render,596,lq/sq mmi vu0,documented-full,sky dome: build 8 ring vertex sets from table 0x002A1948 around the camera (VU0)
+0x00110508,FUN_00110508,S5b,render,292,,documented-full,sky gradient colours for camera altitude: lerp between two keyed colour sets
+0x00110630,FUN_00110630,S5b,render,1144,mmi rand vu0,documented-full,"sky ring colours: per ring lerp, sun glow (cos), random twinkle (rand)"
+0x00110AA8,FUN_00110aa8,S5b,render,1164,,documented-full,sky ring vertex colours/positions update (interpolated with camera)
+0x00110F38,FUN_00110f38,S5b,render,168,,documented-full,"project 32 sky ring points (0x0010FFB8), visibility mask"
+0x00110FE0,FUN_00110fe0,S5b,render,108,,documented-full,project a single point and replicate (sky cap)
+0x00111050,FUN_00111050,S5b,render,232,,documented-full,emit triangle strip between two projected sky rings (skips invisible segments)
+0x00111138,FUN_00111138,S5b,render,468,mmi vu0,documented-full,emit the sky dome rings as Gouraud strips
+0x00111310,FUN_00111310,S5b,render,684,lq/sq mmi vu0,documented-full,emit sky cap / horizon band with fog colour
+0x001115C0,FUN_001115c0,S5b,render,564,lq/sq,documented-full,"DrawSky: rings, colours, emit packets into the view bucket"
+0x001117F8,FUN_001117f8,S5a,render,204,,documented-full,"per-mission sky/effect flags (mission ids 2/0x11/0x19 night flag 0x400, 4/8/... weather levels)"
+0x001118C8,FUN_001118c8,S5a,render,132,heap,documented-full,"sky/render settings init: block 24 (gp 0x004104D4), state (0x40), send block 25 texture upload chain on GIF"
+0x00111950,FUN_00111950,S5a,render,88,lq/sq,documented-full,sky state reset + mission flags + 0x00113750
+0x001119A8,FUN_001119a8,S5b,render,384,,documented-full,"sky per-view parameters (viewport centre, FOV-derived horizon row, distance fog)"
+0x00111B28,FUN_00111b28,S5b,render,344,,documented-full,"draw background for a view: stars/clouds layers (0x00116D38, 0x00117940), sky, sun/flare, effects layers (0x00115B10, 0x00115F28, 0x00116918, 0x00118400), screen effect 0x001120E8"
+0x00111C80,FUN_00111c80,S5b,render,584,,documented-full,"emit downsample pass (half-size copy, level n) of the frame buffer"
+0x00111EC8,FUN_00111ec8,S5b,render,544,,documented-full,emit upsample/blend pass (level n) back to the frame
+0x001120E8,FUN_001120e8,S5b,render,872,,documented-full,full-screen glow/blur post effect with intensity (downsample chain + blend)
+0x00112450,FUN_00112450,S5b,render,972,,documented-full,full-screen blur effect variant (fixed levels)
+0x00112CA8,FUN_00112ca8,S5b,render,872,lq/sq,documented-full,"frame-buffer feedback effect (copy to texture page 0x1B01..., motion blur/ghosting)"
+0x001132E0,FUN_001132e0,S5b,render,388,lq/sq,documented-full,full-screen flash/white-out with alpha
+0x00113468,FUN_00113468,S5b,render,220,,documented-full,emit drawing-context setup with given FRAME/SCISSOR/XYOFFSET values
+0x00113548,FUN_00113548,S5a,render,124,rand,documented-full,generate 400 sky stars: srand(seed from render settings +0x80) then rand() (NOTE: reseeds the global rand state)
+0x001135C8,FUN_001135c8,S5a,render,320,rand,documented-full,"generate 128 cloud puffs: srand(seed +0x132), rand() sums (reseeds global rand)"
+0x00113708,FUN_00113708,S5a,render,68,heap,documented-full,"sky detail init: alloc 0x1080 (stars/clouds), cloud density map from block 26 +0x70"
+0x00113750,FUN_00113750,S5a,render,64,,documented-full,regenerate stars and clouds from the render-settings seeds
+0x00113790,FUN_00113790,S5b,render,504,mmi vu0,documented-full,project 32 star/cloud points with VU0 (size 9216*scale)
+0x00113988,FUN_00113988,S5b,render,452,,documented-full,"emit render-to-texture setup (FRAME to a 64-wide work page, scissor)"
+0x00113B50,FUN_00113b50,S5b,render,540,,documented-full,"emit texture-copy back pass (work page -> frame, scaled)"
+0x00113D70,FUN_00113d70,S5b,render,2164,lq/sq mmi vu0,documented-full,"draw sun with lens flare and glow (render to work page, rotated sprites)"
+0x001145E8,FUN_001145e8,S5b,render,872,lq/sq rand vu0,documented-full,"build moon/sun camera matrices (separate view-screen matrix, small random jitter via rand())"
+0x00114950,FUN_00114950,S5b,render,784,,documented-full,emit sun disc sprite packet
+0x00114C60,FUN_00114c60,S5b,render,628,lq/sq,documented-full,draw sun/moon body via work page and blend
+0x00114ED8,FUN_00114ed8,S5b,render,704,mmi vu0,documented-full,"project a cloud puff (VU0), size by distance, fade near/far"
+0x00115198,FUN_00115198,S5b,render,268,,documented-full,"cloud density at world (x, z): bilinear sample of the 256x256 map (gp 0x004104EC)"
+0x001152A8,FUN_001152a8,S5b,render,44,,documented-full,cloud density with wind offset
+0x001152D8,FUN_001152d8,S5b,render,2100,lq/sq vu0,documented-full,"draw cloud layer: up to 400 puffs, density-tested, sorted strips"
+0x00115B10,FUN_00115b10,S5b,render,484,lq/sq,documented-full,"draw sky objects pass (sun, flares, clouds) into the view bucket"
+0x00115CF8,FUN_00115cf8,S5b,render,560,,documented-full,emit cloud shadow/fog plane quad (UV from world position)
+0x00115F28,FUN_00115f28,S5b,render,308,lq/sq,documented-full,draw cloud shadow plane (block 26 packet + plane quad)
+0x00116060,FUN_00116060,S5b,render,204,mmi vu0,documented-full,"project one star point (VU0), returns screen xy + visibility"
+0x00116130,FUN_00116130,S5b,render,492,lq/sq vu0,documented-full,star field matrix (camera rotation only)
+0x00116320,FUN_00116320,S5b,render,1524,lq/sq vu0,documented-full,"draw star field: up to 400 stars, twinkle colour lerp, cloud-density culling"
+0x00116918,FUN_00116918,S5b,render,332,lq/sq,documented-full,draw star layer into the view bucket
+0x00116A68,FUN_00116a68,S5b,render,168,vu0,documented-full,sky-object rotation matrix (pitch/yaw/roll) combined with view matrices
+0x00116B10,FUN_00116b10,S5b,render,68,,documented-full,scale + multiply matrix
+0x00116B58,FUN_00116b58,S5b,render,160,lq/sq,documented-full,viewport rectangle (fixed point) for sky objects
+0x00116BF8,FUN_00116bf8,S5b,render,224,mmi vu0,documented-full,"project N corner points, clip against viewport, returns visible flag"
+0x00116CD8,FUN_00116cd8,S5b,render,96,,documented-full,emit GIF REGLIST of N UV/XYZ pairs
+0x00116D38,FUN_00116d38,S5b,render,500,,documented-full,draw moon (textured quad via render-to-texture setup) when visible
+0x00116F30,FUN_00116f30,S5b,render,444,mmi vu0,documented-full,sun/lens-flare element positions along the flare line
+0x001170F0,FUN_001170f0,S5b,render,1768,mmi,documented-full,draw lens flare elements (glow sprites)
+0x001177D8,FUN_001177d8,S5b,render,360,,documented-full,sun glare full-screen overlay
+0x00117940,FUN_00117940,S5b,render,1340,vu0,documented-full,"draw sun with flare and glare (visibility, FOV-dependent size)"
+0x00117E80,FUN_00117e80,S5b,render,1200,lq/sq vu0,documented-full,"rain/snow streak layer: camera-relative particle box, sceVu0RotTransPers"
+0x00118330,FUN_00118330,S5b,render,204,lq/sq,documented-full,draw weather layer when the mission sky flag 2 is set
+0x00118400,FUN_00118400,S5b,render,1556,lq/sq mmi vu0,documented-full,draw falling particles (up to 400) as lines/sprites (weather)
+0x00118A18,FUN_00118a18,S5a,mission,580,heap lq/sq vu0,documented-full,"mission rule objects: gp 0x004104F0 (rules 0x70: quota 0xFA, time limit 0x1A5E0 frames, limits), 0x004104F4 (status 0x90: flags +0x20, timers), 0x004104F8 (objective list 0xA8); defaults"
+0x0011A3D8,FUN_0011a3d8,S5a,mission,996,,documented-full,"parse mission rules block 28 into gp 0x004104F8: event command lists (start, play, timed, per-group triggers), timed-event tables, 8 trigger groups x 3 kinds"
+0x0011B920,FUN_0011b920,S5b,aircraft-data,40,,documented-full,"special weapon id of aircraft id, slot n"
+0x0011B948,FUN_0011b948,S5a,mission,328,heap,documented-full,"create player/unit tables: gp 0x00410640 (player info 0x90 with per-player sub-objects), 255 unit structs of 0xA0 at 0x002A1F70[], mission 10/15 extras"
+0x0011BA90,FUN_0011ba90,S5a,mission,488,lq/sq vu0,documented-full,"reset player info (gp 0x00410640): counters, lock slots, mission-specific (ids 10, 15) helpers"
+0x0011E0D8,FUN_0011e0d8,S5b,render,376,,documented-full,"draw world objects for a view: models (0x0014A500, 0x00145F80, 0x00146268), aircraft (0x001483A0), shadows 0x001BCBD8"
+0x0011E878,FUN_0011e878,S5a,weapons,92,,documented-full,"unit max HP by type code (string table 0x002A2388); difficulty 4 x70 %, 5 x30 %"
+0x0011E8D8,FUN_0011e8d8,S5a,flight,876,heap lq/sq vu0,documented-full,"create player aircraft state (0x4C0) from the aircraft record: weapons, counts, flight parameters"
+0x0011EC48,FUN_0011ec48,S5a,weapons,224,,documented-full,"select special weapon slot n: weapon id, count, lock type"
+0x0011EFA0,FUN_0011efa0,S5a,flight,332,,documented-full,init player aircraft trails/history and weapon slot
+0x001206E0,UpdateAircraftMovingParts,S5a,flight,1624,double,documented-full,"aircraft block 3: 0x60-byte records map flight values (+0x240..+0x25C: stick, throttle, flaps, gear, speed, heading) to part angles through up to 4 drivers (double-precision math), see AIRCRAFT.md"
+0x00125B70,FUN_00125b70,S5b,camera,3044,lq/sq rnd-table,documented-full,"player view control: cycle views (+0x149: 0 HUD/cockpit, 1, 2 third person), look-at target, camera shake (random table)"
+0x001279A0,FUN_001279a0,S5a,flight,16,,documented-full,reset engine-sound active flags (2 players)
+0x001279B0,FUN_001279b0,S5a,flight,292,,documented-full,"start/stop engine sound for player n (0x002166D0/0x00216728/0x00216790), shared voice when both active"
+0x0012A6B8,CreateAIAircraftState,S5a,ai,456,heap,documented-full,"WorkHeapAlloc(0x110), stored at unit+0x44 and gp 0x004117B0, initialises all AI fields"
+0x0012FC08,CreateGroundUnitState,S5a,ai,284,heap lq/sq vu0,documented-full,"WorkHeapAlloc(0xD0), stored at unit+0x44 and gp 0x004117C0"
+0x00133A58,FUN_00133a58,S5a,ai,36,heap,documented-full,"alloc fire-slot table gp 0x00410674 (2 slots: timer float, unit byte)"
+0x00133A80,FUN_00133a80,S5a,ai,52,,documented-full,reset the 2 fire slots
+0x00134FA8,FUN_00134fa8,S5a,ai,92,heap,documented-full,alloc periodic strike-event state gp 0x00410670 (0x50)
+0x001359D0,FUN_001359d0,S5b,render,432,,documented-full,animate model nodes of the unit by frame counter %240; scene-2 sub 0x14/0x19 special node states
+0x00135C50,FUN_00135c50,S5a,mission,20,,documented-full,reset nearest-distance trackers gp 0x004117C8/CC
+0x00135D60,FUN_00135d60,S5a,replay,176,heap,documented-full,"alloc unit snapshot buffers (0x48 per unit at 0x002A2660[], 0x50 per player at 0x00410678[])"
+0x00136518,FUN_00136518,S5a,camera,84,heap,documented-full,"alloc the 2 per-player projectile-follow states (0x18 each, gp table 0x00410680) and reset them"
+0x00136570,FUN_00136570,S5a,camera,48,,documented-full,"reset projectile-follow state n (missile slot and special slot -1, flags 0)"
+0x001365A0,FUN_001365a0,S5b,camera,200,,documented-full,per frame: age both projectile-follow states; drop the followed missile/special weapon when its pool occupancy bit (+0x8A28 / +0x8A2C) is clear
+0x00136668,FollowProjectile,S5b,camera,264,,documented-full,"follow a projectile for player n: kind 0 missile slot (pool +0x4000 + slot*0x60), kind 1 special weapon slot (pool +0x4C00 + slot*0x80, not kind 0x10); called by FirePlayerWeapons and replay events; read by the player view control 0x00125B70 (missile camera)"
+0x00136770,FUN_00136770,S5b,camera,64,,documented-full,set/clear flag 0x100 of projectile-follow state n (scene-2 sub 0x11 = replay)
+0x001367B0,FUN_001367b0,S5b,render,24,vu0,documented-full,load a 4x4 matrix into VU0 vf8-vf11 (lqc2 x4) for the clip tests that follow
+0x001367C8,FUN_001367c8,S5b,render,80,vu0,documented-full,"VU0 clip test of one point against the loaded matrix (vclip, returns visible)"
+0x00136818,FUN_00136818,S5b,render,164,vu0,documented-full,VU0 clip test of a bounding box (2 corners) against the loaded matrix; returns the clip flags
+0x00136990,FUN_00136990,S5b,render,268,,documented-full,build a clip matrix for a view with a custom far distance (0x001031C0 with the camera +0x160..+0x16C) and transform the camera position
+0x00136B68,FUN_00136b68,S5b,render,568,lq/sq,documented-full,set directional light n from two angles (RotX/RotY of -z) with intensity
+0x00137318,FUN_00137318,S5b,render,204,lq/sq,documented-full,"copy the light-set block to a buffer (same layout as 0x001370D8, no packet)"
+0x00137550,FUN_00137550,S5a,render,184,double rand,documented-full,once per boot: fill the noise gradient table 0x002A2D00 (255 entries) from rand() (libc rand stream; guarded by D_00410690)
+0x00137930,FUN_00137930,S5b,render,2244,double lq/sq,documented-full,"clip a triangle to the view frustum: transforms the 3 vertices (position, colour, UV records of 0x40 bytes in scratchpad) by the clip matrix; if any vertex is outside one of the 6 planes (|x|, |y|, |z| against w) clips the polygon plane by plane with two ping-pong buffers 0x200 bytes apart (Sutherland-Hodgman), interpolating position, colour and UV; the interpolation factor's absolute value is taken in double precision through libgcc (__extendsfdf2, 0x0028BD28 compare, __subdf3, __truncdfsf2; exact, same result as a float fabs); returns the output vertex buffer and writes the vertex count"
+0x001381F8,FUN_001381f8,S5a,render,340,heap,documented-full,"alloc the sea surface object (*0x0041068C): 2 x 0x40C0 grids, 3 x 0x40000 vertex buffers, noise table init 0x00137550"
+0x00138350,FUN_00138350,S5b,render,2044,lq/sq mmi,documented-full,"draw the sea surface (when terrain flag +0xF4 bit 0): fog setup (0x00112CA8, bucket 0x1E), light block (0x00136990), texture upload unless +0xF4 bit 7; for each sea tile (count +0x7C, tile x/z lists +0x80/+0x84, 2048-unit tiles) builds 2 triangles in scratchpad, clips them (0x00137930), projects them (1/w) with the UV scrolled by (frame_count_unpaused % 10240) / 10240 and the fog alpha from the depth between +0xA8 and +0xA4 (0..127); writes into one of 4 rotating packet buffers (param +0x20..+0x2C, index +0x30); closes with the state restore in bucket 0x1F; draw-only"
+0x00138B50,FUN_00138b50,S5b,render,92,,documented-full,view packet: CLAMP_1 register from the flight scene +0x17E8 (bucket 0)
+0x00138BB0,FUN_00138bb0,S5b,render,92,,documented-full,"reference VU1 program A (.vutext 0x00297C00, 0xEA qw) into buckets 6 and 9 of the view table"
+0x00138C10,FUN_00138c10,S5b,render,24,,documented-full,reference the .vudata block 0x00402200 (size *0x004021F0) into bucket 0 of the terrain sub-table
+0x00138C28,FUN_00138c28,S5b,render,24,,documented-full,"reference VU1 program B into bucket 0 of the ground-object sub-table: REF tag to .vutext 0x00298AD0, qwc read from the u16 header at 0x00298AC0 (0xD4)"
+0x00138C58,FUN_00138c58,S5b,render,192,,documented-full,"view packet: SCISSOR_1/SCISSOR_2 = the camera viewport rectangle (+0x188..+0x18E), cached at flight scene +0x1800"
+0x00138D18,FUN_00138d18,S5b,render,148,,documented-full,view packet in the last bucket: SCISSOR_1/2 back to the full draw buffer
+0x00138DB0,FUN_00138db0,S5b,render,312,,documented-full,"clear the Z buffer of the view rectangle: TEST_1 ZTST always, sprite over the viewport, TEST_1 restored (view flag 0x40000000)"
+0x00138EE8,FUN_00138ee8,S5b,render,136,,documented-full,"terrain: clamp a cell (0..255, edge wrap to 0xF0+) and return the 16x16 block pointer and offset (height grid)"
+0x00138F70,FUN_00138f70,S5b,render,144,,documented-full,terrain: same as 0x00138EE8 for the attribute/texture grid
+0x00139000,FUN_00139000,S5b,render,56,,documented-full,"world coordinate -> terrain cell index (2048 units, 128 = origin; rounding toward the cell below for negatives)"
+0x00139038,FUN_00139038,S5a,render,116,,documented-full,"copy terrain render settings from the map header (fog, sky, light, flags +0xF4) into the terrain object"
+0x001390B0,FUN_001390b0,S5b,render,28,,documented-full,select map entry n: set the current mission render settings pointer D_004104D4 and apply them (0x00111950)
+0x001390D0,FUN_001390d0,S5a,render,1100,,documented-full,"build the terrain texture/GIF template packets (3 LOD levels, TEX0/CLAMP per level) in the terrain object +0x2B0"
+0x00139520,FUN_00139520,S5a,render,504,heap,documented-full,"alloc the terrain object buffers (map entries, LOD lists 0x1000/0x2000/0x4000, light set, texture) and build its templates"
+0x00139718,FUN_00139718,S5a,render,1108,heap,documented-full,"load map entry n from a container (height, attribute, texture, LOD blocks, light settings, GIM textures, model instances 0x0013F018)"
+0x00139B70,FUN_00139b70,S5a,render,1140,double heap,documented-full,"build the map object (*0x00410694) from mission blocks 5-18, 20, 24, 27, 31-33; MTXT version check (H name SetupMapFromMissionData): build the map object (*0x00410694) from the mission work blocks (+0x16A8..+0x1718): block pointers, the 4 terrain LOD tables (container of 4 or a single table), map object records (0x28 + 0x4C bytes each, 0x00144618 / 0x0013F018), per-cell object lists, the terrain GIM texture (InitGimTexture, CLUT positions 0x3A00/0x3F20), the texture list, models (BindModelData, CreateModelInstance) and parameters (0x00139718, 0x00139FE8); prints ""WARNING : MTXT version old!"" when the MTXT version in block 20 is below 0x6F (H name SetupMapFromMissionData)"
+0x00139FE8,FUN_00139fe8,S5a,render,292,,documented-full,"per frame: current map entry -> terrain object (settings 0x00139038, sun direction from two angles)"
+0x0013A110,FUN_0013a110,S5b,render,1064,,documented-full,"per view: camera terrain cell, LOD ring radii, fog distance (powf), sun light set; fills the LOD cell lists"
+0x0013A538,FUN_0013a538,S5b,render,132,vu0,documented-full,VU0 sphere vs view test (distance and radius against the near/far planes)
+0x0013A5C8,FUN_0013a5c8,S5b,render,236,,documented-full,terrain: fetch the 4 corner heights of a cell as floats (u8 * -80)
+0x0013A6B8,FUN_0013a6b8,S5b,render,2476,lq/sq,documented-full,"terrain culling: walk the visible blocks around the camera, VU0 clip test each 16x16 block, write the visible list to scratchpad 0x70000000: terrain culling: walks the terrain blocks within 2048 units around the camera (block size 1024), tests each 16x16 block against the view frustum on VU0 (0x0013A5C8, 0x00136818, 0x001367B0) and writes the visible block lists to scratchpad (0x70000000, 0x70001000, 0x70002000); draw-only"
+0x0013B2F8,FUN_0013b2f8,S5b,render,3796,lq/sq,documented-full,terrain far LOD: VIF/GIF packets for the visible blocks (scratchpad list) into the terrain sub-table: terrain far LOD: for the visible block list in scratchpad builds VIF/GIF packets per block into the terrain sub-table buckets; draw-only
+0x0013C1D0,FUN_0013c1d0,S5b,render,1392,lq/sq,documented-full,"terrain near detail: one cell as a 2-triangle strip with texture page from the attribute word: terrain near detail: one cell as a 2-triangle strip (vertices through 0x00138F70), texture page from the cell attribute word; writes the packet into the cell buffer; draw-only"
+0x0013C740,FUN_0013c740,S5b,render,1664,lq/sq,documented-full,terrain near detail: one cell subdivided (8 vertices) with texture page and UV flip: terrain near detail: one cell subdivided (8 vertices) with texture page and UV flip from the attribute word (0x00138F70 per vertex); draw-only
+0x0013CDC0,FUN_0013cdc0,S5b,render,2000,lq/sq,documented-full,"terrain near detail pass: cells within the near ring, per-cell packets 0x0013C1D0/0x0013C740: terrain near detail pass: cells within the near ring around the camera (2048), per cell the packet from 0x0013C1D0 or 0x0013C740 by the cell type, written into the terrain buckets; draw-only"
+0x0013EA28,CreateWorldRenderObjects,S5a,render,80,heap,documented-full,"create the world render objects: terrain 0x00139520+0x00139B70, ground objects 0x00144728, aircraft models 0x00147BF0, sea 0x001381F8, one 0x120 block at D_00410698"
+0x0013EA78,DrawTerrain,S5b,render,164,,documented-full,"draw terrain for a view: setup 0x0013A110, cull 0x0013A6B8, far 0x0013B2F8, near 0x0013CDC0, sea 0x00138350 when enabled"
+0x0013EB20,DrawMapObjects,S5b,render,20,,documented-full,draw ground objects for a view (0x00145010 on *0x0041069C)
+0x0013EC20,FUN_0013ec20,S5b,render,24,,documented-full,reset the per-frame sequence-model list (D_00410698): counts 0
+0x0013EC38,FUN_0013ec38,S5b,render,40,,documented-full,"append a model list (pointer, count) to the per-frame sequence-model list"
+0x0013EC60,FUN_0013ec60,S5b,render,244,,documented-full,draw every model of the per-frame sequence-model list (0x001E0A98)
+0x0013ED58,FUN_0013ed58,S5b,render,700,lq/sq,documented-full,"set the frame alpha of the view rectangle (ALPHA_1 0x4A, sprites over the view, ZBUF restored)"
+0x00140408,FUN_00140408,S5b,render,160,,documented-full,"model instance: hide nodes by node flag class (+0x38 bit 0x10 with mask bit 1, bit 0x20 with mask bit 2) -> instance node flag 2"
+0x00141000,FUN_00141000,S5b,render,60,,documented-full,model instance: animation track n time
+0x00141040,FUN_00141040,S5b,render,144,,documented-full,model instance: show/hide every node of node id n (flag 1)
+0x001418C8,DrawAircraftShadow,S5b,render,1556,lq/sq,documented-full,"aircraft ground shadow: ray along the light direction to the terrain (0x0013D698), drop-shadow matrix at the hit point, model drawn with VU1 program B into the off-screen shadow buffer; returns 1 when the shadow is visible"
+0x00143C10,FUN_00143c10,S5a,collision,740,lq/sq,documented-full,"extract the triangles of a model instance (node packets walked to the DMA ret tag, positions x node matrix, face normals 0x00109658) into a collision triangle list"
+0x00144228,FUN_00144228,S5b,render,12,,documented-full,model data: header +0x34 -> +0x0C (texture/packet base)
+0x00144728,FUN_00144728,S5a,render,1428,heap lq/sq mmi,documented-full,"create the static map objects (*0x0041069C) for every map entry: per-cell object lists, model instances, collision triangles (0x00143C10)"
+0x00144CC0,FUN_00144cc0,S5a,render,168,,documented-full,per frame: select the static-object lists of the current map entry
+0x00145010,FUN_00145010,S5b,render,1384,lq/sq,documented-full,"draw the static map objects for a view into the ground-object sub-table (VU1 program B), per-cell lists, light set, textures: draw the static map objects for a view into the ground-object sub-table (VU1 program B): per visible cell its object list (map object +0x7004..+0x7018), model matrices (unit + translation), light set, textures (0x00105D18, 0x001066D8), EmitModelInstance; draw-only"
+0x00145578,FUN_00145578,S5b,render,384,lq/sq,documented-full,"draw the static map objects again into the shadow pass (aircraft below altitude 90): static map objects into the shadow buffer (aircraft below altitude 90): FRAME mask 0xFFFFFF/ZBUF state packet, EmitModelInstance of the map object model (+0x7004) with identity matrices, then restores FRAME/ZBUF; bucket 8"
+0x001457E0,FUN_001457e0,S5a,render,512,heap,documented-full,"load a unit model set from a container: up to N state models (0x28 each), model data bind 0x00144618"
+0x001459E0,FUN_001459e0,S5a,render,804,heap mmi,documented-full,create unit model instances (*0x004106A0) from mission block +0x16E8 and the 2 shared model sets +0x175C; called by SetupMissionUnits
+0x00145D08,FUN_00145d08,S5b,render,148,,documented-full,set animation track time on the 3 LOD instances of unit n (current model state = unit +0x5A)
+0x00145DA0,FUN_00145da0,S5b,render,84,,documented-full,animation track time of unit n (current model state)
+0x00145DF8,UpdateUnitModelHierarchies,S5b,render,388,,documented-full,"per frame: update the node hierarchies of all live units (index >= 2, not hidden) for the 4 LOD instances, plus the player aircraft (0x001481B8)"
+0x00145F80,SelectUnitModelLods,S5b,render,744,,documented-full,"per view: unit visibility and LOD selection (VU0 clip test, distance bands per model set)"
+0x00146268,FUN_00146268,S5b,render,1048,,documented-full,"draw the visible units for a view: light set, textures, model emit 0x001404A8, sequence models: draw the visible units for a view: per unit from 0x002A1F70 with a model (aircraft table 0x00410640), light set (WriteLightSetPacket), textures, EmitModelInstance with the unit matrix, extra parts (0x001456F8) and special objects (DrawSpecialObject); draw-only"
+0x00146680,FUN_00146680,S5b,render,144,,documented-full,matrix of node id n of unit m (current model state)
+0x00146710,FUN_00146710,S5a,render,120,,documented-full,"model radius (+0x40) of unit n (players: aircraft model, default 10.0)"
+0x00146788,FUN_00146788,S5a,render,64,,documented-full,model value +0x44 of unit n
+0x00146988,FUN_00146988,S5b,render,84,,documented-full,model data value of unit n collision model
+0x00146AB0,FUN_00146ab0,S5b,render,888,,documented-full,"shadow pass 1: copy the shadow buffer (GS page 0x2500) to half size: shadow pass 1: copies the shadow buffer (TBP param) to half size into a second target with bilinear sprite strips (32-px strips, PRIM 0x316 textured sprite), FRAME/SCISSOR/TEST/ALPHA set by A+D"
+0x00146E28,FUN_00146e28,S5b,render,928,lq/sq,documented-full,"shadow pass: offset blur of the half-size buffer (3 calls with different offsets): shadow blur pass (called 3 times with offsets): draws the half-size buffer onto itself with a sub-pixel UV offset (params 8/9), FIX alpha blend (ALPHA 0x68 with the given FIX), sprite strips"
+0x001471C8,FUN_001471c8,S5b,render,884,,documented-full,"shadow pass: blend the blurred shadow onto the frame buffer (alpha 0x28808080): shadow pass: blends the blurred half-size shadow onto the frame (alpha colour param, e.g. 0x28808080), optionally with a different TEST (param 8: 0x3C003 vs 0x30003)"
+0x00147540,FUN_00147540,S5b,render,740,,documented-full,"shadow pass: clear/prepare the half-size buffer: shadow pass: clears the half-size target with an untextured sprite strip (PRIM 0x246, colour 0x80808080)"
+0x00147828,FUN_00147828,S5b,render,776,,documented-full,"shadow pass: fill a buffer rectangle with a colour: shadow pass: fills a target rectangle with a given colour and FRAME mask (untextured sprite strips, PRIM 0x206)"
+0x00147B30,FUN_00147b30,S5b,render,192,,documented-full,wrap a GIF packet built by 0x00113B50 in a DMA cnt tag into bucket n
+0x00147BF0,FUN_00147bf0,S5a,render,1480,heap,documented-full,"create the aircraft models (*0x004106A4) from the mission aircraft container +0x16A0: model sets per aircraft, instances, textures (H name SetupAircraftModels): create the aircraft models (*0x004106A4) from the mission aircraft container +0x16A0: per aircraft its model set (BindModelData, CreateModelInstance), instance table 0x004106A8, textures; loads the sets through 0x00149FB8 (H name SetupAircraftModels)"
+0x001481B8,FUN_001481b8,S5b,render,336,,documented-full,per frame: update the node hierarchies of every aircraft model instance
+0x00148308,FUN_00148308,S5b,render,148,,documented-full,update the node hierarchy of aircraft model n instance 4 (+0x130)
+0x001483A0,FUN_001483a0,S5b,render,5924,lq/sq vu0,documented-full,"draw the player aircraft for a view: shadow (0x001418C8 + passes), light set, external model or cockpit by view mode (VU1 program 0x0029B0F0 or 0x00299820), glow pass, effects: draw the player aircraft for a view: shadow (DrawAircraftShadow and the shadow passes 0x00146AB0, 0x00146E28, 0x001471C8, 0x00147540, 0x00147828, map objects 0x00145578 below altitude 90), light set, the external model or the cockpit by the view byte (VU1 program 0x0029B0F0 or 0x00299820), glow pass (0x00142460), other aircraft (0x0014A588), overlays (0x0013ED58) and effects (0x00155900); draw-only"
+0x00149AC8,FUN_00149ac8,S5b,render,372,,documented-full,matrix of node id n of aircraft model slot (cached instance pointer)
+0x00149C40,FUN_00149c40,S5a,render,196,,documented-full,set animation track time on all instances of aircraft model n
+0x00149D60,FUN_00149d60,S5b,render,176,,documented-full,show/hide node id on all instances of aircraft model n
+0x00149E28,FUN_00149e28,S5a,render,16,,documented-full,aircraft model: store value n (+0x78)
+0x00149E38,FUN_00149e38,S5b,render,88,,documented-full,aircraft model: store point n (+0x50) and value (+0x70)
+0x00149E90,FUN_00149e90,S5a,render,36,,documented-full,aircraft model: flag 1 on/off (+0x40)
+0x00149EB8,FUN_00149eb8,S5a,render,12,,documented-full,set animation track time on the aircraft model (wrapper)
+0x00149EC8,FUN_00149ec8,S5b,render,32,,documented-full,"node matrix of the aircraft model (wrapper, cockpit flag from player +0x149)"
+0x00149FB8,FUN_00149fb8,S5a,render,1352,heap mmi,documented-full,load the aircraft model sets from the mission container +0x16A0: load the aircraft model sets from the mission container +0x16A0: per set BindModelData and CreateModelInstance
+0x0014A500,FUN_0014a500,S5b,render,132,,documented-full,upload the aircraft model texture once (flag 2) into bucket 9
+0x0014A588,FUN_0014a588,S5b,render,1200,,documented-full,"draw another aircraft model (light set, model emit): draw another aircraft model: light set, per part (0x00149AC8) the part matrix (sceVu0MulMatrix with the unit matrix) and EmitModelInstance; draw-only"
+0x0014AA38,FUN_0014aa38,S5b,render,64,,documented-full,store a value in the aircraft model tables (+0x40/+0x44)
+0x0014AA78,FUN_0014aa78,S5b,render,568,,documented-full,"draw a missile model (light set, VU0 clip, model emit); called by the missile draw 0x0014D798"
+0x0014ACB0,FUN_0014acb0,S5b,render,428,,documented-full,draw a special-weapon model (same as 0x0014AA78); called by 0x0014F940
+0x0014B9D8,CreateProjectilePools,S5a,weapons,52,heap,documented-full,"WorkHeapAlloc(0x8A50) projectile pools gp 0x004106AC and 0x160 at 0x004106B0, then ResetProjectiles"
+0x0014BA10,ResetProjectiles,S5a,weapons,228,,documented-full,clears occupancy masks/cursors at +0x8A00..+0x8A4F and calls the reset of the 7 projectile kinds
+0x0014BC80,FUN_0014bc80,S5a,weapons,44,,documented-full,bullets reset (256 x 0x40)
+0x0014C310,FUN_0014c310,S5b,render,1164,,documented-full,bullet tracers: GIF packets (bucket via 0x001041E8)
+0x0014CBD0,FUN_0014cbd0,S5a,weapons,52,,documented-full,missiles reset (32 x 0x60 at +0x4000)
+0x0014DA98,FUN_0014da98,S5a,weapons,52,,documented-full,flak reset (64 x 0x30 at +0x5C00)
+0x0014DF40,FUN_0014df40,S5a,weapons,52,,documented-full,shells reset (64 x 0x40 at +0x6800)
+0x0014E890,FUN_0014e890,S5a,weapons,52,,documented-full,bombs reset (64 x 0x40 at +0x7800)
+0x0014ECA0,FUN_0014eca0,S5a,weapons,52,,documented-full,cannon shells reset (8 x 0x40 at +0x8800)
+0x0014F5B0,FUN_0014f5b0,S5a,weapons,52,,documented-full,special weapons reset (32 x 0x80 at +0x4C00)
+0x00154638,FUN_00154638,S5a,effects,40,heap,documented-full,alloc effect model buffer gp 0x004106B4 (0x625A0)
+0x00154660,InitEffects,S5a,effects,996,vu0,documented-full,"effects init for a flight: per-mission setup 0x00184C20/0x001BDAD8, reset every pool, sky flags, VU0 random register seed (vrinit from 0x0040E7F0); called by StartFlightSystems, 0x0010B820 and replay start 0x001704A0"
+0x00155AE0,FUN_00155ae0,S5a,effects,8,,documented-full,empty hook (called by CreateFlightSystems)
+0x00155BC8,FUN_00155bc8,S5a,effects,132,,documented-full,"effect pool +0x00000 reset wrapper: init every record, clear the occupancy masks [missile smoke trail pool A (32 x 0x100); spawn 0x001DAB18 from all missile kinds]"
+0x00155C50,FUN_00155c50,S5a,effects,100,,documented-full,"effect pool +0x02010 reset wrapper: init every record, clear the occupancy masks [empty pool (reset/update wrappers do nothing)]"
+0x00155CB8,FUN_00155cb8,S5a,effects,132,,documented-full,"effect pool +0x30700 reset wrapper: init every record, clear the occupancy masks [explosion pool (explosion ids via 0x001F08E8/0x001F0910); draw 0x001F1678]"
+0x00155D40,FUN_00155d40,S5a,effects,132,,documented-full,"effect pool +0x31710 reset wrapper: init every record, clear the occupancy masks [blast ring for the dispenser/scatter/cluster weapons (H); via 0x001F67B8]"
+0x00155DC8,FUN_00155dc8,S5a,effects,132,,documented-full,"effect pool +0x38320 reset wrapper: init every record, clear the occupancy masks [debris/sparks (H); via 0x001FC6C0]"
+0x00155E50,FUN_00155e50,S5a,effects,132,,documented-full,"effect pool +0x22220 reset wrapper: init every record, clear the occupancy masks [large explosion column (H); spawn 0x001FF6C0 from the strike event, replay event 0xB, sequences]"
+0x00155ED8,FUN_00155ed8,S5a,effects,132,,documented-full,"effect pool +0x22C30 reset wrapper: init every record, clear the occupancy masks [player aircraft effect handle +0x244 (H); spawn 0x001E43D8]"
+0x00155F60,FUN_00155f60,S5a,effects,132,,documented-full,"effect pool +0x22E40 reset wrapper: init every record, clear the occupancy masks [player aircraft effect handle +0x244 flag 0x20 (H afterburner); spawn 0x001E7CF8]"
+0x00155FE8,FUN_00155fe8,S5a,effects,132,,documented-full,"effect pool +0x24650 reset wrapper: init every record, clear the occupancy masks [smoke plume (H); spawn 0x00200B00 from unit behaviours and sequences]"
+0x00156070,FUN_00156070,S5a,effects,132,,documented-full,"effect pool +0x247E0 reset wrapper: init every record, clear the occupancy masks [missile smoke trail pool B (same implementation as pool A)]"
+0x001560F8,FUN_001560f8,S5a,effects,132,,documented-full,"effect pool +0x268E0 reset wrapper: init every record, clear the occupancy masks [secondary effect (H); via 0x00203340]"
+0x00156180,FUN_00156180,S5a,effects,132,,documented-full,"effect pool +0x267F0 reset wrapper: init every record, clear the occupancy masks [unit behaviour effect (H); spawn 0x002061B0 from 0x0011D738]"
+0x00156208,FUN_00156208,S5a,effects,132,,documented-full,"effect pool +0x274F0 reset wrapper: init every record, clear the occupancy masks [cannon shell effect (H trail/flash); spawn 0x0020A3A0 from the cannon shell and sequences]"
+0x00156290,FUN_00156290,S5a,effects,132,,documented-full,"effect pool +0x28400 reset wrapper: init every record, clear the occupancy masks [large smoke/explosion (H); spawn 0x0020C2A0 from mission event command 0x2A, cannon shell flight, replay event 0x11]"
+0x00156318,FUN_00156318,S5a,effects,132,,documented-full,"effect pool +0x2B430 reset wrapper: init every record, clear the occupancy masks [player aircraft effect handle +0x2CC (H); spawn 0x001E9610]"
+0x001563A0,FUN_001563a0,S5a,effects,132,,documented-full,"effect pool +0x2B6C0 reset wrapper: init every record, clear the occupancy masks [player aircraft effect every 8 frames (H); spawn 0x001EB380]"
+0x00156428,FUN_00156428,S5a,effects,132,,documented-full,"effect pool +0x2DCD0 reset wrapper: init every record, clear the occupancy masks [ground fire (special weapon kind 12); spawn 0x001EC268]"
+0x001564B0,FUN_001564b0,S5a,effects,132,,documented-full,"effect pool +0x2E2E0 reset wrapper: init every record, clear the occupancy masks [fuel-air cloud (special weapon kind 11); spawn 0x001ED2E8]"
+0x00156538,FUN_00156538,S5a,effects,132,,documented-full,"effect pool +0x2E4F0 reset wrapper: init every record, clear the occupancy masks [rocket trail (weapon kind 2); spawn 0x001DD9D8]"
+0x001565C0,FUN_001565c0,S5a,effects,132,,documented-full,"effect pool +0x38B30 reset wrapper: init every record, clear the occupancy masks [shell trail (shell kind 3); spawn 0x001DF858]"
+0x00156648,FUN_00156648,S5a,effects,132,,documented-full,"effect pool +0x61940 reset wrapper: init every record, clear the occupancy masks [large cannon muzzle blast (class 8 cannon); spawn 0x001CF2E8, replay event 10, sequences]"
+0x001566D0,FUN_001566d0,S5a,effects,132,,documented-full,"effect pool +0x3FF90 reset wrapper: init every record, clear the occupancy masks [fire/smoke column (H); spawn 0x0019F230 from unit type 5 behaviour, vehicles type 0x60 and replay event 9]"
+0x00156758,FUN_00156758,S5a,effects,132,,documented-full,"effect pool +0x5FEE0 reset wrapper: init every record, clear the occupancy masks [unit special effect (H); spawn 0x0019D7E0 from unit behaviour 0x0011D738]"
+0x001567E0,FUN_001567e0,S5a,effects,132,,documented-full,"effect pool +0x61F00 reset wrapper: init every record, clear the occupancy masks [mission weather effect (missions 7/9); per-frame 0x001D0A78]"
+0x00156868,FUN_00156868,S5a,effects,132,,documented-full,"effect pool +0x5E490 reset wrapper: init every record, clear the occupancy masks [ground unit explosion variant (types 0x8C-0x8E, 0x92, 0x93, 0x98, 0xAF); spawn 0x001D32A0, replay event 5]"
+0x001568F0,FUN_001568f0,S5a,effects,132,,documented-full,"effect pool +0x62410 reset wrapper: init every record, clear the occupancy masks [mission 3 effect without draw (H); draw part 0x001D6578 called from the effect draw dispatcher]"
+0x00156978,FUN_00156978,S5a,effects,132,,documented-full,"effect pool +0x5D880 reset wrapper: init every record, clear the occupancy masks [touchdown effect (H tyre smoke/dust); spawn 0x001CD360 from the landing gear, replay event 0xC and sequences]"
+0x00156A00,FUN_00156a00,S5a,effects,132,,documented-full,"effect pool +0x61BE0 reset wrapper: init every record, clear the occupancy masks [cutscene effect (sequence, mission 0x24); spawn 0x001C9768]"
+0x00156A88,FUN_00156a88,S5a,effects,132,,documented-full,"effect pool +0x5E8A0 reset wrapper: init every record, clear the occupancy masks [mission effect without draw (mission 0xF, H); per-frame 0x001D4110]"
+0x00156B10,FUN_00156b10,S5a,effects,132,,documented-full,"effect pool +0x5F2C0 reset wrapper: init every record, clear the occupancy masks [building collapse effect (H); spawn 0x001BFEF0 from ground unit kills (types 0x75, 0xA1-0xA4) and replay event 6]"
+0x00156B98,FUN_00156b98,S5a,effects,132,,documented-full,"effect pool +0x61420 reset wrapper: init every record, clear the occupancy masks [sky effect (H sun/lens); update 0x001A2B30, draw 0x001A2BE0]"
+0x00156C20,FUN_00156c20,S5a,effects,144,,documented-full,"effect pool +0x4A830 reset wrapper: init every record, clear the occupancy masks [aircraft engine exhaust pair (H); spawn 0x00185818 from AI units and the player (handles +0x7C/+0x80)]"
+0x00156CB0,FUN_00156cb0,S5a,effects,132,,documented-full,"effect pool +0x604F0 reset wrapper: init every record, clear the occupancy masks [player trail effect (H contrails); spawn 0x00186928 from the player effects (+0x294[])]"
+0x00156D38,FUN_00156d38,S5a,effects,132,,documented-full,"effect pool +0x447D0 reset wrapper: init every record, clear the occupancy masks [impact explosion by surface (kinds 0-5) and cluster sub-blasts; spawn 0x00196760 / 0x00196828]"
+0x00156DC0,FUN_00156dc0,S5a,effects,132,,documented-full,"effect pool +0x61AD0 reset wrapper: init every record, clear the occupancy masks [large explosion (unit death animations, cannon collapse); spawn 0x0018EBE8, replay event 0xF]"
+0x00156E48,FUN_00156e48,S5a,effects,132,,documented-full,"effect pool +0x39F40 reset wrapper: init every record, clear the occupancy masks [unit special effect (H, mission 0xD); spawn 0x00199688 from unit behaviour 0x0011D738]"
+0x00156ED0,FUN_00156ed0,S5a,effects,132,,documented-full,"effect pool +0x5EAB0 reset wrapper: init every record, clear the occupancy masks [player gun effect (H tracer/muzzle flash); spawn 0x00181BB0 from FirePlayerWeapons and replay event 0xE]"
+0x00156F58,FUN_00156f58,S5a,effects,132,,documented-full,"effect pool +0x5D070 reset wrapper: init every record, clear the occupancy masks [AA gun burst effect (H); spawn 0x001828D0 from the ground AA gun and replay event 8]"
+0x00156FE0,FUN_00156fe0,S5a,effects,132,,documented-full,"effect pool +0x60D00 reset wrapper: init every record, clear the occupancy masks [cannon shell ground impact (H); spawn 0x001836B8 from the cannon shell terrain hit]"
+0x00157068,FUN_00157068,S5a,effects,132,,documented-full,"effect pool +0x5B050 reset wrapper: init every record, clear the occupancy masks [low-altitude surface spray under the player aircraft (H); spawn 0x0019C278 with the height above terrain]"
+0x001570F0,FUN_001570f0,S5a,effects,132,,documented-full,"effect pool +0x5FAD0 reset wrapper: init every record, clear the occupancy masks [ground unit destruction effect (H); spawn 0x00188A50 from the ground-unit kill and replay event 7]"
+0x00157178,FUN_00157178,S5a,effects,132,,documented-full,"effect pool +0x61010 reset wrapper: init every record, clear the occupancy masks [sub-effect of the damage smoke (H); slot helper 0x00188B18]"
+0x00157200,FUN_00157200,S5a,effects,132,,documented-full,"effect pool +0x47800 reset wrapper: init every record, clear the occupancy masks [damage smoke trail (H); spawn 0x0018AC00 from AI units and the player (flag 2, handle +0x84)]"
+0x00157288,FUN_00157288,S5a,effects,132,,documented-full,"effect pool +0x61630 reset wrapper: init every record, clear the occupancy masks [player aircraft effect at handles +0x2CC/+0x2D0 (H wingtip vapour); spawn 0x00184638]"
+0x00157310,FUN_00157310,S5a,effects,132,,documented-full,"effect pool +0x61DF0 reset wrapper: init every record, clear the occupancy masks [ground unit damage effect (H burning); spawn 0x001979F0 from ground units and replay event 0xD]"
+0x0015E648,thunk_FUN_00157310,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E650,thunk_FUN_00157288,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E658,thunk_FUN_00157200,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E660,thunk_FUN_00157178,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E668,thunk_FUN_001570f0,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E670,thunk_FUN_00157068,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E678,thunk_FUN_00156fe0,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E680,thunk_FUN_00156f58,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E688,thunk_FUN_00156ed0,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E690,thunk_FUN_00156e48,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E698,thunk_FUN_00156dc0,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6A0,thunk_FUN_00156d38,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6A8,thunk_FUN_00156cb0,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6B0,thunk_FUN_00156c20,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6B8,thunk_FUN_00156b98,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6C0,thunk_FUN_00156b10,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6C8,thunk_FUN_00156a88,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6D0,thunk_FUN_00156a00,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6D8,thunk_FUN_00156978,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6E0,thunk_FUN_001568f0,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6E8,thunk_FUN_00156868,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6F0,thunk_FUN_001567e0,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E6F8,thunk_FUN_00156758,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E700,thunk_FUN_001566d0,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E708,thunk_FUN_00156648,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E710,thunk_FUN_001565c0,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E718,thunk_FUN_00156538,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E720,thunk_FUN_001564b0,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E728,thunk_FUN_00156428,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E730,thunk_FUN_001563a0,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E738,thunk_FUN_00156318,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E740,thunk_FUN_00156290,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E748,thunk_FUN_00156208,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E750,thunk_FUN_00156180,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E758,thunk_FUN_001560f8,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E760,thunk_FUN_00156070,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E768,thunk_FUN_00155fe8,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E770,thunk_FUN_00155f60,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E778,thunk_FUN_00155ed8,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E780,thunk_FUN_00155e50,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E788,thunk_FUN_00155dc8,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E790,thunk_FUN_00155d40,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E798,thunk_FUN_00155cb8,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E7A0,thunk_FUN_00155c50,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E7A8,thunk_FUN_00155bc8,S5a,effects,8,,documented-full,thunk to an effect pool reset wrapper (called by the effects init 0x00154660)
+0x0015E7B0,FUN_0015e7b0,S5a,hud,104,heap,documented-full,"alloc per-player HUD state (0x74 each, gp table 0x00410AA0), then reset"
+0x0015E818,FUN_0015e818,S5a,hud,168,,documented-full,"reset HUD state: message ring, warning state (+0x6C..+0x70), radar mode +0x72, map-explored bits"
+0x0015E8C0,FUN_0015e8c0,S5a,hud,104,,documented-full,init map-explored bits (16 u16 rows at HUD +0x44) for every player from a mission table
+0x0016DA60,FUN_0016da60,S5a,mission,8,,documented-full,empty hook (create)
+0x0016DA78,FUN_0016da78,S5a,hud,104,heap,documented-full,"alloc per-player centre-message state (6 bytes, gp 0x00410AF0)"
+0x0016DAE0,FUN_0016dae0,S5a,hud,92,,documented-full,reset per-player centre messages
+0x0016DE20,FUN_0016de20,S5a,replay,40,heap,documented-full,"create replay recorder (0x20, gp 0x00410AF8) + second effect pool + sound state pool"
+0x0016DE48,FUN_0016de48,S5a,replay,176,heap,documented-full,replay buffer: size = remaining work heap rounded down to 256 KiB minus 256 KiB (minimum 2 MiB); demo mode uses the demo DATA instead
+0x0016DEF8,FUN_0016def8,S5a,replay,140,lq/sq,documented-full,reset replay read/write pointers
+0x0016FEE8,FUN_0016fee8,S5a,replay,36,heap,documented-full,allocate the replay copy of the object/effect pool (0x8A50)
+0x00170460,FUN_00170460,S5a,replay,64,heap,documented-full,allocate the replay copy of the particle pool (0x625A0) and effect slot table
+0x00176908,FUN_00176908,S5a,mission,16,,documented-full,reset mission event queue counters (PTR 0x00410B08 +0x14/+0x18)
+0x0017B2C8,FUN_0017b2c8,S5a,mission,36,heap,documented-full,alloc waypoint list (4 entries)
+0x0017B2F0,FUN_0017b2f0,S5a,mission,60,,documented-full,reset waypoint list
+0x0017B708,FUN_0017b708,S5a,mission,36,heap,documented-full,alloc proximity-message list A
+0x0017B730,FUN_0017b730,S5a,mission,16,,documented-full,reset proximity-message list A
+0x0017B868,FUN_0017b868,S5a,mission,36,heap,documented-full,alloc ordered proximity-message list (mission id 1)
+0x0017B890,FUN_0017b890,S5a,mission,16,,documented-full,reset ordered proximity-message list
+0x0017B978,FUN_0017b978,S5a,mission,36,heap,documented-full,alloc proximity list C (mission id 8)
+0x0017B9A0,FUN_0017b9a0,S5a,mission,16,,documented-full,reset proximity list C
+0x0017BB38,FUN_0017bb38,S5a,mission,28,,documented-full,"trial mode: record buffer pointers (0x002A0D34 ghost data, 0x002B7C38)"
+0x0017BC70,FUN_0017bc70,S5a,mission,248,,documented-full,trial mode: select the ghost record table by trial id 0x15-0x19
+0x0017BF90,FUN_0017bf90,S5a,mission,8,,documented-full,clear tutorial hint mask
+0x0017CBE0,FUN_0017cbe0,S5a,hud,160,,documented-full,replay/pause HUD state init
+0x0017CCA8,FUN_0017cca8,S5a,hud,528,heap,documented-full,load replay/pause HUD textures from mission block 1 (GIM sets)
+0x0017D8B0,FUN_0017d8b0,S5a,hud,56,heap,documented-full,create replay HUD
+0x0017DC98,FUN_0017dc98,S5a,mission,36,heap,documented-full,"create pause menu state (0x10, gp 0x00410B94)"
+0x0017DCC0,FUN_0017dcc0,S5a,mission,420,,documented-full,"pause menu reset (from FlightPlayFrame when paused): fades off; list by mission kind: campaign/free 0x002B8370 (RETURN TO GAME, REPLAY, RETRY, QUIT MISSION, CAPTIONS, HUD) or 0x002B8390 without REPLAY when the replay is shorter than 0xB5 frames; trial 0x002B83D0/0x002B83F0; VS 0x002B8410; tutorial 0x002B83B0. The HUD item is only shown when 0x002A0318 bit 0 (game cleared once) is set (item count 6/5 instead of 5/4)"
+0x0017E7D0,FUN_0017e7d0,S5a,mission,220,,documented-full,"menu layout init (16:9 aware column x, item heights)"
+0x0017E8B0,FUN_0017e8b0,S5a,mission,340,,documented-full,menu open/close animation state
+0x0017F6D8,FUN_0017f6d8,S5a,effects,96,rnd-table,documented-full,effect pool +0x5EAB0 record init [player gun effect (H tracer/muzzle flash); spawn 0x00181BB0 from FirePlayerWeapons and replay event 0xE]: frame = 0; variant = int((NextRandomFloat()+1)*128) % 43
+0x00181CB8,FUN_00181cb8,S5a,effects,88,rnd-table,documented-full,effect pool +0x5D070 record init [AA gun burst effect (H); spawn 0x001828D0 from the ground AA gun and replay event 8]: age = 0; phase = int((r+1)*128)-128 and a second NextRandomFloat value at +0x18
+0x00182948,FUN_00182948,S5a,effects,88,rnd-table,documented-full,effect pool +0x60D00 record init [cannon shell ground impact (H); spawn 0x001836B8 from the cannon shell terrain hit]: age = 0; phase and a NextRandomFloat value (+0x24/+0x28)
+0x00183760,FUN_00183760,S5a,effects,52,rand,documented-full,effect pool +0x61630 record init [player aircraft effect at handles +0x2CC/+0x2D0 (H wingtip vapour); spawn 0x00184638]: age = 0; phase = (rand() >> 15) & 0x7F
+0x00184C20,FUN_00184c20,S5a,effects,252,,documented-full,effects init part: clear shared effect state (called by 0x00154660)
+0x00184DF0,FUN_00184df0,S5a,effects,20,,documented-full,effect pool +0x4A830 record init [aircraft engine exhaust pair (H); spawn 0x00185818 from AI units and the player (handles +0x7C/+0x80)]: clears the two engine-exhaust state words and counters (+0x200..+0x20A)
+0x001859D8,FUN_001859d8,S5a,effects,8,,documented-full,effect pool +0x604F0 record init [player trail effect (H contrails); spawn 0x00186928 from the player effects (+0x294[])]: age (+0x30) = 0
+0x00186DA0,FUN_00186da0,S5a,effects,8,,documented-full,effect pool +0x5FAD0 record init [ground unit destruction effect (H); spawn 0x00188A50 from the ground-unit kill and replay event 7]: age = 0
+0x00188B18,FUN_00188b18,S5a,effects,112,rnd-table,documented-full,effect pool +0x61010 record init [sub-effect of the damage smoke (H); slot helper 0x00188B18]: age = 0; variant = int((r+1)*128) % 67; NextRandomFloat value at +0x38
+0x00189B88,FUN_00189b88,S5a,effects,112,rnd-table,documented-full,"effect pool +0x47800 record init [damage smoke trail (H); spawn 0x0018AC00 from AI units and the player (flag 2, handle +0x84)]: age = 0; variant % 67 and a NextRandomFloat value"
+0x0018AF40,FUN_0018af40,S5a,effects,148,rnd-table,documented-full,"effect pool +0x61AD0 record init [large explosion (unit death animations, cannon collapse); spawn 0x0018EBE8, replay event 0xF]: age = 0; variant % 67; lifetime +0x14 = 132 frames (the 300-frame value for mission 4 is overwritten right after: original behaviour, keep) [reads the random table (NextRandomFloat) at 1 call site; validation.md V-8]"
+0x0018EC70,FUN_0018ec70,S5a,effects,112,rnd-table,documented-full,effect pool +0x447D0 record init [impact explosion by surface (kinds 0-5) and cluster sub-blasts; spawn 0x00196760 / 0x00196828]: age = 0; variant % 67 and a NextRandomFloat value
+0x00196908,FUN_00196908,S5a,effects,112,rnd-table,documented-full,effect pool +0x61DF0 record init [ground unit damage effect (H burning); spawn 0x001979F0 from ground units and replay event 0xD]: age = 0; variant % 67 and a NextRandomFloat value
+0x00197A98,FUN_00197a98,S5a,effects,136,rnd-table,documented-full,"effect pool +0x39F40 record init [unit special effect (H, mission 0xD); spawn 0x00199688 from unit behaviour 0x0011D738]: age = 0; lifetime +0x1C = 192 +- 24 (random), NextRandomFloat value, phase"
+0x00199788,FUN_00199788,S5a,effects,88,rnd-table,documented-full,effect pool +0x5B050 record init [low-altitude surface spray under the player aircraft (H); spawn 0x0019C278 with the height above terrain]: age = 0; NextRandomFloat value and phase
+0x0019C888,FUN_0019c888,S5a,effects,68,rand,documented-full,effect pool +0x5FEE0 record init [unit special effect (H); spawn 0x0019D7E0 from unit behaviour 0x0011D738]: age = 0; phase = (rand()+rand()) & 0x7F
+0x0019D9C0,FUN_0019d9c0,S5a,effects,692,rnd-table,documented-full,"effect pool +0x3FF90 record init [fire/smoke column (H); spawn 0x0019F230 from unit type 5 behaviour, vehicles type 0x60 and replay event 9]: age 0; lifetime in frames = (1 + r·k) × base × 60 by unit type +0x2E (0xD0/default 18 s base, 0xD2/0xD3 22, 0xD4 13, 0xD5 12, 0xDF const, 0xE0 14, 0xE1 16, 0xE7 10, type 0 10, type 0x60 exactly 2 s); random phase"
+0x0019FF90,FUN_0019ff90,S5a,effects,92,rand,documented-full,"start a lightning flash (D_004117E8 = 2, D_004117EC = 1) (H)"
+0x001A1C08,FUN_001a1c08,S5a,effects,16,,documented-full,"effect pool +0x61420 record init [sky effect (H sun/lens); update 0x001A2B30, draw 0x001A2BE0]: age = 0, handle = -1"
+0x001BDAD8,FUN_001bdad8,S5a,effects,288,rnd-table,documented-full,"effects init part: per-mission effect setup (mission 0x12 and 8 options): per-mission effect setup: fills 128 random unit vectors (x, y, z in -1..1, w 1) at 0x002B91C0 from NextRandomFloat; mission 0x12: allocate the pool +0x62410 record (0x001D6518); 0x0019FF90; mission 8: 128-entry sin/cos table at 0x002B8C3C/0x002B8E3C (angle i·30·const)"
+0x001BE778,FUN_001be778,S5a,effects,8,,documented-full,"effect pool +0x5F2C0 record init [building collapse effect (H); spawn 0x001BFEF0 from ground unit kills (types 0x75, 0xA1-0xA4) and replay event 6]: age = 0"
+0x001C0010,FUN_001c0010,S5a,effects,80,rand,documented-full,"effect pool +0x61BE0 record init [cutscene effect (sequence, mission 0x24); spawn 0x001C9768]: age = 0; phase = (rand()+rand()) & 0x1FFF; lifetime 240"
+0x001C9838,FUN_001c9838,S5a,effects,168,rand rnd-table,documented-full,"effect pool +0x5D880 record init [touchdown effect (H tyre smoke/dust); spawn 0x001CD360 from the landing gear, replay event 0xC and sequences]: age 0, phase (rand()+rand())/2, NextRandomFloat value; lifetime 180 frames for mission ids < 0x13, else (c + 2c·r)·60 with c = 0x002B8538 +0x20"
+0x001CD400,FUN_001cd400,S5a,effects,88,rand rnd-table,documented-full,"effect pool +0x61940 record init [large cannon muzzle blast (class 8 cannon); spawn 0x001CF2E8, replay event 10, sequences]: age = 0; phase = (rand()+rand()) & 0x7F; NextRandomFloat value; lifetime 360"
+0x001CF398,FUN_001cf398,S5a,effects,156,rand,documented-full,"effect pool +0x61F00 record init [mission weather effect (missions 7/9); per-frame 0x001D0A78]: age 0, handle -1, phase (rand()·3) & 0x1FF; clears the per-particle arrays when a count is set"
+0x001D0B40,FUN_001d0b40,S5a,effects,56,rand rnd-table,documented-full,"effect pool +0x5E490 record init [ground unit explosion variant (types 0x8C-0x8E, 0x92, 0x93, 0x98, 0xAF); spawn 0x001D32A0, replay event 5]: age = 0; phase = rand() >> 15; NextRandomFloat value"
+0x001D34F0,FUN_001d34f0,S5a,effects,124,rand rnd-table,documented-full,"effect pool +0x5E8A0 record init [mission effect without draw (mission 0xF, H); per-frame 0x001D4110]: value -100.0, age 0, phase (rand()+rand())/2, lifetime (4 - 2r)*60 frames [reads the random table (NextRandomFloat) at 1 call site; validation.md V-8]"
+0x001D4200,FUN_001d4200,S5a,effects,8,,documented-full,effect pool +0x62410 record init [mission 3 effect without draw (H); draw part 0x001D6578 called from the effect draw dispatcher]: age = 0
+0x001D6518,FUN_001d6518,S5a,effects,92,,documented-full,effect helper (92 B): no calls (data/maths): allocate the single record of pool +0x62410 (0x001568F0 / 0x001D8998) and init it (0x001D4200)
+0x001D8998,FUN_001d8998,S5a,effects,244,,documented-full,"allocate the lowest free record of an effect pool (occupancy mask scan, count +4), -1 when full"
+0x001DB0A8,FUN_001db0a8,S5a,effects,24,,documented-full,effect pool +0x00000 record init [missile smoke trail pool A (32 x 0x100); spawn 0x001DAB18 from all missile kinds]: clears the trail segment counters (+0xE8..+0xF4)
+0x001DDBD0,FUN_001ddbd0,S5a,effects,108,rnd-table,documented-full,"effect pool +0x2E4F0 record init [rocket trail (weapon kind 2); spawn 0x001DD9D8]: clears the counters, segment step 12, start delay 60, random LCG seed = int(r · const) + effect frame counter"
+0x001DF9A0,FUN_001df9a0,S5a,effects,20,,documented-full,effect pool +0x38B30 record init [shell trail (shell kind 3); spawn 0x001DF858]: clears the trail counters (+0x34..+0x44)
+0x001E4588,FUN_001e4588,S5a,effects,60,,documented-full,"effect pool +0x22C30 record init [player aircraft effect handle +0x244 (H); spawn 0x001E43D8]: clears the state bytes +0x39/+0x3A, timer +0x24 and the four words +0x28..+0x34"
+0x001E7FF0,FUN_001e7ff0,S5a,effects,20,,documented-full,effect pool +0x22E40 record init [player aircraft effect handle +0x244 flag 0x20 (H afterburner); spawn 0x001E7CF8]: clears +0x48/+0x4C/+0x50
+0x001E97F0,FUN_001e97f0,S5a,effects,24,,documented-full,effect pool +0x2B430 record init [player aircraft effect handle +0x2CC (H); spawn 0x001E9610]: clears the counters +0x20/+0x22 and +0x40/+0x44
+0x001EB708,FUN_001eb708,S5a,effects,8,,documented-full,effect pool +0x2B6C0 record init [player aircraft effect every 8 frames (H); spawn 0x001EB380]: age (+0x110) = 0
+0x001EC458,FUN_001ec458,S5a,effects,124,rnd-table,documented-full,effect pool +0x2DCD0 record init [ground fire (special weapon kind 12); spawn 0x001EC268]: age and lifetime 0; random phase = float-to-int of (NextRandomFloat · constant 0x0040FE1C + effect frame counter +0x6249C)
+0x001ED3C8,FUN_001ed3c8,S5a,effects,8,,documented-full,effect pool +0x2E2E0 record init [fuel-air cloud (special weapon kind 11); spawn 0x001ED2E8]: age = 0
+0x001F1300,FUN_001f1300,S5a,effects,8,,documented-full,effect pool +0x30700 record init [explosion pool (explosion ids via 0x001F08E8/0x001F0910); draw 0x001F1678]: age = 0
+0x001F38F0,FUN_001f38f0,S5a,effects,32,,documented-full,effect pool +0x31710 record init [blast ring for the dispenser/scatter/cluster weapons (H); via 0x001F67B8]: clears the ring counters (+0x134/+0x138/+0x184/+0x188/+0x198)
+0x001F6978,FUN_001f6978,S5a,effects,8,,documented-full,effect pool +0x38320 record init [debris/sparks (H); via 0x001FC6C0]: age = 0
+0x001FC818,FUN_001fc818,S5a,effects,12,,documented-full,"effect pool +0x22220 record init [large explosion column (H); spawn 0x001FF6C0 from the strike event, replay event 0xB, sequences]: age and lifetime (s16 +0x10/+0x12) = 0"
+0x001FF7E8,FUN_001ff7e8,S5a,effects,8,,documented-full,effect pool +0x24650 record init [smoke plume (H); spawn 0x00200B00 from unit behaviours and sequences]: age (s16 +0x20) = 0
+0x00203480,FUN_00203480,S5a,effects,8,,documented-full,effect pool +0x268E0 record init [secondary effect (H); via 0x00203340]: age = 0
+0x00206588,FUN_00206588,S5a,effects,104,rnd-table,documented-full,"effect pool +0x267F0 record init [unit behaviour effect (H); spawn 0x002061B0 from 0x0011D738]: clears the segment ring (+0xB8..+0xC8), random seed +0x30, handle +0xD4 = -1"
+0x0020A4A0,FUN_0020a4a0,S5a,effects,20,,documented-full,effect pool +0x274F0 record init [cannon shell effect (H trail/flash); spawn 0x0020A3A0 from the cannon shell and sequences]: clears the counters +0xA4/+0xA8/+0xD0/+0xD4
+0x0020C378,FUN_0020c378,S5a,effects,8,,documented-full,"effect pool +0x28400 record init [large smoke/explosion (H); spawn 0x0020C2A0 from mission event command 0x2A, cannon shell flight, replay event 0x11]: age = 0"
+0x002155D0,FUN_002155d0,S5a,sound,232,,documented-full,engine sound: copy a 0x10E-byte engine curve set for player n (0x00423F50)
+0x00215838,FUN_00215838,S5a,sound,56,mmi,documented-full,engine sound: stop layer n of player p
+0x00215BD0,FUN_00215bd0,S5a,sound,256,,documented-full,engine sound: reset state for mode (1 or 2 players)
+0x00215CD0,FUN_00215cd0,S5a,sound,56,,documented-full,engine sound: set bank id and curve set for player n
+0x00215D08,FUN_00215d08,S5a,sound,20,,documented-full,engine sound: set the speed/volume/pitch limits
+0x002162F0,FUN_002162f0,S5a,sound,88,,documented-full,"engine sound start: resolve bank ids, enable, SOUND command 6 (channel 0, 3)"
+0x00216348,FUN_00216348,S5a,sound,296,mmi,documented-full,"engine sound stop: clear state, stop all layers"
+0x00216520,FUN_00216520,S5a,sound,8,,documented-full,engine sound: set mode D_00410CDC
+0x00216528,FUN_00216528,S5a,sound,40,,documented-full,"engine sound: default limits (100, 100, 256, 100)"
+0x00216550,FUN_00216550,S5a,sound,32,,documented-full,ambient channel n: set two parameters (0x0033D860 + n*0xC0)
+0x00216570,FUN_00216570,S5a,sound,96,,documented-full,ambient channel n: register a sound bank (0x00219810)
+0x002165D0,FUN_002165d0,S5a,sound,216,,documented-full,engine/ambient sound init for 1 or 2 players
+0x002166D0,FUN_002166d0,S5a,sound,84,,documented-full,enable engine/ambient sounds
+0x00216728,FUN_00216728,S5a,sound,104,,documented-full,"disable engine/ambient sounds, stop voices"
+0x00216790,FUN_00216790,S5a,sound,28,,documented-full,wrapper: set engine sound mode
+0x00218B28,FUN_00218b28,S5a,sound,204,,documented-full,"unregister banks from index n, restore the SPU top"
+0x00218ED0,FUN_00218ed0,S5a,sound,8,,documented-full,get the SPU base D_00410D04
+0x00218F00,FUN_00218f00,S5a,sound,24,,documented-full,bank id of index n
+0x00219798,FUN_00219798,S5a,sound,36,,documented-full,stop a voice
+0x0021A8D8,FUN_0021a8d8,S5a,sound,16,,documented-full,set the Doppler parameters
+0x0021AEE0,FUN_0021aee0,S5a,sound,52,,documented-full,clear the queued positional lists
+0x0021B030,FUN_0021b030,S5a,sound,244,,documented-full,"reset the per-player listener blocks (0x0042AA10, 0x1020 each)"
+0x0021E798,FUN_0021e798,S5a,sound,184,,documented-full,"VAG slot fade mode (0 restore, 1 fade, 2 mute) with 0x0021F190"
+0x00239310,FUN_00239310,S5a,mission,812,,documented-full,"loading screen: draw the progress graphic with fade (cosf, floorf), packet via 0x002276E8: loading screen progress graphic: textured sprite with fade (param 1 is the alpha), colour by progress (0x00104FC8), and after 8 seconds a pulsing second sprite (cosf of the fractional time)"
+0x00239640,FUN_00239640,S5a,mission,108,,documented-full,"loading screen: mission number to show (game state +0x27: 0x24 -> 18, 0x25 -> 1, campaign ids -> 0x00226320)"
+0x002396B0,FUN_002396b0,S5a,mission,816,,documented-full,"loading screen: mission objective text (""DESTROY ALL INDICATED TARGETS"" tables 0x003AEE28 / 0x003AEDE0 by difficulty) typed out with a menu SE: loading screen objective text: mission number and title (title table 0x003844A0), objective text by difficulty (tables 0x003AEE28 / 0x003AEDE0) typed out with time, a blinking prompt, menu SE 9 every third frame while typing"
+0x002399E0,FUN_002399e0,S5a,mission,384,,documented-full,loading screen: background rectangle packet (GIF sprite over the draw buffer)
+0x00239B60,FUN_00239b60,S5a,mission,244,,documented-full,"loading screen draw: text 0x002396B0 and background 0x002399E0, menu SE 0xD once, fade by frame count"
+0x0024CBE0,FUN_0024cbe0,S5a,results,492,heap,documented-full,"create the mission result record (gp D_00411578 -> 0x0042D2C0): unit-group records 0x0042D300, buffers 0x0043A300, per-player summary (WorkHeapAlloc 8); called by the mission setup 0x0010FA70"
+0x002508E0,FUN_002508e0,S5a,radio,28,,documented-full,clear the radio state block
+0x002509F8,FUN_002509f8,S5a,radio,568,,documented-full,"radio database init from mission data blocks (message records, speakers, fonts); calls 0x00259280: radio database init from the mission blocks: clears the 512-entry index 0x004BD76C, fonts (0x00251E48), message string pointers per record (strings end at codes >= 0xFFFE), the 77-entry name table 0x004BCF70, speaker data (0x00259280), the tutorial extra block pointer 0x00411868 (set only when the first word of the bank's first section is 0x13, used by the control hints 0x00258690), 0x002583C0"
+0x00250C30,FUN_00250c30,S5a,radio,1052,,documented-full,"radio system init for a mission: clear tables, load database, reset queues and slots (prints a debug line): radio bank setup from a mission radio block: clears the 0xA80-entry message pointer table 0x004BA570, stores the block header (section offsets and counts in 0x004BA300..0x004BA32A), fills the pointer table section by section (8-, 12- and 8-byte records, then the speaker range and the 40-entry common range, -1 outside the valid windows), loads the extra block (0x00254E48) when all three sections exist, then inits the database (0x002509F8), the played lists (0x002556A0, 0x00253038), clears the 20-entry candidate ring 0x004BA330 and the 16-entry ring 0x004BA470 (0x00254FB0), resets 0x0041186C/0x00411870; debug printf "" %x %x %x %x"" of the 4 header words"
+0x00253038,FUN_00253038,S5a,radio,28,,documented-full,clear the 6 request queues
+0x00254E48,FUN_00254e48,S5a,radio,52,,documented-full,set 3 rotating pointers (0x004BD9A0)
+0x00254FB0,FUN_00254fb0,S5a,radio,40,,documented-full,"reset a candidate entry (id -1, kind 8, 0x1B)"
+0x002556A0,FUN_002556a0,S5a,radio,304,,documented-full,reset the 2 voice channels and the played-id history
+0x00257430,FUN_00257430,S5a,input,56,,documented-full,reset a rumble slot
+0x00257468,FUN_00257468,S5a,input,76,,documented-full,"reset rumble slot (player % 2, n % 2)"
+0x00257630,FUN_00257630,S5a,input,152,,documented-full,"reset all rumble state, pad actuators off"
+0x002583C0,FUN_002583c0,S5a,radio,60,,documented-full,"reset the tutorial control-hint state (request masks 0x004BE040/0x004BE044, 13 icon counters 0x004BE048)"
+0x00259280,FUN_00259280,S5a,radio,192,,documented-full,"bind a scripted subtitle timeline from the radio database (track count u16 at +2, track offsets)"
+0x002594F0,FUN_002594f0,S5a,radio,148,rand,documented-full,"arm the periodic chatter timers with rand(): next event in 900..1079 frames, hold 16..31, radio at 180..299 (called by StartFlightSystems)"

@@ -62,6 +62,8 @@ s32 scePadRead(s32 port, s32 slot, u32 rdata) {
     }
     const Port& p = g_ports[static_cast<size_t>(port)];
     GRef<u8>(rdata + 0) = 0;
+    // Byte 31 reads 0x5A on PCSX2 2.8.2 with a connected pad (run 06, pad record 0x004121D8 + 0x37).
+    GRef<u8>(rdata + 31) = 0x5A;
     GRef<u8>(rdata + 1) = !p.analog ? 0x41 : (p.pressure ? 0x79 : 0x73);
     GRef<u8>(rdata + 2) = static_cast<u8>(st.buttons & 0xFF);
     GRef<u8>(rdata + 3) = static_cast<u8>(st.buttons >> 8);

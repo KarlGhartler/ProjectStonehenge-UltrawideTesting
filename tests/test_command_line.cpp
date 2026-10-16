@@ -29,3 +29,28 @@ TEST_CASE("command line: help and version") {
     REQUIRE(r.options.debug_overlay.has_value());
     CHECK_FALSE(*r.options.debug_overlay);
 }
+
+TEST_CASE("command line: --vk-validation (development builds only)") {
+    const char* argv[] = {"ac04port", "--vk-validation"};
+    auto r = ParseCommandLine(2, argv);
+#if AC04_DEV_BUILD
+    CHECK(r.errors.empty());
+    CHECK(r.options.vk_validation);
+#else
+    CHECK(r.errors.size() == 1);
+#endif
+}
+
+TEST_CASE("command line: determinism options (development builds only)") {
+    const char* argv[] = {"ac04port", "--record-input", "--replay-input", "D:/in.ac4i", "--hash-log", "--stress-host"};
+    auto r = ParseCommandLine(6, argv);
+#if AC04_DEV_BUILD
+    CHECK(r.errors.empty());
+    CHECK(r.options.record_input);
+    CHECK(r.options.replay_input == "D:/in.ac4i");
+    CHECK(r.options.hash_log);
+    CHECK(r.options.stress_host);
+#else
+    CHECK(r.errors.size() == 4);
+#endif
+}

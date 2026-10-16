@@ -174,11 +174,11 @@ void SceneStub() {
 
 // Handlers of scenes 1-7 at their original addresses (scene table 0x0029FDA0).
 AC04_GUEST_FUNCTION(0x00211C58, SceneStub<1>);  // SceneMenuEntry (dead)
-AC04_GUEST_FUNCTION(0x0010A030, SceneStub<2>);  // SceneFlight
+// Scene 2 (SceneFlight, 0x0010A030) is translated in flight_load.cpp.
 AC04_GUEST_FUNCTION(0x00211CA8, SceneStub<3>);  // SceneMovie (dead)
-AC04_GUEST_FUNCTION(0x002262D0, SceneStub<4>);  // SceneMenu
+// Scene 4 (SceneMenu, 0x002262D0) is translated in menu.cpp.
 AC04_GUEST_FUNCTION(0x00246E18, SceneStub<5>);  // SceneResults
-AC04_GUEST_FUNCTION(0x002613F0, SceneStub<6>);  // SceneStartup
+// Scene 6 (SceneStartup, 0x002613F0) is translated in startup.cpp.
 AC04_GUEST_FUNCTION(0x00261680, SceneStub<7>);  // SceneHddError
 
 }  // namespace ac04::game

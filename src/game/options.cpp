@@ -85,10 +85,52 @@ void func_00105690(u32 p) {
     GRef<u8>(p + 2) = 0;
 }
 
+// EE: 0x001056A8
+// Screen position offsets of the screen-option block (+2 dx, +3 dy) back to 0.
+void ResetScreenPosition(u32 p) {
+    GRef<u8>(p + 3) = 0;
+    GRef<u8>(p + 2) = 0;
+}
+
+// EE: 0x001056B8
+// Brightness of the screen-option block back to the neutral level 3.
+void ResetBrightness(u32 p) { GRef<u8>(p + 1) = 3; }
+
+// EE: 0x00105448
+// Clamps the records block (0x002A0318) before saving (frontend.md "Save / load"): credits
+// 0..999,999,999 (signed), the totals +0x38 to 0x80BEFBC4 and +0x3C/+0x40 to 999,999, the
+// per-aircraft sortie counts to 999,999 and the sortie count +0x44 to 0x3C14D81 (unsigned).
+void ClampStatistics(u32 p) {
+    s32& credits = GRef<s32>(p + 0xA18);
+    if (!(-1 < credits)) {
+        credits = 0;
+    } else if (999999999 < credits) {
+        credits = 999999999;
+    }
+    if (0x80BEFBC4u < GRef<u32>(p + 0x38)) GRef<u32>(p + 0x38) = 0x80BEFBC4u;
+    if (999999u < GRef<u32>(p + 0x3C)) GRef<u32>(p + 0x3C) = 999999u;
+    if (999999u < GRef<u32>(p + 0x40)) GRef<u32>(p + 0x40) = 999999u;
+    for (u32 a = 0; a < 0x15; ++a) {
+        for (u32 c = 0; c < 3; ++c) {
+            u32& n = GRef<u32>(p + 0x48 + a * 0xC + c * 4);
+            if (999999u < n) n = 999999u;
+        }
+    }
+    if (0x3C14D81u < GRef<u32>(p + 0x44)) GRef<u32>(p + 0x44) = 0x3C14D81u;
+}
+
 // EE: 0x001056C8
 void func_001056C8(u32 p) {
     GRef<u16>(p + 2) = 8;
     GRef<u16>(p) = 8;
+}
+
+// EE: 0x00105418
+// New campaign: resets the campaign selection block (0x002A15B8) and the progress/save block
+// (0x002A0318). Called by the main menu's NEW GAME items 9-14 (frontend.md).
+void ResetCampaignData() {
+    func_00105728(0x002A15B8);
+    func_001056D8(0x002A0318);
 }
 
 // EE: 0x001056D8

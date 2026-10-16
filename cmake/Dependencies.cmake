@@ -67,7 +67,24 @@ FetchContent_Declare(imgui
     URL_HASH SHA256=21d8a0a565e85dce943e375db00812c2f3f0ab21f3f0f7964e364a63422d7f99
     SOURCE_SUBDIR cmake-not-used)
 
-FetchContent_MakeAvailable(SDL3 Vulkan-Headers volk VulkanMemoryAllocator glslang nlohmann_json doctest imgui)
+# --- AMD FidelityFX FSR 1 (MIT): movie upscaling stage (ADR-006 §5), shader headers only --------
+# ffx_a.h + ffx_fsr1.h are included by our GLSL shaders (A_GLSL). The repo's sample is not built.
+FetchContent_Declare(FidelityFX-FSR
+    URL      https://github.com/GPUOpen-Effects/FidelityFX-FSR/archive/refs/tags/v1.0.2.tar.gz
+    URL_HASH SHA256=92ee8f9630364ec3ad7fc16af5a990601ebf18142571527ed672b79b79d04acd
+    SOURCE_SUBDIR cmake-not-used)
+
+# --- libmpeg2 (GPL-2.0-or-later): MPEG-2 video decoder behind sceMpeg* (slice S3) -------------
+# Release archive from the VideoLAN contrib mirror (the sourceforge download page is HTML only).
+# Built by us as plain C (no MMX/AltiVec paths) with our own config.h; libvo and the converters are
+# not used: the IPU colour conversion is done in src/sce/libmpeg.cpp.
+FetchContent_Declare(libmpeg2
+    URL      https://download.videolan.org/contrib/libmpeg2/libmpeg2-0.5.1.tar.gz
+    URL_HASH SHA256=dee22e893cb5fc2b2b6ebd60b88478ab8556cb3b93f9a0d7ce8f3b61851871d4
+    SOURCE_SUBDIR cmake-not-used)
+
+FetchContent_MakeAvailable(SDL3 Vulkan-Headers volk VulkanMemoryAllocator glslang nlohmann_json doctest imgui
+    FidelityFX-FSR libmpeg2)
 
 # Group third-party targets in the Visual Studio solution.
 foreach(t IN ITEMS SDL3-static glslang glslang-standalone)
@@ -102,3 +119,41 @@ set_property(TARGET ac04_imgui PROPERTY FOLDER "third_party")
 
 add_library(ac04_doctest INTERFACE)
 target_include_directories(ac04_doctest SYSTEM INTERFACE "${doctest_SOURCE_DIR}")
+
+# FSR 1 shader headers for cmake/Shaders.cmake (GLSL include path); no C++ target uses them.
+set(AC04_FSR1_INCLUDE_DIR "${fidelityfx-fsr_SOURCE_DIR}/ffx-fsr" CACHE INTERNAL "FSR 1 shader headers")
+
+# libmpeg2: the decoder core only (decode, header, slice, idct, motion_comp, alloc, cpu_*).
+set(AC04_MPEG2_CONFIG_DIR "${CMAKE_BINARY_DIR}/libmpeg2-config")
+file(WRITE "${AC04_MPEG2_CONFIG_DIR}/config.h"
+"/* config.h for libmpeg2 0.5.1, written by cmake/Dependencies.cmake (AC04 port): portable C only. */
+#define HAVE_STDLIB_H 1
+#define HAVE_STRING_H 1
+#define STDC_HEADERS 1
+#define VERSION \"0.5.1\"
+#if defined(_MSC_VER) && !defined(__cplusplus)
+#define inline __inline
+#endif
+#if defined(_MSC_VER)
+#define restrict __restrict
+#else
+#define restrict __restrict__
+#endif
+")
+add_library(ac04_mpeg2 STATIC
+    "${libmpeg2_SOURCE_DIR}/libmpeg2/alloc.c"
+    "${libmpeg2_SOURCE_DIR}/libmpeg2/cpu_accel.c"
+    "${libmpeg2_SOURCE_DIR}/libmpeg2/cpu_state.c"
+    "${libmpeg2_SOURCE_DIR}/libmpeg2/decode.c"
+    "${libmpeg2_SOURCE_DIR}/libmpeg2/header.c"
+    "${libmpeg2_SOURCE_DIR}/libmpeg2/idct.c"
+    "${libmpeg2_SOURCE_DIR}/libmpeg2/motion_comp.c"
+    "${libmpeg2_SOURCE_DIR}/libmpeg2/slice.c")
+target_include_directories(ac04_mpeg2 PRIVATE "${AC04_MPEG2_CONFIG_DIR}")
+target_include_directories(ac04_mpeg2 SYSTEM PUBLIC "${libmpeg2_SOURCE_DIR}/include")
+if(MSVC)
+    target_compile_options(ac04_mpeg2 PRIVATE /W0)
+else()
+    target_compile_options(ac04_mpeg2 PRIVATE -w)
+endif()
+set_property(TARGET ac04_mpeg2 PROPERTY FOLDER "third_party")

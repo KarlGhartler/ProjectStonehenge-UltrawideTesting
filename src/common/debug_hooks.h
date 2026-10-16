@@ -34,6 +34,19 @@ void RecordSceneRequest(SceneRequestKind kind, u16 value, u16 from_scene, u32 fr
 void OnSceneStepEntry();
 void SetFirstSceneStepHook(std::function<void()> hook);
 
+// RAM checkpoints (docs/port/validation-strategy.md §2.1, --dump-ram-at). Translated code calls
+// OnGuestCheckpoint(address) where the PCSX2 reference breakpoint sits: at the entry of the
+// function at `address`, or right before the instruction at `address` for call sites. A hook set
+// with SetCheckpointHook runs once, on hit number `hit` (1 = first), then is cleared.
+void OnGuestCheckpoint(u32 address);
+void SetCheckpointHook(u32 address, u32 hit, std::function<void()> hook);
+
+// --freeze-sim (S5 block A, development builds): the one switch of this layer that changes control
+// flow. Scene 2 sub-states 0xA-0xC then run only the world update, cameras and draw lists of
+// FlightPlayFrame (docs/port/command-line.md). Off by default; never set in Release builds.
+bool FreezeSim();
+void SetFreezeSim(bool on);
+
 // The runtime sets this so hooks can stamp the vblank without depending on src/sce.
 void SetVBlankSource(u64 (*source)());
 

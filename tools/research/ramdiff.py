@@ -6,7 +6,7 @@ uncompressed (tools/p2s_read.py). Neither file is ever copied into the repo.
 
 Usage:
     python -I tools/research/ramdiff.py DUMP.bin STATE.p2s [--range START END] [--max N] [--sections]
-                                        [--values] [--expected [CSV]]
+                                        [--values] [--expected [CSV ...]]
 
 (-I: tools/research/dis.py would otherwise shadow the standard library module.)
 
@@ -14,9 +14,9 @@ Output: differing byte ranges, merged when closer than 16 bytes, with the ELF se
 nearest symbol from docs/symbols.csv. By default only addresses and counts are printed, never memory
 contents. --values also prints the first 16 bytes of each range from both sides: that output
 contains game memory, keep it in the terminal or under out/ and never commit it.
---expected classifies each range with docs/port/ramdiff-expected.csv (or the given file): ranges
-fully inside an expected entry are counted per category and not listed; the rest are listed as
-unexplained.
+--expected classifies each range with docs/port/ramdiff-expected.csv plus any slice files given
+(e.g. docs/port/ramdiff-expected-s1.csv): the bytes of a range covered by expected entries are
+counted per category; the uncovered parts are listed as unexplained.
 """
 import argparse
 import bisect
@@ -82,10 +82,19 @@ def load_expected(path):
 
 
 def classify(expected, s, e):
-    for lo, hi, cat in expected:
-        if lo <= s and e <= hi:
-            return cat
-    return None
+    """Splits [s, e) over the expected entries: returns ([(category, bytes)], [uncovered (s, e)])."""
+    covered, rest, pos = [], [], s
+    while pos < e:
+        hit = next(((lo, hi, cat) for lo, hi, cat in expected if lo <= pos < hi), None)
+        if hit is not None:
+            end = min(e, hit[1])
+            covered.append((hit[2], end - pos))
+            pos = end
+            continue
+        nxt = min([lo for lo, _, _ in expected if pos < lo < e] + [e])
+        rest.append((pos, nxt))
+        pos = nxt
+    return covered, rest
 
 
 def diff_ranges(a, b, base, lo, hi, gap=16):
@@ -114,8 +123,9 @@ def main():
     ap.add_argument("--range", nargs=2, metavar=("START", "END"))
     ap.add_argument("--max", type=int, default=200, help="ranges to list (default 200)")
     ap.add_argument("--sections", action="store_true", help="only print the per-section summary")
-    ap.add_argument("--expected", nargs="?", const=os.path.join(ROOT, "docs", "port", "ramdiff-expected.csv"),
-                    help="hide ranges explained in this CSV (default docs/port/ramdiff-expected.csv)")
+    ap.add_argument("--expected", nargs="*", default=None,
+                    help="hide ranges explained in these CSVs (always docs/port/ramdiff-expected.csv, plus "
+                         "slice files such as docs/port/ramdiff-expected-s1.csv)")
     ap.add_argument("--values", action="store_true",
                     help="also print the first 16 bytes of each range (port / PCSX2); contains game memory")
     args = ap.parse_args()
@@ -145,16 +155,26 @@ def main():
     print(f"{len(ranges)} differing ranges")
     for name, (n, b) in sorted(per_section.items()):
         print(f"  {name:20} {n:7} ranges {b:10} bytes")
-    if args.expected:
-        expected = load_expected(args.expected)
+    if args.expected is not None:
+        files = [os.path.join(ROOT, "docs", "port", "ramdiff-expected.csv")]
+        files += [f for f in args.expected if os.path.abspath(f) != os.path.abspath(files[0])]
+        expected = [row for f in files for row in load_expected(f)]
         per_cat, rest = {}, []
+        def differs(a):
+            if a >= 0x70000000:
+                return port_spr[a - 0x70000000] != ps2_spr[a - 0x70000000]
+            return port_ram[a] != ps2_ram[a]
+
         for s, e in ranges:
-            cat = classify(expected, s, e)
-            if cat is None:
-                rest.append((s, e))
-            else:
-                n, b = per_cat.get(cat, (0, 0))
-                per_cat[cat] = (n + 1, b + (e - s))
+            covered, uncovered = classify(expected, s, e)
+            # Merged ranges may include equal bytes; keep only uncovered parts that really differ.
+            for us, ue in uncovered:
+                hits = [a for a in range(us, ue) if differs(a)]
+                if hits:
+                    rest.append((hits[0], hits[-1] + 1))
+            for cat, b in covered:
+                n, total = per_cat.get(cat, (0, 0))
+                per_cat[cat] = (n + 1, total + b)
         print("expected differences by category:")
         for cat, (n, b) in sorted(per_cat.items()):
             print(f"  {cat:20} {n:7} ranges {b:10} bytes")

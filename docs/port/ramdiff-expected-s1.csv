@@ -1,0 +1,17 @@
+start,end,category,reason
+0x0029F3A8,0x0029F3CC,timing,frame_count / scene_frame counters and the double-buffer index: the port reaches scene 6 8 frames earlier (boot CD reads) and loads DATA 333 in 3 frames instead of ~17 (CD latency model, validation.md C-1); every S1 checkpoint is reached in the same sub-state with a different frame count
+0x0029F590,0x0029F5A4,timing,ctx pad state and button repeat counter (frame-based); on PCSX2 libpad reports the pad as ready only after ~60-80 frames (E/N sub 7 are reached before that)
+0x0029F63C,0x0029F660,timing,ctx pad hold/repeat timers (count frames since the pad became ready)
+0x0029F67C,0x0029F680,timing,ctx pad 2 repeat timer (frame-based)
+0x0029FFC9,0x0029FFE4,timing,pad button map built when libpad reports the pad (not yet on PCSX2 at E/N sub 7)
+0x002A0000,0x002A000C,timing,pad button map (as above)
+0x0033E574,0x0033E57C,timing,SOUND client current/previous batch buffer index: frame parity differs
+0x00353F88,0x00353F90,timing,VAG client current/previous batch buffer index: frame parity differs
+0x004121F4,0x004121F8,input,raw analog bytes of pad 1: the owner's stick in run 06 read 0x78-0x79 at some states; the port reads a centred 0x7F
+0x00412214,0x00412218,input,converted analog values of pad 1 (from the raw bytes above)
+0x004121E8,0x00412230,timing,pad record (mode/id/raw data): libpad reaches DualShock 2 analog mode after ~60-80 frames on PCSX2
+0x004200D0,0x00420210,timing,field-copy GIF packet (DrawDisplayTransfer): the Y offset follows the field parity of the frame
+0x00425000,0x00429800,timing,SOUND send buffers: the same batches are in swapped buffers (frame parity); the unused tail holds leftovers of the boot batch
+0x004D0150,0x004D0158,timing,scene 6 bucket list pointers into the current packet buffer half (frame parity)
+0x004D0250,0x004D0280,timing,packet buffer half A head (frame parity: the port's last frame is in the other half)
+0x008D0250,0x008D0280,timing,packet buffer half B head (frame parity)

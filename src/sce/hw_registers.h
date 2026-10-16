@@ -18,6 +18,9 @@ public:
     // Maps the register range into guest memory.
     void Install(guest::GuestMemory& memory);
     void OnVBlank(u64 vblank_index);
+    // A busy-wait poll lets one H-blank pass (timer 0 + 1); false when the field is over (the
+    // caller then lets the vblank pass).
+    bool AdvanceLine();
 
     void Read(u32 address, void* dst, u32 size) override;
     void Write(u32 address, const void* src, u32 size) override;
@@ -30,6 +33,8 @@ private:
     static constexpr u32 kSize = 0x10000u;
     u8 regs_[kSize] = {};
     u32 t0_count_ = 0;
+    u32 field_reads_ = 0;  // H-blanks since the last vblank: T0_COUNT reads and busy-wait polls
+    u32 field_len_ = 262;  // lines of the current field
 };
 
 }  // namespace ac04::sce

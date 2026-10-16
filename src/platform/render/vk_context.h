@@ -39,6 +39,7 @@ public:
     VkQueue queue = VK_NULL_HANDLE;
     VmaAllocator allocator = nullptr;
     GpuInfo gpu;
+    bool dual_src_blend = false;
 
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat swapchain_format = VK_FORMAT_UNDEFINED;

@@ -38,13 +38,25 @@ public:
 
     // Host pointer for [address, address+size) if the whole range is RAM or scratchpad;
     // nullptr otherwise (hardware, unmapped, or crossing the end of a region).
-    u8* Translate(u32 address, u32 size);
-    const u8* Translate(u32 address, u32 size) const;
+    u8* Translate(u32 address, u32 size) {
+        if (address < kRamSize && size <= kRamSize - address) return ram_.get() + address;  // fast path
+        if ((address & 0xFFFFC000u) == kScratchpadBase) {
+            const u32 off = address - kScratchpadBase;
+            return size <= kScratchpadSize - off ? spr_.get() + off : nullptr;
+        }
+        return TranslateSegment(address, size);
+    }
+    const u8* Translate(u32 address, u32 size) const {
+        return const_cast<GuestMemory*>(this)->Translate(address, size);
+    }
 
     // Like Translate, but never null: an invalid range is reported (logged once per page) and a
     // zeroed scratch buffer is returned instead, whose contents are discarded. Used by ps2ptr<T>
     // dereferences so a bad guest pointer fails safely instead of crashing the host.
-    u8* TranslateOrDummy(u32 address, u32 size);
+    u8* TranslateOrDummy(u32 address, u32 size) {
+        if (u8* p = Translate(address, size)) return p;
+        return Dummy(address, size);
+    }
 
     template <typename T>
     T Read(u32 address) {
@@ -80,6 +92,8 @@ private:
         u32 base, size;
         HardwareHandler* handler;
     };
+    u8* TranslateSegment(u32 address, u32 size);  // uncached and kseg aliases of RAM
+    u8* Dummy(u32 address, u32 size);             // reports an invalid range, gives a zeroed buffer
     HardwareHandler* FindHardware(u32 physical, u32 size);
     void ReportInvalid(u32 address, u32 size, bool write);
 
@@ -90,7 +104,10 @@ private:
 };
 
 // The one guest address space of the process. Translated code uses it through Mem().
-GuestMemory& Mem();
+namespace detail {
+extern GuestMemory g_memory;  // defined in guest_memory.cpp
+}
+inline GuestMemory& Mem() { return detail::g_memory; }
 
 // Fast path for the common case (inline): RAM through the cached segment.
 inline u8* HostPtr(u32 address, u32 size) {

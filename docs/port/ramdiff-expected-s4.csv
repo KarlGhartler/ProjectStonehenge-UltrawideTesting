@@ -1,0 +1,14 @@
+start,end,category,reason
+0x004D0000,0x00580000,timing,packet double buffer half A: stale briefing map terrain sprites (the port's map starts 66 frames earlier: PCSX2's briefing stream waits on CD reads) and later frames' packets at other offsets (the map sprites themselves match PCSX2 since the VU0 macro rounding fix, validation.md S4-3)
+0x008D0000,0x00980000,timing,packet double buffer half B: as half A
+0x01129640,0x01241640,decode,briefing movie picture left in the heap (MPEG-2 IDCT rounding of the port's decoder; validation.md S3)
+0x00CD032C,0x00CD0330,input,VS mission select (run C): stale main-menu item scale of TUTORIAL (main menu object 0x00CCFF80 +0x3AC; items +0x3A4..+0x3B4) passed over by the Down presses: still easing from 2 to 1 on PCSX2 (owner's fast presses), 1.0 with the pad script's 30-frame spacing
+0x00CD02EC,0x00CD0314,timing,campaign menu and hangar: stale briefing-map camera matrices left in the reused object 0x00CCFF80 (map camera at +0x250: world->screen column 3 w and world->clip +0x36C..+0x393) from the last map frame; the camera orbit phase at the Start press follows the map's frame counter and the port's map starts 66 frames earlier (validation.md S4-3)
+0x00CD0390,0x00CD039C,timing,campaign menu: stale briefing-map look-at eye (object +0x410), orbit position at the last map frame (as above)
+0x00CD04E4,0x00CD04E8,timing,campaign menu: stale briefing-map frame counter (object +0x564)
+0x00CD0544,0x00CD0548,timing,campaign menu: stale briefing-map orbit phase (object +0x5C4 = frames * k)
+0x00FD8300,0x00FD8B00,sdk,libmpeg decoder block at the start of the briefing movie's work area (sys structure: buffer pointers 0x00FD8A40/0x01041A40/0x010AAA40, callbacks 0x00272010/20, IPU tag pointer 0x004CBD50); written only inside libmpeg; the port decodes with libmpeg2 (the rest of the work area: ramdiff-expected-s3.csv)
+0x00353E88,0x00353E8C,timing,VAG slot 4 +0x40 CD ticket of its last read: one higher in the port; the queue-0 reads (VAG refills every ~2.4 s of music and the briefing SMV chunk reads) interleave differently by one read (queue totals equal at the map checkpoint, PCSX2 one read still in flight: CD latency); validation.md S4-7
+0x00CE9E0C,0x00CE9E10,timing,briefing SMV reader (object 0x00CE9D80) +0x8C CD ticket of its last chunk read: one higher in the port (same interleaving as 0x00353E88)
+0x00CE9D98,0x00CE9D9C,sdk,briefing SMV reader +0x18 = sceMpeg frameCount: PCSX2 one lower (the libmpeg counting rule of ramdiff-expected-s3.csv, there for the SS01 reader at 0x00CD4A40); not read by the game
+0x00CE9DB0,0x00CE9DB4,sdk,briefing SMV reader +0x30 = sceMpeg flags (PCSX2 0x19A; port 0): picture flags not modelled, as for the SS01 reader in ramdiff-expected-s3.csv; not read by the game

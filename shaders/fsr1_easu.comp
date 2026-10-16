@@ -1,0 +1,31 @@
+#version 450
+// Movie upscaling stage (ADR-006 §5): one AMD FidelityFX FSR 1 EASU pass from the decoded movie
+// picture (or the previous pass) to a larger image. The constants (con0..con3, FsrEasuCon) are
+// computed on the CPU (movie_upscaler.cpp). EASU scales RGB; alpha is sampled bilinearly.
+#extension GL_GOOGLE_include_directive : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D src;
+layout(set = 0, binding = 1, rgba8) uniform writeonly image2D dst;
+layout(push_constant) uniform Params {
+    uvec4 con0, con1, con2, con3;
+    ivec2 out_size;
+} pc;
+
+#define A_GPU 1
+#define A_GLSL 1
+#include "ffx_a.h"
+#define FSR_EASU_F 1
+AF4 FsrEasuRF(AF2 p) { return textureGather(src, p, 0); }
+AF4 FsrEasuGF(AF2 p) { return textureGather(src, p, 1); }
+AF4 FsrEasuBF(AF2 p) { return textureGather(src, p, 2); }
+#include "ffx_fsr1.h"
+
+void main() {
+    const uvec2 ip = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(ip, uvec2(pc.out_size)))) return;
+    AF3 c;
+    FsrEasuF(c, ip, pc.con0, pc.con1, pc.con2, pc.con3);
+    const float a = texture(src, (vec2(ip) + 0.5) / vec2(pc.out_size)).a;
+    imageStore(dst, ivec2(ip), vec4(c, a));
+}

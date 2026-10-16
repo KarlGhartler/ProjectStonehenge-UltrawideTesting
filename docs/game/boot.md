@@ -17,6 +17,8 @@ From the ELF entry point to the per-frame main loop. All addresses are EE virtua
 
 Also in crt0: `_exit` (H) 0x001000B8 = `j Exit` with a0 = 0, and `_root` 0x001000C0, an ExitThread stub (syscall 0x23) used as the main thread's root function.
 
+`func_001001C0` (48 bytes, inside the game-code range but compiler runtime): `__deregister_frame_info(0x0029F230)` (libgcc 0x0028DFA8). Its only reference is the `.dtors` entry at 0x0029F340, run by the libc global-destructor walker 0x00288848 at exit. The game never exits, so it never runs; as C runtime it is not translated (the port has no EH frame registry).
+
 ## `main` 0x001001F0: initialisation
 
 In call order:

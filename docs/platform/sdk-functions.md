@@ -45,6 +45,16 @@ Counting direct `jal` calls from game code (0x001000D8–0x002616E7):
 - **libmpeg**: `sceMpegCreate`, plus `sceMpegInit`/`AddBs`/`Reset`/`IsEnd`/`SetImageBuff` (H).
 - **Game-owned IOP RPC servers** (Namco IRX, not Sony): 0x80000210 (bound at 0x001096D8), 0x81000101 (0x002172C8, per-frame `SoundRpcUpdate`), 0x81000102 (0x0021E370, `StreamAudioUpdate`). Which IRX serves which id is not confirmed yet.
 
+## libvu0 functions needed by S5 block A (exact behaviour, from the SDK code in the image)
+
+All are VU0 macro-mode code; the port implements them in `src/sce/libvu0.cpp` with the VU0 float rules of `src/common/vu0_math.h` (round to nearest for VU0 ops). Vectors are 16-byte aligned qwords.
+- `sceVu0AddVector` 0x00263128(out, a, b) / `sceVu0SubVector` 0x00263140 / `sceVu0MulVector` 0x00263158: `vadd` / `vsub` / `vmul` `.xyzw` of a and b, out = result (all four lanes).
+- `sceVu0FTOI4Vector` 0x002631F0(out, v) / `sceVu0FTOI0Vector` 0x00263200: `vftoi4` / `vftoi0` `.xyzw`.
+- `sceVu0Normalize` 0x00262FD0(out, v): s = v.x² , then s += v.y², s += v.z² (`vmul.xyz`, `vaddy.x`, `vaddz.x`); Q = `vsqrt`(s); t = 0 + Q (`vaddq.x vf5, vf0`); Q = 1.0 / t (`vdiv vf0.w / vf5.x`); out = (v.x · Q, v.y · Q, v.z · Q, 0) (out.w from `vsub vf0 − vf0`).
+- `sceVu0RotTransPers` 0x00263A08(out, m, v, mode): t = m · v (`vmulax`/`vmadday`/`vmaddaz`/`vmaddw`, all four lanes); Q = 1.0 / t.w (`vdiv vf0.w / t.w`); t.xyz *= Q; out = `vftoi4`(t) (xyzw); when mode ≠ 0, out.z, out.w = `vftoi0`(t.z, t.w). The game always passes mode 1: integer (x/w · 16, y/w · 16, z/w, w).
+- `sceVu0DropShadowMatrix` 0x00263820(m, lp, a, b, c, mode) (a, b, c in f12, f13, f14): the game uses only mode 0 (parallel light, path 0x002638D0), EE FPU: d = (a · lp.x + b · lp.y) + c · lp.z; r = −1.0 / d; m[0] = r · (a·x − d), r · (a·y), r · (a·z), 0; m[1] = r · (b·x), r · (b·y − d), r · (b·z), 0; m[2] = r · (c·x), r · (c·y), r · (c·z − d), 0; m[3] = r · (−x), r · (−y), r · (−z), r · (−d) (x, y, z = lp; the products a·x, b·y, c·z are the same values used in d; `neg.s` gives the negations). Mode ≠ 0 (point light) is not reached.
+- `sceVu0TransposeMatrix` 0x00263008(out, m): 4 × 4 transpose with MMI word moves (`pextlw`/`pextuw`/`pcpyld`/`pcpyud`), bit-exact.
+
 ## RPC server IDs (confirmed at the `sceSifBindRpc` call sites)
 
 | ID | Client struct | Bound in | Server |

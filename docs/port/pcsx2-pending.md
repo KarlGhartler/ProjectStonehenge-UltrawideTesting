@@ -1,0 +1,9 @@
+# Functions waiting for a PCSX2 answer
+
+Owner rule (2026-10-16, `s5-plan.md`): a function that cannot be translated with confidence from the code alone is not guessed. Its translation is skipped (or done with the open point marked `// HYPOTHESIS:`) and logged here. The owner collects the answers in the next PCSX2 batch (`../pcsx2/procedures.md`).
+
+| Function | Question | What to capture | Status |
+|---|---|---|---|
+| `func_00116060` 0x00116060 (star corner projection, `../subsystems/sky.md`) | The MAC-flag read at 0x0011609C (`cfc2 v0, $17`, `andi 0x11`) follows `vmulq.xyz vf9`; PCSX2 has no GameDB patch for it. Does it ever return −1 there (stars behind the camera), i.e. does PCSX2 clear the w flags of a `.xyz` op? | Breakpoint at 0x001160A4 during a night mission with stars visible (mission with R+0xC0 bit 1): record `v1` (= flags & 0x11) over a few hits, plus a GS dump of the frame. Expected (HYPOTHESIS): always 0. | open |
+| `func_001152D8` 0x001152D8 (cloud sprites, `../subsystems/sky.md`) | vf2 is loaded with `qmtc2` from a GPR whose low 64 bits come from `ld W+0xB0`; the upper 64 bits (vf2.z, vf2.w) are whatever the GPR held before. The translation assumes 0 (HYPOTHESIS), which makes the sprite depth that of the projected centre. | Breakpoint at 0x001155EC in a mission with clouds (R+0xC0 bit 2): record the full 128-bit `v0` and, after the `qmtc2`, VU0 `vf2` over a few hits. Expected: z = w = 0. | open |
+| `func_00113D70` 0x00113D70 (animated cloud texture) | The corner dwords take their z / w halves from VU0 vf15, which the function never writes (left by the last `func_00114ED8` call or other VU0 code). The port carries vf15 in its host VU0 state; only the RAM checkpoint is affected (GS: ZTST always, Z masked). | Breakpoint at the function entry in a cloud mission: record VU0 `vf15`; compare with the port's value at the same frame. Only needed if the RAM checkpoint shows a difference in the cloud packet. | open |

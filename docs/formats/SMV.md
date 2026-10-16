@@ -40,7 +40,11 @@ Measured (walker):
 | SS01–SS12 | 18–75 | 640×336 (letterboxed), 30 fps | in every chunk |
 | STAFF | 131 | 640×448, 29.97 fps | 50 MB |
 
-Audio rate: SS01 has 26.7 MB of audio for 79.9 MB of video at 4.6 Mbit/s ≈ 139 s, i.e. ≈ 192,000 B/s = **48 kHz, 16-bit, stereo PCM** (H). The audio does not decode as SPU ADPCM (84 % of 16-byte blocks are invalid ADPCM). Playback path (`../subsystems/iop-sound.md`): the blocks are streamed by SOUND.IRX with `sceSdBlockTrans` into the SPU2 core-0 sound-data input. That input expects 48 kHz 16-bit stereo with left/right alternating in 0x200-byte blocks (standard SPU2 behaviour, H until checked against a PCSX2 SPU2 capture).
+Audio rate: SS01 has 26.7 MB of audio for 4170 pictures (139.0 s at 30 fps), i.e. ≈ 192,000 B/s = **48 kHz, 16-bit, stereo PCM**. The audio does not decode as SPU ADPCM (84 % of 16-byte blocks are invalid ADPCM). Playback path (`../subsystems/iop-sound.md`): the blocks are streamed by SOUND.IRX with `sceSdBlockTrans` into the SPU2 core-0 sound-data input, which takes **left and right in alternating 0x200-byte blocks** (256 samples each). Checked on the data (S3): read that way, SS01 chunk 0 is twice as smooth (mean |s[i+1] − s[i]| / mean |s| = 0.06) as read as plain L/R-interleaved samples (0.12). **Confirmed** against the PCSX2 capture of the S3 batch: the port mixing it this way correlates 0.97-0.995 per channel with PCSX2, with no drift (`../port/validation.md` S3-5).
+
+Each chunk's video is a **complete MPEG-2 sequence**: it starts with a sequence header and ends with a sequence end code (00 00 01 B7); SS01 chunk 0 holds 60 pictures in 4 GOPs. The decoder is reset per chunk (below).
+
+**The chunks are still one stream: GOPs are open across chunk boundaries.** Only SS01 chunk 0 starts with a closed GOP. From chunk 4 on, most chunks begin `I B` or `I B B` in coding order (e.g. `I1 B0`, `I2 B0 B1`). The leading B-pictures come before the I-picture in display order and predict from the previous chunk's last reference picture. A decoder must therefore keep its reference pictures over the per-chunk reset. The port uses libmpeg2's partial reset (`mpeg2_reset(dec, 0)`, `src/sce/libmpeg.cpp`). With a full reset, those 1–2 pictures per chunk decode as garbage: flicker with yellow and green blocks about every 2 s, as in the first S3 build. Each chunk still returns exactly its own picture count (checked per chunk on SS01).
 
 ## Player (code)
 
@@ -61,26 +65,29 @@ Movie table `0x002BBA10`, 32 × 0x14 bytes:
 | 13–30 | MIS01–MIS18 (with a separate stream-audio track); briefing of campaign mission 1–18 (`StartMenuMovie(n − 1 + 0xD)`, `../subsystems/frontend.md`) |
 | 31 | STAFF |
 
-`MovieStart` (H) 0x00212150: starts the stream-audio tracks, then `func_00214130(buf, 0x600000, lsn, 0x2300, desc)`. That allocates the reader state (`func_00214058`) and initialises it (0x00212508), which carves two 0x180000-byte chunk buffers, a 0x13B800-byte libmpeg work area, a 0x118000-byte image buffer and a 0x20000-byte buffer out of the 0x600000-byte block.
+`StartMovie` 0x00212150: starts the stream-audio tracks, then `CreateSmvReader(buf, 0x600000, lsn, 0x2300, desc)` 0x00214130. That allocates the reader state (`AllocMovieBlock` 0x00214058 from a 0x40-aligned arena, `AllocFromMovieArena` 0x002140D0) and initialises it (`InitSmvReader` 0x00212508), which carves two 0x180000-byte chunk buffers, a 0x13B800-byte libmpeg work area, a 0x118000-byte image buffer (RGBA32 macroblocks) and a 0x20000-byte packet buffer out of the 0x600000-byte block. The arena aligns the **end** of each block, not its start (a quirk of `AllocFromMovieArena`). Field layout of the reader: `src/game/movie.cpp`.
 
 Reader state machine (`player+0x90`):
 
 | State | Function | Action |
 |---|---|---|
-| 0 | 0x00212630 | read sector 0 (header) into buffer A; `sceMpegInit` (H) 0x00270870 |
-| 1 | 0x002126C0 | when done: read chunk 0 (`hdr.next_size` bytes) into buffer B |
-| 2 | 0x00212788 | when done: `sceMpegCreate(mp, work, 0x13B800)`; add video of chunk B; queue chunk 1 into A. If audio: init the audio feeder (`func_00213CE8(0x002BBCB8, 0x4000)`), DMA the first block, set volume, DMA the second block |
-| 3 | 0x00212960 | per frame: feed audio blocks (ping-pong IOP slots, `sceSifSetDma` to IOP ring at `*0x00353BF8`, slot 1 at +0x4000) and swap chunk buffers when the next chunk has arrived. When libmpeg reports the bitstream used up (`sceMpegIsEnd` (H) 0x00270CA8), `sceMpegReset` (H) 0x00270CC8 + add the next chunk's video, and queue the following read. `next_size == 0` → state 4 |
-| 4/5/7 | | end / fade-out / error |
+| 0 | `ReadSmvHeader` 0x00212630 | read sector 0 (header) into buffer A; `sceMpegInit` 0x00270870 |
+| 1 | `ReadSmvFirstChunk` 0x002126C0 | when done: read chunk 0 (`hdr.next_size` bytes) into buffer B |
+| 2 | `StartSmvReader` 0x00212788 | when done and no PCM transfer runs: `sceMpegCreate(mp, work, 0x13B800)`; `sceMpegAddBs` 0x00270B58 with chunk B's video; queue chunk 1 into A. If audio: feeder ring (`SetMovieAudioBuffer(0x002BBCB8, 0x4000)`), first block into half 0, volume, `StartMovieAudio` (SOUND 0xA, loop), second block into half 1 |
+| 3 | `StreamSmvReader` 0x00212960 | per frame: when the SPU2 has moved to the other ring half (`GetMovieAudioHalf`, H), refill the half it left with the next 0x4000-byte block (`sceSifSetDma` to the IOP ring at `*0x00353BF8`, half 1 at +0x4000). When the decoder has passed the chunk's sequence end (`sceMpegIsEnd` 0x00270CA8): `sceMpegReset` 0x00270CC8 + add the next chunk's video, queue the following read; `next_size == 0` → state 4. A late read or a stop request fades out (state 5) |
+| 4 | `DrainSmvReader` 0x00212C78 | last chunk: audio to its end, then silence; the sequence end → state 5 |
+| 5 | `FadeOutSmvReader` 0x00212DF0 | silence for more than 0.1 s (double compare), then stop the PCM transfer → 6 |
+| 6 | `FinishSmvReader` 0x00212EF0 | wait for the stop (at most 2 s), release the ring → 7: returns 1, or −1 after a stop request |
 
-Decode and display per frame: `MovieDecodeFrame` (H) 0x002122D0 → `func_002141E8` → `func_00212F88` (decode) + `func_00213048` (draw).
+Decode and display per frame: `DecodeMovieFrame` 0x002122D0 → `UpdateSmvReader` 0x002141E8 → `StepSmvReader` 0x00212F88 (states above) + `DrawMoviePicture` 0x00213048. The draw calls `sceMpegGetPicture` 0x00270B90 `(mp, image buffer, 0x460)`, which writes the next picture as RGBA32 16×16 macroblocks **column by column** (macroblock (x, y) at `(x · rows + y) · 0x400`), then sends one GIF chain: per 16-pixel column an IMAGE transfer of 16 × height pixels to VRAM block 0x2300 (REFS tags of at most 0x7FFF qwords) and a 16 × height sprite from that texture, centred in 640 × 448 plus the request offset (16:9: 0x38 lines lower).
 
 All disc reads go through **queue 0** of the CD request system (`../game/file-loading.md`) with `chunk = -1`.
 
 ## Port notes
 
-- Timing (PCSX2 session 5): movies are shown at 29.97 fps while the main loop runs at 59.94 Hz, so each picture is held for 2 vblanks. Pace frames by game ticks.
+- Timing (PCSX2 session 5): movies are shown at 29.97 fps while the main loop runs at 59.94 Hz, so each picture is held for 2 vblanks. In the port: one picture per iteration, `MovieFrameSync`'s timer-0 busy wait lets one vblank pass (`../port/validation.md` S3-1); SS01 ends at frame 10090 after exactly 4170 pictures.
+- Decoding (slice S3): `src/sce/libmpeg.cpp` implements `sceMpegInit/Create/Reset/AddBs/IsEnd/GetPicture` on libmpeg2 0.5.1 (one sequence per `AddBs`), with the IPU's integer colour conversion; 2.2 ms per picture.
 
 - Demux: walk the chunks; concatenate `chunk[0x10 : 0x10 + video_bytes]` for the video ES and `chunk[audio_off : audio_off + audio_bytes]` for the audio.
 - MIS briefing videos have no audio track of their own. Their sound comes from the VPK stream track given in the movie table.
-- Audio path: SOUND.IRX block transfer into the SPU2 core-0 input (`../subsystems/iop-sound.md`). Confirm the 0x200-byte L/R interleave with a PCSX2 SPU2 capture before writing the audio path.
+- Audio path: SOUND.IRX block transfer into the SPU2 core-0 input (`../subsystems/iop-sound.md`): the port mixes the ring from IOP RAM at 48 kHz with the 0x200-byte L/R blocks (confirmed against the PCSX2 capture, `../port/validation.md` S3-5). The reply's transfer status word gives the half being played (confirmed, S3-3).

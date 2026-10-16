@@ -10,6 +10,10 @@ struct SDL_AudioStream;
 
 namespace ac04::platform {
 
+namespace audio {
+class SpuMixer;
+}
+
 class AudioOutput {
 public:
     ~AudioOutput();
@@ -22,12 +26,18 @@ public:
 
     std::string DeviceName() const;
 
+    // Samples come from the mixer's ring (silence without one).
+    void SetSource(audio::SpuMixer* mixer) { source_ = mixer; }
+
 private:
     void UpdateGain();
 
     SDL_AudioStream* stream_ = nullptr;
     AudioSettings settings_;
     bool focused_ = true;
+    audio::SpuMixer* source_ = nullptr;
+
+    friend void FillFromSource(void*, SDL_AudioStream*, int, int);
 };
 
 }  // namespace ac04::platform

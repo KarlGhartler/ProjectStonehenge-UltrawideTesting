@@ -525,6 +525,18 @@ s32 StartPadVibration(f32 seconds, u32 pad) {
     return 0;
 }
 
+// EE: 0x001025C8
+// Vibration request: motor 0 on/off and motor 1 strength for 16 frames, unless vibration is
+// disabled (+0x44 bit 0) or the pad is a USB joystick (type 6).
+s32 func_001025C8(u32 pad, u8 on, u8 strength) {
+    if ((GRef<u8>(pad + 0x44) & 1) != 0 || GRef<s32>(pad) == 6) return 0;
+    GRef<u8>(pad + 0x45) = on != 0 ? 1 : 0;
+    GRef<u8>(pad + 0x46) = strength;
+    GRef<s32>(pad + 0x4C) = 0x10;
+    GRef<s32>(pad + 0x48) = 0x10;
+    return 0;
+}
+
 // EE: 0x00102620
 s32 TickPadVibration(u32 pad) {
     for (u32 i = 0; i < 2; ++i) {

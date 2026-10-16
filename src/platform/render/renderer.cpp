@@ -3,6 +3,8 @@
 #include <SDL3/SDL.h>
 #include <vk_mem_alloc.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 
 #include "output_frag_spv.h"
@@ -18,7 +20,10 @@ struct OutputParams {
     float source_size[2];
     float output_size[2];
     int filter_mode;
+    int pad[3];
+    float color_scale[4];  // std430: vec4 at offset 32
 };
+static_assert(sizeof(OutputParams) == 48, "output push constant layout");
 
 VkShaderModule MakeShader(VkDevice device, const uint32_t* code, size_t bytes) {
     VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
@@ -33,12 +38,13 @@ VkShaderModule MakeShader(VkDevice device, const uint32_t* code, size_t bytes) {
 
 Renderer::~Renderer() { Shutdown(); }
 
-bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& presentation,
+bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& presentation, bool validation,
                     std::string& error) {
     window_ = window;
     presentation_ = presentation;
     internal_scale_ = 1;  // fixed at 1x until higher scales are validated (port-baseline "Later")
-    if (!ctx_.Init(window, AC04_DEV_BUILD != 0, error)) return false;
+    movie_factor_ = internal_scale_;  // movie upscaling stage (ADR-006 §5): passthrough at 1x
+    if (!ctx_.Init(window, AC04_DEV_BUILD != 0 && validation, error)) return false;
     AC04_LOG_INFO("renderer", "GPU: %s, Vulkan %s, driver %s", ctx_.gpu.name.c_str(),
                   ctx_.gpu.api_version.c_str(), ctx_.gpu.driver.c_str());
 
@@ -63,12 +69,143 @@ bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& pr
     if (!UploadTestPattern(error)) return false;
     if (!RecreateSwapchain(error) && !minimised_) return false;
     if (!CreatePipeline(error)) return false;
+    // GS renderer (ADR-003): draws the game's GS packets; until the first frame the test pattern shows.
+    std::string gs_error;
+    gs_ready_ = gs_backend_.Init(ctx_, gs_error);
+    if (!gs_ready_) AC04_LOG_ERROR("renderer", "GS renderer unavailable: %s", gs_error.c_str());
+    gs_state_.SetFrameQuery([this](uint32_t tbp) { return gs_backend_.IsFrameBuffer(tbp); });
+    // Movie upscaling stage (ADR-006 §5); without it movies are drawn from the GS upload only.
+    std::string movie_error;
+    movie_upscaler_ = CreateFsr1MovieUpscaler();
+    movie_upscaler_ready_ = movie_upscaler_->Init(ctx_, movie_error);
+    if (!movie_upscaler_ready_) AC04_LOG_ERROR("renderer", "movie upscaling unavailable: %s", movie_error.c_str());
     return true;
 }
 
-bool Renderer::CreateNativeTarget(std::string& error) {
-    native_width_ = kNativeWidth * internal_scale_;
-    native_height_ = kNativeHeight * internal_scale_;
+void Renderer::SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps,
+                             std::vector<std::vector<gs::SourceMark>>& marks,
+                             std::vector<std::vector<uint8_t>>& pool) {
+    for (size_t i = 0; i < steps.size(); ++i) {
+        const std::vector<uint8_t>& s = steps[i];
+        gs_state_.ProcessGif(s.data(), s.size(), i < marks.size() ? &marks[i] : nullptr);
+        auto draws = gs_state_.TakeDraws();
+        gs_pending_.insert(gs_pending_.end(), std::make_move_iterator(draws.begin()), std::make_move_iterator(draws.end()));
+    }
+    for (std::vector<uint8_t>& s : steps) {
+        if (pool.size() >= 4) break;
+        s.clear();
+        pool.push_back(std::move(s));
+    }
+    steps.clear();
+    marks.clear();
+}
+
+void Renderer::SubmitMoviePicture(uint64_t serial, int width, int height, std::vector<uint8_t>& rgba) {
+    if (serial == movie_serial_ || rgba.empty()) return;
+    movie_serial_ = serial;
+    movie_width_ = width;
+    movie_height_ = height;
+    movie_rgba_.swap(rgba);
+}
+
+bool Renderer::CaptureMovieUpscaled(std::vector<uint8_t>& rgba, int& width, int& height) {
+    if (!movie_upscaler_ready_ || movie_done_serial_ == 0 || !movie_upscaler_->OutputImage()) return false;
+    vkDeviceWaitIdle(ctx_.device);
+    width = movie_upscaler_->OutputWidth();
+    height = movie_upscaler_->OutputHeight();
+    if (!ReadbackImage(movie_upscaler_->OutputImage(), width, height, rgba)) return false;
+    for (size_t i = 3; i < rgba.size(); i += 4) rgba[i] = 0xFF;
+    return true;
+}
+
+bool Renderer::CaptureNative(std::vector<uint8_t>& rgba, int& width, int& height) {
+    vkDeviceWaitIdle(ctx_.device);
+    width = native_width_;
+    height = native_height_;
+    if (!ReadbackImage(native_image_, width, height, rgba)) return false;
+    // The image as presented: the field copy's colour scale (brightness option), opaque.
+    for (size_t i = 0; i < rgba.size(); i += 4) {
+        for (int c = 0; c < 3; ++c) rgba[i + c] = static_cast<uint8_t>(std::min(255.0f, std::floor(rgba[i + c] * present_scale_[c] + 0.001f)));
+        rgba[i + 3] = 0xFF;
+    }
+    return true;
+}
+
+// Copies a colour image in SHADER_READ_ONLY_OPTIMAL layout to host memory (RGBA8, rows top to
+// bottom). The device must be idle.
+bool Renderer::ReadbackImage(VkImage image, int width, int height, std::vector<uint8_t>& rgba) {
+    const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * height * 4;
+    VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bci.size = bytes;
+    bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VmaAllocationCreateInfo aci{};
+    aci.usage = VMA_MEMORY_USAGE_AUTO;
+    aci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VmaAllocation alloc = nullptr;
+    VmaAllocationInfo info{};
+    if (vmaCreateBuffer(ctx_.allocator, &bci, &aci, &buffer, &alloc, &info) != VK_SUCCESS) return false;
+    VkCommandBuffer cmd = command_buffers_[frame_];
+    vkResetCommandBuffer(cmd, 0);
+    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &bi);
+    VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = image;
+    b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    b.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    b.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    b.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    VkBufferImageCopy copy{};
+    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    copy.imageExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+    vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &copy);
+    b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    b.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    vkEndCommandBuffer(cmd);
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    vkQueueSubmit(ctx_.queue, 1, &si, VK_NULL_HANDLE);
+    vkQueueWaitIdle(ctx_.queue);
+    vmaInvalidateAllocation(ctx_.allocator, alloc, 0, VK_WHOLE_SIZE);
+    rgba.assign(static_cast<const uint8_t*>(info.pMappedData), static_cast<const uint8_t*>(info.pMappedData) + bytes);
+    vmaDestroyBuffer(ctx_.allocator, buffer, alloc);
+    return true;
+}
+bool Renderer::ResizeNativeTarget(int width, int height) {
+    vkDeviceWaitIdle(ctx_.device);
+    if (native_view_) vkDestroyImageView(ctx_.device, native_view_, nullptr);
+    if (native_image_) vmaDestroyImage(ctx_.allocator, native_image_, native_alloc_);
+    native_view_ = VK_NULL_HANDLE;
+    native_image_ = VK_NULL_HANDLE;
+    if (sampler_) vkDestroySampler(ctx_.device, sampler_, nullptr);
+    sampler_ = VK_NULL_HANDLE;
+    std::string error;
+    if (!CreateNativeTarget(error, width, height) || !UploadTestPattern(error)) {
+        AC04_LOG_ERROR("renderer", "%s", error.c_str());
+        return false;
+    }
+    VkDescriptorImageInfo dii{sampler_, native_view_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    w.dstSet = descriptor_set_;
+    w.descriptorCount = 1;
+    w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    w.pImageInfo = &dii;
+    vkUpdateDescriptorSets(ctx_.device, 1, &w, 0, nullptr);
+    AC04_LOG_INFO("renderer", "native image %dx%d", width, height);
+    return true;
+}
+
+bool Renderer::CreateNativeTarget(std::string& error, int width, int height) {
+    native_width_ = (width > 0 ? width : kNativeWidth) * internal_scale_;
+    native_height_ = (height > 0 ? height : kNativeHeight) * internal_scale_;
     VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     ici.imageType = VK_IMAGE_TYPE_2D;
     ici.format = VK_FORMAT_R8G8B8A8_UNORM;
@@ -77,7 +214,7 @@ bool Renderer::CreateNativeTarget(std::string& error) {
     ici.arrayLayers = 1;
     ici.samples = VK_SAMPLE_COUNT_1_BIT;
     ici.tiling = VK_IMAGE_TILING_OPTIMAL;
-    ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+    ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VmaAllocationCreateInfo aci{};
@@ -338,6 +475,9 @@ bool Renderer::DrawFrame() {
         }
     }
 
+    if (native_request_w_ > 0 && (native_request_w_ != native_width_ || native_request_h_ != native_height_)) {
+        ResizeNativeTarget(native_request_w_, native_request_h_);
+    }
     vkWaitForFences(ctx_.device, 1, &in_flight_[frame_], VK_TRUE, UINT64_MAX);
     uint32_t image = 0;
     VkResult r = vkAcquireNextImageKHR(ctx_.device, ctx_.swapchain, UINT64_MAX, image_available_[frame_],
@@ -357,6 +497,28 @@ bool Renderer::DrawFrame() {
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cmd, &bi);
+
+    // Movie upscaling stage (ADR-006 §5): once per new picture, only above 1x. At internal scale
+    // N > 1 the scaled GS backend samples its output for draws whose texture came from the movie
+    // image buffer (DrawCommand::texture_guest_source, MovieTexelOrigin); the scaled GS backend is
+    // part of the internal-resolution work (docs/port/internal-resolution.md), not built yet.
+    if (movie_upscaler_ready_ && movie_factor_ > 1 && movie_serial_ != movie_done_serial_ && !movie_rgba_.empty()) {
+        if (movie_upscaler_->Upscale(cmd, frame_, movie_rgba_, movie_width_, movie_height_, movie_factor_))
+            movie_done_serial_ = movie_serial_;
+    }
+
+    if (gs_ready_ && !gs_pending_.empty()) {
+        gs_backend_.Record(cmd, frame_, gs_pending_);
+        gs_pending_.clear();
+        int w = 0, h = 0;
+        gs_backend_.PresentSize(w, h);
+        if (w > 0 && h >= 16) {  // ignore the first frames before the draw buffer is cleared
+            native_request_w_ = w;
+            native_request_h_ = h;
+            gs_backend_.CopyPresent(cmd, native_image_, native_width_, native_height_);
+            gs_backend_.PresentScale(present_scale_);
+        }
+    }
 
     VkClearValue clear{};
     clear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
@@ -381,7 +543,9 @@ bool Renderer::DrawFrame() {
                                 &descriptor_set_, 0, nullptr);
         OutputParams params{{static_cast<float>(native_width_), static_cast<float>(native_height_)},
                             {static_cast<float>(rect.width), static_cast<float>(rect.height)},
-                            presentation_.filter == platform::ScaleFilter::Sharp ? 0 : 1};
+                            presentation_.filter == platform::ScaleFilter::Sharp ? 0 : 1,
+                            {0, 0, 0},
+                            {present_scale_[0], present_scale_[1], present_scale_[2], 1.0f}};
         vkCmdPushConstants(cmd, pipeline_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(params), &params);
         vkCmdDraw(cmd, 3, 1, 0, 0);
     }
@@ -430,6 +594,9 @@ void Renderer::Shutdown() {
     if (!ctx_.device) return;
     vkDeviceWaitIdle(ctx_.device);
     DestroySwapchainResources();
+    if (movie_upscaler_) movie_upscaler_->Shutdown();
+    movie_upscaler_ready_ = false;
+    gs_backend_.Shutdown();
     if (pipeline_) vkDestroyPipeline(ctx_.device, pipeline_, nullptr);
     if (pipeline_layout_) vkDestroyPipelineLayout(ctx_.device, pipeline_layout_, nullptr);
     if (descriptor_pool_) vkDestroyDescriptorPool(ctx_.device, descriptor_pool_, nullptr);

@@ -24,6 +24,18 @@ u32 sceDmaGetChan(s32 id);  // guest address of the channel's register block
 s32 sceDmaReset(s32 mode);
 s32 sceDmaSend(u32 chan, u32 tag);
 
+// ---- libmpeg (on libmpeg2; sceMpeg* pointers are guest addresses) ---------------------------
+void sceMpegInit();                                  // 0x00270870
+u32 sceMpegCreate(u32 mp, u32 work, s32 size);
+void sceMpegReset(u32 mp);                           // 0x00270CC8
+void sceMpegAddBs(u32 mp, u32 bs, s32 size);         // 0x00270B58
+s32 sceMpegIsEnd(u32 mp);                            // 0x00270CA8
+s32 sceMpegGetPicture(u32 mp, u32 rgb32, s32 mbcount);  // 0x00270B90
+
+// ---- libsif DMA -------------------------------------------------------------------------------
+u32 sceSifSetDma(u32 transfers, s32 count);
+s32 sceSifDmaStat(u32 id);
+
 // ---- libpkt (sceVif1Pk*, hypothesis names) ---------------------------------------------------
 void sceVif1PkInit(u32 pkt, u32 buf);
 void sceVif1PkReset(u32 pkt);
@@ -35,9 +47,28 @@ void sceVif1PkEnd(u32 pkt, u32 opt);
 void sceVu0ApplyMatrix(u32 v0, u32 m, u32 v1);
 void sceVu0InversMatrix(u32 m0, u32 m1);
 void sceVu0UnitMatrix(u32 m);
+void sceVu0ScaleVector(u32 v0, u32 v1, f32 t);
+void sceVu0CopyVector(u32 v0, u32 v1);
+void sceVu0CopyMatrix(u32 m0, u32 m1);
+void sceVu0InterVector(u32 v0, u32 v1, u32 v2, f32 t);
+void sceVu0MulMatrix(u32 m0, u32 m1, u32 m2);
+void sceVu0TransMatrix(u32 m0, u32 m1, u32 tv);
+void sceVu0ViewScreenMatrix(u32 m, f32 scrz, f32 ax, f32 ay, f32 cx, f32 cy, f32 zmin, f32 zmax, f32 nearz,
+                            f32 farz);
 void sceVu0RotMatrixZ(u32 m0, u32 m1, f32 rz);
 void sceVu0RotMatrixX(u32 m0, u32 m1, f32 rx);
 void sceVu0RotMatrixY(u32 m0, u32 m1, f32 ry);
+void sceVu0AddVector(u32 out, u32 a, u32 b);
+void sceVu0SubVector(u32 out, u32 a, u32 b);
+void sceVu0MulVector(u32 out, u32 a, u32 b);
+void sceVu0FTOI4Vector(u32 out, u32 v);
+void sceVu0FTOI0Vector(u32 out, u32 v);
+void sceVu0Normalize(u32 out, u32 v);
+void sceVu0RotTransPers(u32 out, u32 m, u32 v, s32 mode);
+void sceVu0DropShadowMatrix(u32 m, u32 lp, f32 a, f32 b, f32 c, s32 mode);
+void sceVu0TransposeMatrix(u32 out, u32 m);
+void sceVu0OuterProduct(u32 out, u32 a, u32 b);
+f32 sceVu0InnerProduct(u32 a, u32 b);
 void sceVu0ResetVif0();  // hypothesis name (0x00263BF0)
 
 // ---- kernel -----------------------------------------------------------------------------------
@@ -96,6 +127,17 @@ s32 scePadEnterPressMode(s32 port, s32 slot);
 
 // ---- libmc ------------------------------------------------------------------------------------
 s32 sceMcInit();
+s32 sceMcGetInfo(s32 port, s32 slot, u32 type, u32 free, u32 format);
+s32 sceMcGetDir(s32 port, s32 slot, u32 name, u32 mode, s32 maxent, u32 table);
+s32 sceMcSync(s32 mode, u32 cmd, u32 result);
+s32 sceMcOpen(s32 port, s32 slot, u32 name, s32 mode);
+s32 sceMcClose(s32 fd);
+s32 sceMcRead(s32 fd, u32 buf, s32 size);
+s32 sceMcWrite(s32 fd, u32 buf, s32 size);
+s32 sceMcFlush(s32 fd);
+s32 sceMcMkdir(s32 port, s32 slot, u32 name);
+s32 sceMcDelete(s32 port, s32 slot, u32 name);
+s32 sceMcFormat(s32 port, s32 slot);
 
 // ---- libcdvd ----------------------------------------------------------------------------------
 s32 sceCdSearchFile(u32 fp, u32 name);
@@ -111,6 +153,11 @@ s32 sceCdGetDiskType();
 s32 sceCdBreak();
 s32 sceCdPOffCallback(u32 func, u32 addr);  // hypothesis name
 s32 sceCdPowerOff(u32 stat);                // hypothesis name
+
+namespace ac04::sce {
+// IPU colour conversion of one pixel (libmpeg.cpp), RGBA out.
+void IpuCsc(u8 y, u8 cb, u8 cr, u8* rgba);
+}  // namespace ac04::sce
 
 // ---- C runtime (newlib), libm, libgcc ----------------------------------------------------------
 namespace ee {
@@ -130,8 +177,14 @@ u32 strcpy(u32 dst, u32 src);
 u32 strlen(u32 s);
 f32 sinf(f32 x);
 f32 cosf(f32 x);
+f32 atanf(f32 x);
+f32 asinf(f32 x);
+f32 acosf(f32 x);
+f32 powf(f32 x, f32 y);
 f32 atan2f(f32 y, f32 x);
 f32 sqrtf(f32 x);
+f32 floorf(f32 x);
+f32 fmodf(f32 x, f32 y);
 void __main();
 void __register_frame_info(u32 begin, u32 object);
 void __deregister_frame_info(u32 begin);

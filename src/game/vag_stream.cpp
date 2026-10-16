@@ -539,6 +539,39 @@ s32 func_0021FD40(u32 slot, u16 id) {
     return 1;
 }
 
+// EE: 0x0021FC80
+// Plays stream `id` with argument `arg` on `slot` (the MIS briefing movies' separate sound track,
+// movie table +0xC/+0x10): stop the slot, then queue {slot, 0, id, arg}.
+s32 RequestStreamPlayArg(u32 slot, u16 id, u16 arg) {
+    if (func_0021FDF8(static_cast<u8>(1u << (slot & 0x1F))) == -1) return -1;
+    if (QueueCount() + 1 >= 0x20) return -1;
+    const u32 e = QueueEntry(QueueWrite());
+    GRef<u8>(e) = static_cast<u8>(slot);
+    GRef<u8>(e + 1) = 0;
+    GRef<u16>(e + 4) = arg;
+    GRef<u16>(e + 2) = id;
+    QueueCount() += 1;
+    QueueWrite() += 1;
+    if (QueueWrite() > 0x1F) QueueWrite() = 0;
+    return 1;
+}
+
+// EE: 0x0021FB70
+// Fades all VAG slots out: stops the streams, clears the slot mask 0x3F and queues command 4
+// (volume 0xFF, time in steps = `time` / the step length at 0x0040FFF0).
+void func_0021FB70(f32 time) {
+    func_0021FB58();
+    func_0021FDF8(0x3F);
+    if (QueueCount() + 1 >= 0x20) return;
+    const f32 steps = time / GRef<f32>(0x0040FFF0);
+    const u32 e = QueueEntry(QueueWrite());
+    GRef<u8>(e + 1) = 4;
+    GRef<u16>(e + 4) = 0xFF;
+    QueueCount() += 1;
+    QueueWrite() += 1;
+    GRef<s16>(e + 2) = static_cast<s16>(fpu::FloatToInt(steps));
+    if (QueueWrite() > 0x1F) QueueWrite() = 0;
+}
 // EE: 0x0021FDF8
 // HYPOTHESIS: RequestStreamStop(mask): queue {mask, 3}.
 s32 func_0021FDF8(u8 mask) {
@@ -634,6 +667,32 @@ void UpdateVagStream() {
     if (IsVagRpcIdle() == 1) {
         func_0021F448();
         SendVagCommands();
+    }
+}
+
+// EE: 0x0021E798
+// Stream slot fade mode: 0 restores the saved volumes over 1.5 s, 1 saves the current (or target)
+// volumes and fades to silence over 0.5 s; other modes are only stored.
+void func_0021E798(s32 slot, s32 mode) {
+    const u32 s = kSlots + static_cast<u32>(slot) * 0x94;
+    GRef<s32>(s + 0x58) = mode;
+    if (mode == 0) {
+        func_0021F190(1.5f, slot, GRef<s32>(s + 0x74), GRef<s32>(s + 0x78), GRef<s16>(s + 0x66));
+    } else if (mode == 1) {
+        const s16 v = GRef<s16>(s + 0x64);
+        u32 l, r;
+        if (v == 0) {
+            l = GRef<u32>(s + 0x7C);
+            r = GRef<u32>(s + 0x80);
+        } else {
+            l = GRef<u32>(s + 0x6C);
+            r = GRef<u32>(s + 0x70);
+        }
+        GRef<u32>(s + 0x74) = l;
+        GRef<u32>(s + 0x78) = r;
+        GRef<s16>(s + 0x66) = v;
+        if (v == 0) GRef<s16>(s + 0x66) = 1;
+        func_0021F190(0.5f, slot, 0, 0, 1);
     }
 }
 

@@ -22,6 +22,8 @@ SetRandomIndex  0x00100DB8:  cursor = n & 0x1FF
 
 `FlightPlayFrame` 0x0010B150 calls `SetRandomIndex(flight object +0x165C)` (the simulation frame counter) as its first step. The values a unit receives therefore depend only on the frame number and on the order of `NextRandomFloat` calls inside that frame. Reads from draw code happen after the simulation in the same frame and do not leak into the next frame, because the cursor is reset. Outside `FlightPlayFrame` (menus, cutscene-only sub-states) the cursor is not reset.
 
+`InitEffects` reads both sources: the effect-pool resets make 4,033 table reads (4,097 for mission ids ≥ 0x13) and 339 `rand()` calls, then `func_001BDAD8` makes 384 table reads and 1,024 `rand()` calls (`func_0019FF90`) (`../subsystems/mission-load.md`, "Per-record init functions of the effect pools"). During mission loading none of this reaches gameplay: the table cursor is reset at the first gameplay frame, and `func_00111950` (sub 8) reseeds `rand()` through the sky generators `func_00113548`/`func_001135C8` (`srand(block 24 seeds)`, 3,264 calls). Selecting another map entry (`func_001390B0`, mission 3's carrier-landing segment and its end) runs `func_00111950` again and so reseeds `rand()` in the middle of the mission. The mid-mission reset `func_0010B820` and the replay start (`func_001704A0`, `func_001704D8`) call `InitEffects` without a reseed, so there its 1,363 `rand()` calls advance the sequence that later `rand()` users read. The reads always decide the values written into the effect pools, so they keep their order.
+
 `NextRandomFloat` has 67 callers. Gameplay users:
 - AI: gun spread, crash pitch, ground wander points, ship speed, missile jinks, the periodic strike event (`../subsystems/ai.md`);
 - weapons: flak positions, scatter-weapon blast positions (special-weapon kinds 5, 6, 7, 12), bullet damage from AI attackers (`../subsystems/weapons.md`);
@@ -36,9 +38,9 @@ Effect draw functions that also read the table, after the simulation of the fram
 
 39 callers in game code:
 - boot: `InitRandomTable` 0x00100D38 (table fill), the static constructor `func_002596F8` (three calls with newlib's default seed before `InitRandomTable` reseeds: radio chatter timers at 0x004BE0B0);
-- sky (draw phase): `func_00110630` (ring colours, twinkle), `func_00113548` / `func_001135C8` (star and cloud generation; these call `srand(seed)` with seeds from the mission render settings);
+- sky (draw phase): `func_00110630` (ring colours, twinkle) and `func_001145E8` (sun/moon colours), one `rand()` each per view while K+0 bit 0 is set and the game is not paused (`../subsystems/sky.md`), `func_00113548` / `func_001135C8` (star and cloud generation; these call `srand(seed)` with seeds from the mission render settings);
 - `func_001145E8` (sun/moon camera jitter, draw phase);
-- terrain: the gradient noise table, 255 calls once per boot when the sea object is allocated (`func_00137550` from `func_001381F8`, guarded by `D_00410690`); the table is read only by dead code, but the calls advance the sequence;
+- terrain: the gradient noise table, 256 calls once per boot when the sea object is allocated (`func_00137550` from `func_001381F8`, guarded by `D_00410690`); the table is read only by dead code, but the calls advance the sequence;
 - replay auto-camera: style choice (`func_001756C0`, `func_00175890`) and the style functions on each cut: one call in 0x00172098, 0x00172450, 0x00172850, 0x00174058; two in 0x00173670 and 0x00173A98 (the first result discarded) (`../subsystems/mission-flow.md`);
 - radio: event chatter probability (`func_00252C30`, one call when a report gets that far), the matchers for queues 1, 2 and 4 (`func_00253158`, `func_00254930`, `func_00254340`: one call per event with candidates, index `rand() % count`), the click SE variant (`func_00255F30`, `rand() % 6`), the post-message gap (`func_002565F0`), conditional chatter and scripted variants (`../subsystems/sound.md`); `UpdateChatterTimers` 0x00259588 and `func_002594F0` (periodic chatter timers);
 - effects: `func_0019C888`, `func_0019FF90`, `func_001A1FA8`, `func_001BFEF0`, `func_001C0010`, `func_001C9838`, `func_001CD400`, `func_001CF398`, `func_001CFCA8`, `func_001D0B40`, `func_001D34F0`, `func_001D3950` and others in `../subsystems/effects.md`;
@@ -49,6 +51,7 @@ No AI, weapon or rule code calls `rand` directly. `rand` calls from drawing (sky
 
 - Implement newlib `rand`/`srand` exactly (the C runtime `rand` is game state, `../port/skeleton-readiness.md`).
 - Keep the random table, its cursor reset and every `NextRandomFloat` call in the original order.
+- The player camera shake (`func_00125B70`, `../subsystems/camera-hud.md`) reads the table only while the pad rumble state (D_00411880/D_00411888) is non-zero, so the rumble words are part of the simulation state: the port must update them exactly like the PS2 (including with vibration unsupported or disabled on the host) or later gameplay reads in the same frame shift.
 - Emulate the VU0 R register (`vrinit`, `vrnext`) in `vu0_math.h`.
 - Keep the effect LCG and the sound LFSR separate from the other sources.
 - Run the game's draw-list build exactly once per simulation step (ADR-002).

@@ -14,6 +14,7 @@ layout(push_constant) uniform Params {
     vec2 source_size;   // native image size in pixels
     vec2 output_size;   // viewport size in pixels
     int filter_mode;
+    vec4 color_scale;   // field-copy colour scale: the game's brightness option (ADR-006 §4)
 } params;
 
 void main() {
@@ -31,4 +32,6 @@ void main() {
     } else {
         o_color = texture(u_source, v_uv);
     }
+    // GS MODULATE as the field copy applies it: (colour * scale) truncated to 8 bits, clamped.
+    o_color.rgb = min(floor(o_color.rgb * 255.0 * params.color_scale.rgb + 0.001) / 255.0, vec3(1.0));
 }

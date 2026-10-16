@@ -9,8 +9,8 @@
 // - printf/sprintf format guest strings with EE varargs (one 64-bit slot per argument; floats are
 //   passed as doubles). printf output goes to the session log once per format string (debug text
 //   of the game, never per frame).
-// - sinf/cosf/atan2f/sqrtf use the host libm: NOT bit-exact with newlib (risks.md); exact versions
-//   come with the first gameplay code that depends on them.
+// - sinf/cosf/atan2f/atanf: bit-exact newlib translations in libm.cpp (S4). sqrtf still uses the host
+//   (sqrt is correctly rounded on both; the EE flush/clamp rules are applied).
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -248,10 +248,14 @@ u32 strlen(u32 s) {
     return n;
 }
 
-f32 sinf(f32 x) { return std::sin(x); }
-f32 cosf(f32 x) { return std::cos(x); }
-f32 atan2f(f32 y, f32 x) { return std::atan2(y, x); }
+// sinf, cosf, atan2f, atanf: src/sce/libm.cpp (bit-exact newlib translations).
 f32 sqrtf(f32 x) { return x <= 0.0f ? 0.0f : std::sqrt(x); }
+// newlib floorf (0x00284748): exact on any IEEE host (no rounding involved).
+f32 floorf(f32 x) { return std::floor(x); }
+// newlib fmodf (0x00284DE0, wrapper of __ieee754_fmodf): the remainder is exact on any IEEE host.
+// HYPOTHESIS: the wrapper's error path (y == 0 or a NaN operand with _LIB_VERSION != _IEEE_) is not
+// reached by the game; the hangar camera (0x002318F8) divides by the constant 12000.
+f32 fmodf(f32 x, f32 y) { return std::fmod(x, y); }
 
 // libgcc __main 0x00288950 / __do_global_ctors 0x002888A0: runs once (flag 0x004CC56C), then the
 // .ctors list at 0x0029F308 from the last entry to the first. A count of -1 means "count until the

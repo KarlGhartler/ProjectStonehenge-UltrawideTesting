@@ -6,8 +6,15 @@ Questions that are still open. Checks that need PCSX2 have their steps in `pcsx2
 
 | Question | Doc | Procedure |
 |---|---|---|
+| Movie upscaling: does FSR 1 RCAS sharpening improve the EASU output on the real movies (ADR-006 §5 point 3)? Compare `--movie-upscale 2` screenshots with and without RCAS | `decisions/ADR-006-presentation-resolution.md` | owner, visual (no PCSX2) |
+| libmpeg `sceMpeg.frameCount` and `flags`: PCSX2 shows 46 where the port counts 47 pictures returned in the chunk, and flags 0x19B where the port writes 0. The game reads neither (expected `sdk` differences). One more data point would fix the counting rule (a state mid-chunk at a known picture) | `src/sce/libmpeg.cpp`, `port/validation.md` S3-3 | low priority, no procedure |
 | VU0 micro skinning test vectors for part types 0 and 3 (type 1 captured, `pcsx2/sessions-05.md`; feeds STATUS decision 14) | `subsystems/vu-programs.md` | [1] |
 | Folder memory card: format against PCSX2 v2.8.2, round trip of a save, file times | `formats/folder-memcard.md` | needs the port's `sceMc*` layer first |
+| I/O latency: PCSX2 reaches scene 6 sub 7 one frame later with an unformatted card than with no card, and its DATA 333 load takes ~17 frames (port: 3); the title data DATA 0xB0 takes about 20 frames longer than in the port (S2a: the menu fade at title sub 6 is 20 frames further on, `port/validation.md` S2a-3). A latency model for CD reads and libmc that matches PCSX2 frame for frame needs more cold-boot runs; until then frame counters are `timing` differences at checkpoints | `port/validation.md` S1-1, S2a-3, `port/ramdiff-expected-s1.csv`, `-s2a.csv` | before the input-recording slices (S5c) |
+| VAG.IRX timing: the port runs `VagMain` from the mixer's SPU2 IRQ, so its phase against the game step (and the ring index / played bytes in each reply) can differ from PCSX2 by one half-buffer period (10 ms); not separable at the S2a checkpoints, because the stream positions there also differ by music time (Start pressed at another moment); recheck from a recording with an input-aligned checkpoint | `subsystems/iop-sound.md` VAG.IRX, `port/validation.md` S2a-3 | first input-recording slice |
+| Menu frame filter (zoom blur) in the port differs from PCSX2 in a radial pattern: centre G/B −1.5/−2.8, edges and corners +1 to +3. PCSX2's software and hardware renderers agree (within 0.3), so the port is the outlier. Bilinear rounding tests shift the level but keep the shape, so it is not only blend rounding. Next: compare the alpha channel (Ad of the zoom blur) and the glow texture 0x3E90 in GS local memory with the save state's `GS.bin` (needs a port GS-memory dump; ask the owner before a programmable-blend redesign) | `port/validation.md` S2a-4 | run 08 |
+| Port determinism under host load: five port instances run in parallel reached the S4 title checkpoint with different SMV chunk buffers (1-1.5 MB of movie data at other positions) than a single run, so the movie stream's progress depends on host timing (presumably the mixer/audio thread draining the SMV PCM in real time). Game logic was unaffected at the checkpoint; it matters for lockstep LAN play (ADR-008) and for recording replays. Find where host time enters. Checked 2026-10-16 (`port/s5-plan.md` P1): the SPU model already runs per step; 1 solo + 4 parallel runs to the title card were identical except the pad analog bytes (live device overlaid on the pad script, sampled per presented frame); the movie-buffer case did not reproduce. Also seen in the hangar performance work: a run that took a screenshot every 60 vblanks at 6 fps reached the hangar with the camera at another orbit phase than runs without (`port/validation.md` S4-6) | `port/validation.md` S4-1, `subsystems/iop-sound.md` | before the input-recording slices (S5c) |
+| Owner check from slice S1: controller input in the port after the start-up enumeration fix (the session log now lists the devices SDL sees) | `port/validation.md` S1-2 | owner, any time |
 
 ## Static analysis (Ghidra, tools)
 
@@ -17,7 +24,9 @@ Questions that are still open. Checks that need PCSX2 have their steps in `pcsx2
 - **AI:** identity of the class 8/9 cannons (H: Stonehenge) and of the class 10 scripted objects (type 0x4C objects react to the strike event zones).
 - **Rendering:** what each VU1 program computes; whether the first pool table of the flight frame receives packets from outside `BuildFlightDrawLists`.
 - **Effects:** names of the effect types marked (H).
-- **Sound and radio:** mapping of radio event ids to the probability table 0x00409DA8; VAG.IRX mode 4 vs. mode 8 and `VagMain` ring hand-off; SOUND `delay_timer` / `spu_register_timer`; VAG fno 1 command fields.
+- **Sound and radio:** mapping of radio event ids to the probability table 0x00409DA8; SOUND `delay_timer` / `spu_register_timer`; the writer of VAG reply words +0x50/+0x60 (0x200 measured).
+- **VS mode:** which `ShowCenterMessage` ids (0x11–0x13) are win / lose / draw; which stage-data field sets the split-screen flag through `game+0x20`; whether any VS stage spawns AI units (`subsystems/vs-mode.md` §7, VS slice).
+- **Input recordings:** frame offset between a PCSX2 `.p2m2` record and the step whose `scePadRead` returns it (PS2 pad latency; calibrated in the first gameplay slice, `port/validation-strategy.md` §3.2).
 - **Flight:** meaning of the constants at 0x0040DF68–0x0040DFBC.
 - **Main context:** `unk_310` (0x310–0xA0F) and the pad sub-structs; whether the struct really ends at 0xA20; result record +0x0E (u16 unit count at creation vs. byte "players" in the results code).
 - **Memory:** game code that relies on `lq`/`sq` ignoring the low 4 address bits; absolute addresses inside the remaining packet sub-blocks.
@@ -30,6 +39,10 @@ Questions that are still open. Checks that need PCSX2 have their steps in `pcsx2
 
 | Question | Answer | Doc |
 |---|---|---|
+| SOUND id-6 reply (0x00410D08, SPU limit for bank registration) | min(ESA0, ESA1) read after the command with libsd's work-area table; core 1 mode 2 = 0x001FE0C0, so the reply is core 0's 0x001DFFF0 (PCSX2 SPU2 state; the old 0x001DB7C0 was core 0 in mode 3), 2026-10-16 | `port/validation.md` S4-7 |
+| VAG.IRX mode 4 vs. mode 8, `VagMain` ring hand-off, fno 1 command fields | command 1 (mode 4) streams while the EE keeps reading; command 2 (mode 8) = all data already read, the channel ends (0x40) or chains (0x80); a ring segment is handed back when 0x10000 bytes per voice are played; command fields {id, slot, bytes per voice, voice count, frequency word} (S2a, 2026-10-14) | `subsystems/iop-sound.md` VAG.IRX |
+| SOUND voice record offsets | voice byte +0x0E, modify flags +0x10 (corrected from +0x12 / +0x14, S2a) | `subsystems/iop-sound.md` |
+| EE `add.s`/`sub.s` in PCSX2 | not plain round-to-nearest: PCSX2's `FPU_ADD_SUB` (always on) masks the smaller operand to 25 − d significand bits before the SSE add; `fpu::Add`/`Sub` model it and all translated float adds use them (S2a, 2026-10-14) | `port/validation.md` S2a-3 |
 | `gp` value | 0x004159F0, matches crt0 and Ghidra; the only gp write is crt0 | `platform/toolchain.md` |
 | SDK version, source file names, type-info strings | SDK 2.3.0 (libmc 2.3.2); no source names; only libstdc++ classes | `platform/toolchain.md` |
 | `main`, main loop, scene table | `main` 0x001001F0, loop 0x00100290–0x001003BC, 8 scenes; scenes 1 and 3 have no requester | `game/boot.md`, `game/scenes.md` |
@@ -67,4 +80,8 @@ Questions that are still open. Checks that need PCSX2 have their steps in `pcsx2
 | Loaders for DATA 291–332 and BD 2 | none: every DATA and BD load call site was checked; indices are constants or bounded below 291; BD uses 0, 1, 3–12 | `formats/CDP.md`, `port/dead-code.md` |
 | DATA = id + 1 for aircraft outside mask 0x00204114 | yes: `LoadFlightDataEntry` takes id + 0x52 only when the id < 0x13 and the mask bit is set (disassembly 0x0010AF48–0x0010AF70 checked), else id + 1 | `subsystems/mission-flow.md` |
 | `func_00226710` / `func_0017BE38` in trial missions | aircraft unlock (state 2) for the mission; best-run track for the trial HUD comparison | `subsystems/results-startup.md` |
+| VS split-screen layout | side by side: two 256×448 viewports, projection width halved (320, or 426.67 with SCREEN RATIO), height 480 | `subsystems/vs-mode.md` |
+| VS win rules | first to the target score `game[0x2E]` (3 options per stage, table 0x003AEEF0), else higher score at time-out or when both are down; leaving the area loses; winner in `game[0x2D]` | `subsystems/vs-mode.md` |
+| PCSX2 input recording format | `.p2m2` v1: 0x23A-byte header, 36 bytes per vsync (2 ports × the 18 `scePadRead` bytes 2–19) | `formats/p2m2.md` |
 | Result mode names | the mode has no on-screen name; it selects the title (`TRIAL MISSION nn` / `MISSION nn`), the reward lines and the background | `subsystems/results-startup.md` |
+| Movie audio half, IPU alpha, PCM layout (S3) | the SOUND reply status is the half being played (reader +0x70 equal mid-movie); alpha 0x80 on every pixel; L/R in 0x200-byte blocks (capture correlation 0.97-0.995) | `port/validation.md` S3-3, S3-5 |

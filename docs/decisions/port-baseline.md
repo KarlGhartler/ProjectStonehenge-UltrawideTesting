@@ -19,6 +19,7 @@ This file lists category 2. A feature is added here only after the owner approve
 | Settings in `settings.json` | `%LOCALAPPDATA%\AC04Port\settings.json`; settings struct + JSON load/save + change notification; no menu in the skeleton | ADR-005, ADR-006 | 2026-10-11 |
 | Input rebinding | keyboard and host controllers (SDL3) mapped onto the exact PS2 pad bytes; bindings in `settings.json`; the game's `ConvertPadInput` is unchanged | ADR-005 | 2026-10-11 |
 | Audio on focus loss | setting `audio.on_focus_loss`: `keep_playing` (default) or `mute`; never pauses the simulation | ADR-005 | 2026-10-11 |
+| Movie upscaling | decoded movie pictures (640×448; 640×336 for SS01–SS12) pass a separate, replaceable upscaling stage before the output pass, scaled by the internal-resolution factor (passthrough at 1× until higher internal resolutions are enabled); AMD FidelityFX FSR 1 EASU, plus RCAS sharpening if it improves the result; each picture is still held for exactly 2 game ticks; game code and guest RAM unchanged | ADR-006 §5 | 2026-10-13 |
 
 Interpolation is feasible with the node matrices and the camera recorded per step (ADR-002 research findings). Effects and particles use their pool slot as identity and must snap when a slot is reused.
 
@@ -40,6 +41,7 @@ None.
 |---|---|
 | Widescreen (Hor+) | changes the projection and HUD layout, possibly culling and what the player sees. Not checked yet: whether any gameplay rule uses on-screen visibility (e.g. lock-on through the camera projection). Draw-phase randomness (sky, sun jitter) must run identically either way |
 | Effects detail / "reduce effects" | effects read the random table inside the simulation step, so changing them changes gameplay randomness; must be labelled gameplay-altering (`../subsystems/effects.md`) |
+| VS LAN play (ADR-008, option A, approved 2026-10-13) | not intrinsic to a PC port and adds input delay; lockstep input sharing over UDP on the local network, opt-in per session, original local split screen unchanged as the default; optional crop to the local player's view |
 | Debug overlay and its tools | optional debug layer (`../port/debug-overlay.md`); opens only when `debug.overlay_enabled` is true (default off; on by default in development builds); nothing changes unless it is opened |
 
 ## Not features (follow from other decisions)

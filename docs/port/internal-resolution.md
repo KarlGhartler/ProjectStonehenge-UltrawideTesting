@@ -25,7 +25,7 @@ A GS coordinate is `(XYZ − XYOFFSET) / 16` pixels (12.4 fixed point). With sca
 | Screen fade (bucket 2 of the overlay table), full-screen tints | full-screen sprites: rectangle scales, flat colour |
 | Scissor / viewport (`SCISSOR_1/2`, camera +0x188) | multiply by N (inclusive max: `N·(max+1) − 1`) |
 | Depth test / Z buffers (Z24, Z32), DATE, alpha test, blending | per-pixel operations: identical at any N |
-| Movies (640×448 MPEG frames) | uploaded as textures and drawn as sprites: the sprite scales, the frame texture stays 640×448 (bilinear/nearest as on the PS2) |
+| Movies (640×448 MPEG frames; 640×336 for SS) | uploaded as textures and drawn as sprites: the sprite scales. At N > 1 the frame texture is replaced by the output of the movie upscaling stage (FSR 1, 640N×448N), owner decision 2026-10-13 (`../decisions/ADR-006-presentation-resolution.md` §5); at 1× the 640×448 texture is used as on the PS2. The stage, the decoder side path and the draw identification (`DrawCommand::texture_guest_source`) exist since S3. Still to do with the scaled GS backend: sampling the stage output in those draws |
 
 ## 4. Paths that break, and the fix for each
 

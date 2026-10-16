@@ -11,6 +11,7 @@ start,end,category,reason
 0x003FABD0,0x003FABD8,sdk,libkernel heap/sbrk pointers (FUN_002646F8); the port's malloc keeps its arena on the host
 0x003FB380,0x003FCF30,sdk,SDK .data: sceSifInitRpc / sceSifInitIopHeap / scePadInit / libmc / libcdvd state
 0x003FF600,0x003FF750,sdk,C++ runtime constructor 0x0027C680 data (not run by the port)
+0x00401AC0,0x00401D78,sdk,newlib malloc bins (__malloc_av_; PCSX2 run 06): the PS2 malloc/free calls fill the bins; the port's malloc keeps its arena on the host
 0x00401D78,0x00401D84,sdk,newlib malloc state (__malloc_av_ / sbrk base)
 0x00402190,0x004021AC,sdk,newlib malloc top/trim state
 0x00411980,0x004119E0,sdk,libgcc __register_frame_info object (registration is a no-op in the port)

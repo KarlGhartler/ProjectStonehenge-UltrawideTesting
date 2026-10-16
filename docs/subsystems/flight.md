@@ -15,7 +15,7 @@ The player aircraft from pad input to new position and rotation each frame, plus
    6. `UpdatePlayerTargeting` 0x001232D8, `FirePlayerWeapons` 0x001249A0, reload timers `func_00124740`.
    7. View control `func_00125B70`.
    8. Effects `func_00126758` / `func_00126970`, sounds and warnings `func_001270B8`.
-   9. `UpdateAircraftMovingParts` 0x001206E0: model part angles from the flight values (aircraft block 3, 0x60-byte records).
+   9. `UpdateAircraftMovingParts` 0x001206E0: model part angles from the flight values (aircraft block 3, 0x60-byte records). Details below ("Moving parts").
 
 ## Data
 
@@ -132,3 +132,11 @@ Position integration (position += velocity) happens in the unit update, not here
 ## Open points
 
 - Meaning of the constants at 0x0040DF68–0x0040DFBC (angle limits and wrap values; read from `.sdata` at run time).
+
+## Moving parts (`UpdateAircraftMovingParts` 0x001206E0)
+`UpdateAircraftMovingParts(i, immediate)`: unit U = 0x002A1F70[i], player state P = U+0x44, block 3 B = word S+0x1760+i·0x40 (`../formats/AIRCRAFT.md`). Called per frame from the player update and once with immediate = 1 at mission setup (`func_0011EFA0`).
+- Altitude factor a = clamp(U+4 · −1/65536 (`-1.5258789e-05f`), 0, 1). Spin factor s = (U+0x14 + *0x0040DD9C) / *0x0040DDA0, then −1 when > 1, +1 when < 0 (one step each).
+- Records: count B+4, records of 0x60 bytes from B+8; the walk also stops at a record whose part count byte is 0. A record: u8 +0 part count n, s8 +1… part ids, f32 +8 base, f32 +0xC rate, then 4 drivers of 0x14 bytes at +0x10: s16 +0 source, s16 +2 mode, f32 +4 in_min, +8 out_min, +0xC in_max, +0x10 out_max.
+- Value v starts at base. Drivers are evaluated in order while their source is not 0, 7, 8 or 9 (at most 4): x = source value (1 → P+0x250, 2 → P+0x258, 3 → P+0x254, 4 → P+0x248, 5 → P+0x24C, 6 → P+0x25C, 10 → P+0x240, any other → base); when in_min ≠ in_max, x = (x − in_min) / (in_max − in_min); clamp 0…1; y = x · (out_max − out_min) + out_min; clamp 0…1; mode 0/1: v = y; 2: v = max(v, y) (y when v < y); 3: min; 4: v = y when |y − 0.5| > |v − 0.5| (compared as doubles through libgcc `__extendsfdf2`/`__subdf3`/`0x0028BD28`; the differences are computed in float first, so a float compare gives the same result); 5: v = v + y − base, capped at 1; 6: v = (v − base) · y + base; other modes: unchanged; then clamp v to 0…1. The "kind" of the record is the source of the driver where the walk stopped (the 4th driver when all 4 were evaluated).
+- For each part id p (j < (s8)n), once per call (a 32-bit done mask, bit p & 31): angle slot A = P+0x1C0+4p; kind 7 (free-running): A += rate, then while A > 1: A −= 1; kind 9: A = s; kind 8: A = a; otherwise immediate → A = v, else rate-limited: d = v − A; d > rate → A += rate; d < −rate → A −= rate; else A += d. Then, unless S+0x1653 == 2 (two players) and p == 15: `func_00149EB8(track p, model i, A)`; p == 9 also sets track 0x42 to P+0x1E4, p == 10 track 0x43 to P+0x1E8 (the same slots).
+

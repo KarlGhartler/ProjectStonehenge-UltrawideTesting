@@ -1,6 +1,7 @@
-﻿// Milestone C: SDK layer and runtime pieces that can be checked without the disc.
+// Milestone C: SDK layer and runtime pieces that can be checked without the disc.
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -10,6 +11,8 @@
 #include "game/game.h"
 #include "platform/iop/iop_services.h"
 #include "platform/iso9660.h"
+#include "sce/ee_hw.h"
+#include "sce/hw_registers.h"
 #include "sce/runtime.h"
 #include "sce/sce.h"
 #include "sce/sce_host.h"
@@ -72,7 +75,31 @@ TEST_CASE("TBL access: {sector, size} entries per table") {
 }
 
 TEST_CASE("SOUND stand-in: transfer and voice-status records") {
-    auto sound = ac04::platform::iop::MakeSoundService();
+    // VAG.IRX keys its stream voices (core 1 voices 18-23) on at init; SOUND reports them as 4.
+    ac04::platform::audio::SpuMixer mixer;
+    auto vag = ac04::platform::iop::MakeVagService(&mixer);
+    {
+        const std::uint32_t voices[4] = {0x12, 0x14, 0x16, 0x17};
+        std::vector<std::uint8_t> vreply(0x100, 0);
+        vag->Call(0, reinterpret_cast<const std::uint8_t*>(voices), sizeof(voices), vreply.data(), 0x100);
+        std::uint32_t base = 0, ring = 0;
+        std::memcpy(&base, vreply.data(), 4);
+        std::memcpy(&ring, vreply.data() + 0x24, 4);
+        CHECK(base == 0x0008DA40u);  // measured stream area
+        CHECK(ring == 1);            // measured fno 0 ring index
+    }
+    mixer.AdvanceStep();  // one SPU IRQ (VagMain) per half-buffer period: at least one in a step
+    {
+        const std::uint32_t idle[2] = {0, 0};
+        std::vector<std::uint8_t> vreply(0x100, 0);
+        vag->Call(1, reinterpret_cast<const std::uint8_t*>(idle), sizeof(idle), vreply.data(), 0x100);
+        std::uint32_t flags = 0, ring = 0;
+        std::memcpy(&flags, vreply.data() + 0x14, 4);
+        std::memcpy(&ring, vreply.data() + 0x24, 4);
+        CHECK(flags == 1);  // idle (run 06: words 5-8 = 1)
+        CHECK(ring == 2);   // run 06: ring index 2 while nothing streams
+    }
+    auto sound = ac04::platform::iop::MakeSoundService(&mixer);
     std::vector<std::uint8_t> send(0x2400, 0), reply(0x600, 0);
     auto put = [&send](std::uint32_t off, std::uint32_t v) { std::memcpy(send.data() + off, &v, 4); };
     auto get = [&reply](std::uint32_t off) {
@@ -82,18 +109,40 @@ TEST_CASE("SOUND stand-in: transfer and voice-status records") {
     };
     sound->Call(0, send.data(), 0x2400, reply.data(), 0x600);
     CHECK(get(0) == 2);
-    // Batch: one transfer (0xA, ticket 7) and one output-mode command (0xE, mode 2).
+    // Batch: one transfer (0xA IOP -> SPU RAM, ticket 7) and one output-mode command (0xE, mode 2).
     put(0, 2);
     put(4, 0xA);
+    put(4 + 4, 0x1000);    // IOP source
+    put(4 + 8, 0x5A10);    // SPU destination
+    put(4 + 0xC, 0x40);    // size
     put(4 + 0x10, 7);
     put(0x18, 0xE);
     put(0x1C, 2);
     sound->Call(1, send.data(), 0x2400, reply.data(), 0x600);
     CHECK(get(0) == 2);       // no voice records
     CHECK(get(4) == 10);      // transfer record
-    CHECK(get(8) == 7);       // last finished ticket
+    CHECK(get(8) == 0);       // the transfer is still running: previous finished ticket
+    CHECK(get(12) == 0);      // status word (BlockTransStatus >> 24)
     CHECK(get(16) == 0xF);    // voice status record
     CHECK(get(20) == 2);      // output mode
+    CHECK(reply[24 + 42] == 4);  // VAG stream voices report "still sounding" (get_ch_stat)
+    CHECK(reply[24 + 47] == 4);
+    CHECK(reply[24 + 0] == 0);
+    put(0, 0);                // next batch: empty
+    sound->Call(1, send.data(), 0x2400, reply.data(), 0x600);
+    CHECK(get(8) == 7);       // finished by now
+    CHECK(get(12) == 0);
+    // A block-transfer stop {0, 0, 0} (ticket 8) starts no DMA: its ticket is never reported
+    // (main_TransBd / handler_DmaInt; PCSX2 keeps the ticket one behind after each movie).
+    std::fill(send.begin(), send.end(), 0);
+    put(0, 1);
+    put(4, 0xA);
+    put(4 + 0x10, 8);
+    sound->Call(1, send.data(), 0x2400, reply.data(), 0x600);
+    put(0, 0);
+    sound->Call(1, send.data(), 0x2400, reply.data(), 0x600);
+    sound->Call(1, send.data(), 0x2400, reply.data(), 0x600);
+    CHECK(get(8) == 7);
 }
 
 TEST_CASE("sceGsSetDefDispEnv: NTSC interlaced field mode 512x224") {
@@ -179,6 +228,14 @@ TEST_CASE("SOUND stand-in: reverb mode reply carries the measured work-area addr
     std::memcpy(&id, reply.data() + 4, 4);
     std::memcpy(&esa, reply.data() + 8, 4);
     CHECK(id == 6);
+    CHECK(esa == 0x001DFFF0u);  // min(core 0 mode 0 = 0x001DFFF0, core 1 mode 2 = 0x001FE0C0): PCSX2 runs 06/09/10
+    sound->Call(1, send.data(), 0x2400, reply.data(), 0x600);
+    std::memcpy(&esa, reply.data() + 8, 4);
+    CHECK(esa == 0x001DFFF0u);  // the same after every movie end (S4 checkpoints)
+    send[8] = 0;                // core 0, mode 3: the state of scenestep_first_2.p2s
+    put(12, 3);
+    sound->Call(1, send.data(), 0x2400, reply.data(), 0x600);
+    std::memcpy(&esa, reply.data() + 8, 4);
     CHECK(esa == 0x001DB7C0u);
 }
 
@@ -201,4 +258,69 @@ TEST_CASE("EE FPU: round to nearest as PCSX2 runs AC04 (validation.md E-2)") {
     CHECK(fpu::Mul(FLT_MIN, 0.5f) == 0.0f);
     CHECK(fpu::Div(-1.0f, 0.0f) == -FLT_MAX);
     CHECK(fpu::FloatToInt(-2.7f) == -2);  // cvt.w.s still truncates
+}
+
+TEST_CASE("EE FPU: add/sub mask the smaller operand as PCSX2 does (validation.md S2a-3)") {
+    namespace fpu = ac04::fpu;
+    auto bits = [](f32 f) {
+        u32 b;
+        std::memcpy(&b, &f, 4);
+        return b;
+    };
+    // Menu fade timer (UpdateFade 0x0022C848): 30 x (1/60) reads 0x3EFFFFF8 in PCSX2 (s2a_title_sub6).
+    f32 t = 0.0f;
+    for (int i = 0; i < 10; ++i) t = fpu::Add(t, 1.0f / 60.0f);
+    CHECK(bits(t) == 0x3E2AAAAAu);
+    for (int i = 0; i < 20; ++i) t = fpu::Add(t, 1.0f / 60.0f);
+    CHECK(bits(t) == 0x3EFFFFF8u);
+    // Equal exponents and a difference of 1: no masking, same as IEEE.
+    CHECK(bits(fpu::Add(1.5f, 1.25f)) == bits(1.5f + 1.25f));
+    CHECK(bits(fpu::Sub(3.0f, 1.0f)) == bits(2.0f));
+    // d >= 25: only the sign of the small operand is left.
+    CHECK(fpu::Add(1.0f, 1e-9f) == 1.0f);
+    CHECK(fpu::Sub(1.0f, 1e-9f) == 1.0f);
+}
+
+TEST_CASE("LerpColor: per-byte MMI blend (pmulth, psraw 12, paddsh, clamp 0..255)") {
+    using ac04::game::LerpColor;
+    CHECK(LerpColor(0.5f, 0, 0x808080) == 0x404040u);
+    CHECK(LerpColor(1.0f, 0x765834, 0xABABAB) == 0xABABABu);
+    CHECK(LerpColor(0.0f, 0x765834, 0xABABAB) == 0x765834u);
+    CHECK(LerpColor(2.0f, 0, 0x80) == 0xFFu);        // clamped to 255
+    CHECK(LerpColor(-1.0f, 0x10, 0) == 0x20u);       // t < 0 extrapolates away from b
+    CHECK(LerpColor(0.25f, 0x101010, 0x909090) == 0x303030u);
+}
+
+TEST_CASE("IPU colour conversion: integer BT.601 method (S3)") {
+    u8 px[4];
+    ac04::sce::IpuCsc(16, 128, 128, px);  // black
+    CHECK(px[0] == 0);
+    CHECK(px[1] == 0);
+    CHECK(px[2] == 0);
+    CHECK(px[3] == 0x80);
+    ac04::sce::IpuCsc(235, 128, 128, px);  // white: (0x95 * 219 >> 6 + 1) >> 1 = 255
+    CHECK(px[0] == 255);
+    CHECK(px[1] == 255);
+    CHECK(px[2] == 255);
+    ac04::sce::IpuCsc(100, 90, 200, px);
+    // lum = 0x95 * 84 >> 6 = 195; rcr = 0xCC * 72 >> 6 = 229; gcr = -0x68 * 72 >> 6 = -117;
+    // gcb = -0x32 * -38 >> 6 = 29; bcb = 0x102 * -38 >> 6 = -154 (arithmetic shifts).
+    CHECK(px[0] == 212);  // (195 + 229 + 1) >> 1
+    CHECK(px[1] == 54);   // (195 - 117 + 29 + 1) >> 1
+    CHECK(px[2] == 21);   // (195 - 154 + 1) >> 1
+}
+
+TEST_CASE("RCNT0: a busy-wait on 0x118 H-blanks spans one vblank (MovieFrameSync, S3)") {
+    auto& regs = ac04::sce::EeRegisters::Get();
+    regs.OnVBlank(1);  // a field of 262 lines starts
+    ac04::sce::EeHwWrite(ac04::sce::EeReg::kT0Count, 0);
+    int vblanks = 0;
+    u64 index = 2;
+    while (ac04::sce::EeHwRead(ac04::sce::EeReg::kT0Count) < 0x118) {
+        if (!regs.AdvanceLine()) {
+            regs.OnVBlank(index++);
+            ++vblanks;
+        }
+    }
+    CHECK(vblanks == 1);
 }

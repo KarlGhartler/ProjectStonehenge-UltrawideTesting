@@ -947,3 +947,569 @@ CdFileEntry.*,pPath / dwLsn,(not applied),same as above
 0x00260980,,plate: StartupSplashUpdate ... no-save intro (every boot without BASLUS-20152AC04 dir) (updated),"code: 0x00260288 + 0x0025F528/0x0025E5E8 sceMcGetDir count; replaces 'first-boot intro'"
 0x00260288,,plate: Startup card evaluation (flag 0x4000 = save present; message selection),decompiled code; sessions-01/03 PCSX2 confirmation of intro vs title
 0x002236A0,,plate: skin parts by type 0/1/3 -> 0x00224180/0x00224410/0x00224848,"code: part +0x140 switch; PCSX2 ra 0x002246DC (sessions-05)"
+0x002613F0,SceneStartup,SceneStartup,S1 translation; dispatch table 0x003F8708; PCSX2 run 06 (sessions-06)
+0x00260980,StartupSplashUpdate,StartupSplashUpdate,S1 translation; exits match PCSX2 run 06 states s1_S_exit/s1_E_exit
+0x00260E80,FUN_00260e80,InitStartupScene,"S1: sub 0 (640x448 frame mode, work/window allocation, packet buffers)"
+0x00260FC0,FUN_00260fc0,LoadStartupData,S1: sub 1 loads DATA 333
+0x00260FE8,FUN_00260fe8,SetupStartupData,S1: sub 2 splits DATA 333 into font/text/window/splash textures
+0x00261100,FUN_00261100,InitStartupCamera,S1: sub 3
+0x00261128,FUN_00261128,ShowStartupWarnings,S1: sub 4
+0x002611A0,FUN_002611a0,PrepareCardProbe,S1: sub 5
+0x002611D8,FUN_002611d8,ProbeStartupCard,S1: sub 6; RAM checkpoints run 06
+0x00261378,FUN_00261378,RunStartupCardMessages,S1: sub 7 (PCSX2 breakpoint of run 06)
+0x00261398,FUN_00261398,StartStartupSplash,S1: sub 8
+0x002613D0,FUN_002613d0,RunStartupSplash,S1: sub 9 (PCSX2 breakpoint of run 06)
+0x00260078,FUN_00260078,UpdateStartupWarnings,"S1 translation (warning pages 5/6/7/10, follow-up pages)"
+0x00260288,FUN_00260288,EvaluateCardResult,S1 translation; flag 0x4000 = AC04 directory present
+0x00260488,FUN_00260488,UpdateCardMessages,S1 translation; no-card messages match PCSX2 run 06 screenshots
+0x00260900,FUN_00260900,DrawCardMessages,S1 translation
+0x00260B90,FUN_00260b90,DrawSplashImage,S1 translation; screenshots match PCSX2 run 06
+0x0025FEF8,FUN_0025fef8,RequestSoundBankLoad,S1 translation
+0x0025FF48,FUN_0025ff48,UpdateSoundBankLoad,S1 translation (DATA 0x165 + BD entry 1 to bank slot 10)
+0x0025F438,CheckMcCard,CheckMcCard,S1 translation; PCSX2 run 06 card S/E/none results
+0x0025F528,FUN_0025f528,CheckMcSaveDir,S1 translation; sceMcGetDir of /BASLUS-20152AC04 and the save file (run 06)
+0x0025E3A8,FUN_0025e3a8,ProbeMcCardInfo,S1 translation; sceMcGetInfo until three equal results (run 06 counters)
+0x0025E5E8,FUN_0025e5e8,ReadMcDir,S1 translation; sceMcGetDir state machine (run 06 counters)
+0x0024ED80,FUN_0024ed80,InitMessageWindow,S1 translation
+0x0024EEB0,FUN_0024eeb0,LoadMessageWindow,S1 translation
+0x0024F1B8,FUN_0024f1b8,ShowMessagePage,S1 translation
+0x0024F210,FUN_0024f210,HideMessageWindow,S1 translation
+0x0024F230,FUN_0024f230,UpdateMessageWindow,S1 translation (type-out)
+0x0024F698,FUN_0024f698,DrawMessagePage,S1 translation; screenshots match PCSX2 run 06
+0x00250690,FUN_00250690,DrawMessageWindow,S1 translation
+0x00250870,FUN_00250870,GetMessage,S1 translation (unsigned modulo of the message count)
+0x00250930,FUN_00250930,IndexMessages,S1 translation
+0x002509F0,FUN_002509f0,GetMessageCount,S1 translation
+0x00251D28,FUN_00251d28,LoadFontBlock,S1 translation
+0x00251D70,FUN_00251d70,GetGlyphWidth,S1 translation
+0x00251DD8,FUN_00251dd8,GetMessageCharWidth,S1 translation
+0x00251E48,FUN_00251e48,SelectFont,S1 translation (go18/go28 magic)
+0x00251F08,FUN_00251f08,GetGlyphStringLength,S1 translation
+0x00251FD0,FUN_00251fd0,GetMessageLength,S1 translation
+0x00252090,FUN_00252090,GetMessageChar,S1 translation
+0x00252540,FUN_00252540,UploadMessageGlyphs,S1 translation; glyph IMAGE transfers seen in the port's GS intake
+0x00101060,FUN_00101060,AllocQwords,S1 translation
+0x00103E48,FUN_00103e48,AllocDoubleBuffer,S1 translation
+0x00103ED0,FUN_00103ed0,CloseDmaPacket,S1 translation
+0x00103FD8,FUN_00103fd8,InitBucketList,S1 translation
+0x00104100,FUN_00104100,BeginPacket,S1 translation
+0x00104118,FUN_00104118,EndPacket,S1 translation
+0x00104198,FUN_00104198,LinkPacket,S1 translation
+0x001043C0,FUN_001043c0,SetPacketListBuckets,S1 translation
+0x00105CF8,FUN_00105cf8,SetTextureVramAddress,S1 translation
+0x00105D18,FUN_00105d18,BuildTextureUpload,S1 translation
+0x001065E8,FUN_001065e8,GetTextureTex0,S1 translation
+0x00112820,FUN_00112820,BuildSpriteStrips,S1 translation
+0x001130B8,FUN_001130b8,BuildFadeQuad,S1 translation
+0x00113248,FUN_00113248,DrawScreenFade,S1 translation
+0x001026B8,FUN_001026b8,Init2dCamera,S1 translation
+0x00102810,FUN_00102810,SetCameraProjection,S1 translation
+0x001028D8,FUN_001028d8,SetCameraViewport,S1 translation
+0x0022CC50,FUN_0022cc50,plate: HYPOTHESIS SetIntroFlag,"HYPOTHESIS: 1 before the no-save intro, 0 before the title"
+0x0023C7B0,FUN_0023c7b0,GetSaveSizeKb,"S1 translation (returns 75 = ""75KB necessary"" message)"
+0x00259C98,FUN_00259c98,GetHddState,S1 translation (HDD context +0x4399)
+0x002197E8,FUN_002197e8,StopAllVoices,S1 translation (SOUND command 5 for all 48 voices)
+0x00101138,FUN_00101138,PushWorkHeapMark,pushes the work-heap offset on the 4-entry mark stack 0x00412198 (depth 0x00411794); returns free size
+0x00101170,FUN_00101170,PopWorkHeapMark,pops the last heap mark back into the offset; returns free size
+0x00103EB8,FUN_00103eb8,WriteDmaCallTag,"writes a DMA call tag {0x50000000, target} and returns p+16"
+0x00104FC8,FUN_00104fc8,LerpColor,MMI per-byte blend a->b by t (pmulth/psraw 12/paddsh/clamp 0..255)
+0x00105418,FUN_00105418,ResetCampaignData,func_00105728(0x002A15B8) + func_001056D8(0x002A0318); main menu NEW GAME items 9-14
+0x001128D8,FUN_001128d8,BuildSpriteStripsUv,"textured sprite split into 64-pixel strips {UV,XYZ3,UV,XYZ2}, REGLIST tag regs 0x53D3"
+0x00226280,FUN_00226280,DrawMenuFadeFrame,one-bucket list + DrawMenuFade (MenuEnterSubPage)
+0x00226A00,FUN_00226a00,ValidateCampaignSelection,clamps aircraft/colour/weapon 0x002A15BE-C2 against ownership bits 0x002A0320
+0x00226C78,FUN_00226c78,ResetMenuFade,"menu fade object reset: overlay on, fade-in 0.5 s, tab levels cleared"
+0x00226CD0,FUN_00226cd0,UpdateMenuOverlay,tab levels + UpdateFade of the menu fade object (SceneMenu)
+0x00226D08,FUN_00226d08,DrawMenuFade,frame filter + tabs + black fade of a fade object
+0x00226D70,FUN_00226d70,DrawBlackFade,BuildFadeQuad darkening with alpha (1-level)*255
+0x00226E58,FUN_00226e58,GetMenuPulse,(sin(frac(frame_count_unpaused*k)*k2)+1)/2
+0x00226EE0,FUN_00226ee0,ClearMenuTabLevels,clears 7 floats
+0x00226F18,FUN_00226f18,ApproachValue,"b + (a-b)*t, snaps to b within epsilon 0x00410058"
+0x00226F98,FUN_00226f98,UpdateMenuTabLevels,master level and 6 tab levels approach 0/1 from request bits
+0x00227060,FUN_00227060,ResetConnectorAlphas,clears +0xC of N connectors (stride 0x14)
+0x00227090,FUN_00227090,UpdateConnectorAlphas,"active connector alpha grows to 1, others decay"
+0x00227140,FUN_00227140,ResetListWidgets,closes list widgets (stride 0x18) and clears their scales
+0x002271B8,FUN_002271b8,SetListWidgetState,list widget command 1 open / 2 mark open / 3 close
+0x00227298,FUN_00227298,UpdateListWidget,"type-in progress (SE 9), cursor wrap (SE 1), item scales"
+0x00227530,FUN_00227530,UpdateListWidgets,"updates N widgets, pad only to the active one"
+0x002275C0,FUN_002275c0,BuildMenuDrawEnv,A+D environment for a w x h buffer at FBP 0
+0x002276E8,FUN_002276e8,BuildFrameDrawEnv,A+D environment for the current draw buffer
+0x00227800,FUN_00227800,BuildScanlineBands,two moving horizontal bands from the frame counter (ALPHA Cs*Ad+Cd)
+0x00227A10,FUN_00227a10,BuildZoomBlur,"four scaled copies of a texture (zoom blur), last after an ALPHA change"
+0x00227C10,FUN_00227c10,DrawMenuFrameFilter,frame tint copy + scanline bands + zoom blur when level > 0
+0x00227F30,FUN_00227f30,DrawMenuAlphaFilter,alpha-only frame filter (FBMSK 0xFFFFFF) + scanline bands
+0x002284C8,FUN_002284c8,BuildCenteredSprite,"REGLIST sprite centred on (x,y) from a sprite descriptor"
+0x00228550,FUN_00228550,BuildCenteredTexSprite,BuildCenteredSprite with TEX0_2 in the register list
+0x002285D8,FUN_002285d8,BuildMenuTabs,six sprite pairs lit by levels[1..6]; purpose (tabs) in plate comment
+0x00228750,FUN_00228750,DrawMenuTabs,draws BuildMenuTabs with FIX alpha levels[0]; purpose in plate comment
+0x00228870,FUN_00228870,BuildMenuString,glyph sprites of a menu string with type-in ease and highlight layers
+0x00228BA8,FUN_00228ba8,DrawListWidgets,draws open list widgets (rows 0x180 apart)
+0x00228D80,FUN_00228d80,LayoutConnector,connector row positions and per-segment max child scale
+0x00228EB8,FUN_00228eb8,GetConnectorColor,black -> 0x765834 -> 0xABABAB by scale and alpha
+0x00228F60,FUN_00228f60,BuildConnectorCap,glow sprite along a connector segment
+0x00229158,FUN_00229158,BuildConnector,connector line segments + caps
+0x002294F8,FUN_002294f8,DrawConnectors,draws connectors with positive alpha
+0x0022AB60,FUN_0022ab60,ResetMenuTree,"column 0 active, widgets closed, column 0 opening"
+0x0022ABC0,FUN_0022abc0,InitMenuTree,"builds the tree from column/connector definitions, hidden masks, parent ids"
+0x0022AF60,FUN_0022af60,UpdateMenuTree,UpdateListWidgets + UpdateConnectorAlphas
+0x0022AFB8,FUN_0022afb8,GetMenuTreeSelection,global id of the active column's cursor item
+0x0022AFF0,FUN_0022aff0,DrawMenuTree,DrawListWidgets + DrawConnectors
+0x0022B050,FUN_0022b050,StoreMenuTreeCursors,writes cursors back into the column definitions as raw item indices
+0x0022B5A8,FUN_0022b5a8,UploadMessageBoxGlyphs,UploadMessageGlyphs per line (DBP 0x2C00+0x100*i) and frame (0x2F00)
+0x0022B6F8,FUN_0022b6f8,InitMessageBox,"x 0x380, y 0x15D0, ids -1"
+0x0022B758,FUN_0022b758,MeasureMessageBox,"line lengths, widths and total length"
+0x0022B8B8,FUN_0022b8b8,SetMessageBoxText,up to 3 consecutive message ids until the end marker 0xFFFE
+0x0022B9A0,FUN_0022b9a0,UpdateMessageBox,"typewriter progress, SE 9 every 3rd frame, done flag 2"
+0x0022BA68,FUN_0022ba68,DrawMessageBox,"typed characters (colour codes 8-11), cursor block, glow, frame lines"
+0x0022C5E8,FUN_0022c5e8,ResetMenuDataLoad,clears the 0x210-byte load queue
+0x0022C7E8,FUN_0022c7e8,InitFade,"fade object state 0, value 0 or 1"
+0x0022C920,FUN_0022c920,ResetMenuBgm,clears g_MenuBgm and fades all VAG slots
+0x0022CE70,FUN_0022ce70,UpdateMainMenuHelp,help line message from table 0x0039D6B8 for the selected item; typewriter
+0x0022CF48,FUN_0022cf48,MainMenuExitWithFade,"state 8: screen fade out, then MenuGoTo(0, page)"
+0x0022CFC8,FUN_0022cfc8,MainMenuExit,"state 7: object fade out, then MenuGoTo(1, sub)"
+0x0022D078,FUN_0022d078,MainMenuBack,"back: title from column 0, else column 0 and close the sub-column; SE 3"
+0x0022D5A8,FUN_0022d5a8,UpdateTitleTimers,"title time, logo alpha, idle time; menu tab master level"
+0x0022D8F8,FUN_0022d8f8,EvalCurve,"piecewise-linear curve {count, (t, v)*}, clamped"
+0x0022D9A8,FUN_0022d9a8,DrawTitleLogo,6 logo sprites (0x0039D700) faded by curves (0x0039D838)
+0x0022DD50,FUN_0022dd50,DrawTitleBackground,"filters, tabs and fade while the title data loads"
+0x0022DE00,FUN_0022de00,EnterTitle,"scene 4 subs 2-4: main menu object, DATA 0xB0 queued, sub 5"
+0x0022DEA0,FUN_0022dea0,LoadTitle,"sub 5: waits for the load, font block, help box, sub 6"
+0x0022DF00,FUN_0022df00,RunTitle,"sub 6: UpdateFade, MainMenuUpdate, DrawMainMenu"
+0x00410E88,DAT_00410e88,g_pMenuFade,pointer to g_MenuFade (0x0039D4E0); read by SceneMenu and the menus
+0x0039D4E0,DAT_0039d4e0,g_MenuFade,"menu fade object (fade, overlay flag, tab levels, requests)"
+0x00411810,DAT_00411810,g_TitleMenu,main menu object (EnterTitle)
+0x0042D1D0,DAT_0042d1d0,g_MenuBgm,"menu BGM state {slot, -, s16 track[2], s16 state[2]}"
+0x0039D5B0,DAT_0039d5b0,kMainMenuColumns,main menu column definitions (6 x 0x18); cursors written back by StoreMenuTreeCursors
+0x002285D8,BuildMenuTabs,plate: HYPOTHESIS menu tabs (purpose),S2a: behaviour confirmed; purpose is a guess
+0x00228750,DrawMenuTabs,plate: HYPOTHESIS menu tabs (purpose),S2a: behaviour confirmed; purpose is a guess
+0x00226400,FUN_00226400,plate: HYPOTHESIS GetAircraftField8,"S2b: returns s16 +8 of aircraft table entry, -1 out of range; field meaning unknown"
+0x00226580,FUN_00226580,RaiseOwnership,"S2b: raises 2-bit ownership state of aircraft in ownership word 0x002A0320[word] to level, never lowers"
+0x002265F8,FUN_002265f8,CheckOtherAircraftBuyable,S2b: all other aircraft have bit 1 (buyable) in ownership word
+0x00226668,FUN_00226668,CheckAllMissionsRankedS,S2b: each of 18 campaign missions has rank 4 (S) on difficulty d or higher (ranks 0x002A045C)
+0x00226710,FUN_00226710,UnlockMissionColor2,S2b: colour-2 ownership of the mission's aircraft (table 0x0038484A) raised to buyable
+0x00226748,FUN_00226748,ApplyRankUnlocks,"S2b: colour 1 for A/S ranks (diff>=2, cleared), aircraft 18 colours, aircraft 21 colours for all-S (cleared twice)"
+0x002268B0,FUN_002268b0,UnlockAircraftUpToMission,"S2b: aircraft with first mission <= n buyable in colour 0, then ApplyRankUnlocks"
+0x00226968,FUN_00226968,ApplyClearUnlocks,"S2b: campaign-clear unlocks (aircraft 2 colours, aircraft 21 colour 0 shown, all colours 1/2 shown)"
+0x00105448,FUN_00105448,ClampStatistics,"S2b: clamps credits, totals and sortie counts of the records block before saving"
+0x001056A8,FUN_001056a8,ResetScreenPosition,"S2b: screen option block +2/+3 (dx, dy) = 0"
+0x001056B8,FUN_001056b8,ResetBrightness,S2b: screen option block +1 (brightness) = 3
+0x0017BE38,FUN_0017be38,plate: HYPOTHESIS func_0017BE38,"S2b: keeps the better of two {u16,u16} recording tables (*0x002B7C28/2C); purpose trial replay is a guess"
+0x002295F0,FUN_002295f0,BuildFrameOutline,S2b: closed line-strip rectangle outline with grow/overshoot animation by time t
+0x002297B8,FUN_002297b8,DrawFrameOutlines,S2b: frame outlines selected by bit mask into a bucket (ALPHA 0x68 FIX 0x80)
+0x002298E8,FUN_002298e8,DrawAllFrameOutlines,S2b: DrawFrameOutlines with mask (1<<count)-1
+0x002298F8,FUN_002298f8,InitCrosshair,S2b: crosshair cursor at rest at GS 0x6BF0/0x71F0 with its 9-entry trail
+0x00229948,FUN_00229948,MoveCrosshair,"S2b: starts a move to (x+0x6C00, y+0x7200) in n steps; marks moving axes"
+0x002299F0,FUN_002299f0,MoveCrosshairAuto,"S2b: MoveCrosshair with steps = max(4, distance/0x120)"
+0x00229A60,FUN_00229a60,UpdateCrosshair,"S2b: per-frame step of the crosshair move, history and trail shift"
+0x00229BC0,FUN_00229bc0,DrawCrosshair,"S2b: crosshair lines for current and trail positions, colour 0x5E4021 fading"
+0x00229DD0,FUN_00229dd0,BeginMenuTextLayer,"S2b: stores text layer bucket list/index and centre offsets (gp-0x4B64..), sprite setup packet"
+0x00229E80,FUN_00229e80,EndMenuTextLayer,S2b: text layer list = 0
+0x00229E88,FUN_00229e88,DrawMenuText,"S2b: string into the text layer, style 0 menu font, 1 pulsing, 2-11 styled font"
+0x00229FE0,FUN_00229fe0,DrawMenuTextColored,S2b: DrawMenuText with caller colour for styles 2-11
+0x0022A158,FUN_0022a158,GetStyleGlyph,S2b: glyph descriptor of a character in font style 0-11 (table 0x0039D420)
+0x0022A1B8,FUN_0022a1b8,BuildStyledString,S2b: string in a font style (table 0x0039D480) with newline support and fading shadow
+0x0022A6C0,FUN_0022a6c0,DrawPulseBox,S2b: sprite box whose colour pulses with the frame counter (cosine)
+0x0022A998,FUN_0022a998,BuildGauge,S2b: gauge frame (fan) plus a bar filled to t*(w-0x20)
+0x0022B108,FUN_0022b108,ResetPanel,"S2b: panel animation restarted (state 1, times 0, crosshair reset)"
+0x0022B1A8,FUN_0022b1a8,InitPanel,"S2b: panel with outline count (<=16), rectangles and crosshair"
+0x0022B1E0,FUN_0022b1e0,UpdatePanel,"S2b: per-frame panel open/close animation, extra timers, SE, crosshair"
+0x0022B4D0,FUN_0022b4d0,SetPanelState,"S2b: 0 restart opening, 1 start closing"
+0x0022B510,FUN_0022b510,DrawPanel,S2b: draws the panel's frame outlines and crosshair
+0x0022CBB8,FUN_0022cbb8,plate: HYPOTHESIS func_0022CBB8,S2b: progress-dependent value per page kind and mission; meaning unknown
+0x0025E720,FUN_0025e720,ReadMcFile,"S2b: open(1)/read/close step machine of a port block, one request per frame"
+0x0025EA60,FUN_0025ea60,FormatMcCard,"S2b: sceMcFormat step machine (300-poll timeout, failure status 8)"
+0x0025EC58,FUN_0025ec58,MakeMcDir,"S2b: sceMcMkdir step machine, polled in the issue frame"
+0x0025ED78,FUN_0025ed78,WriteMcFile,"S2b: open(0x203)/write/flush/close step machine, each request polled in its issue frame"
+0x0025F050,FUN_0025f050,DeleteMcFile,S2b: sceMcDelete step machine
+0x0025F420,FUN_0025f420,GetMcStatus,S2b: returns the port block status +0x4A4
+0x0025F6B8,FUN_0025f6b8,FormatMcSaveCard,"S2b: card info, format when unformatted, card check"
+0x0023C7B8,FUN_0023c7b8,ComputeSaveChecksum,S2b: byte sum of the 0x4B00 bytes after the save image header
+0x0023C7F0,FUN_0023c7f0,CheckSaveChecksum,S2b: checksum equals image +0xC
+0x0023C880,FUN_0023c880,SetSavePageStatus,S2b: status filter for the save page message (+0x6140)
+0x0023C8B8,FUN_0023c8b8,GetSaveHelpMessage,"S2b: help message id per state, save mode"
+0x0023CA18,FUN_0023ca18,GetLoadHelpMessage,"S2b: help message id per state, load mode"
+0x0023CB20,FUN_0023cb20,UpdateSavePageHelp,S2b: sets and types out the save page help line
+0x0023CC28,FUN_0023cc28,SelectSaveSlot,S2b: slot 0-3 and crosshair move to it
+0x0023CC60,FUN_0023cc60,UpdateSaveSlotSummaries,"S2b: mission, time, credits, difficulty, cleared per slot from the image"
+0x0023CEF0,FUN_0023cef0,LeaveSavePage,S2b: page fade out (state 2) or page and screen fade (state 3)
+0x0023CF80,FUN_0023cf80,PrepareSaveImage,"S2b: applies results after a mission, copies the campaign block into the slot, checksum"
+0x0023D0E0,FUN_0023d0e0,ApplyLoadedSave,"S2b: slot into the campaign block, options and selection applied, leave"
+0x0023E0E8,FUN_0023e0e8,DrawSaveSlotTexts,S2b: slot labels and contents typed out in the text layer
+0x0023E6A8,FUN_0023e6a8,DrawSaveSlotFrames,S2b: slot frames and selection bar
+0x0023E940,FUN_0023e940,DrawSavePage,S2b: save page draw list
+0x0023E9F0,FUN_0023e9f0,EnterSavePage,"S2b: subs 0x4A-0x57 enter: page object, DATA 0xB3, BGM fade"
+0x0023EAA0,FUN_0023eaa0,LoadSavePage,"S2b: sub 0x58: registers icon.sys, icon1.ico, save image (mask 0x23)"
+0x0023EB68,FUN_0023eb68,RunSavePage,S2b: sub 0x59 run handler
+0x00259CA0,FUN_00259ca0,GetHddSaveMode,S2b: returns HDD context +0x4398 (HDD mode for saves)
+0x002597E8,FUN_002597e8,plate: HYPOTHESIS func_002597E8,S2b: stores HDD error code +0x4364
+0x0025AEE0,FUN_0025aee0,plate: HYPOTHESIS func_0025AEE0,S2b: HDD op 0xD check save directory (dead)
+0x0025B0D8,FUN_0025b0d8,plate: HYPOTHESIS func_0025B0D8,S2b: HDD op 0xE write save (dead)
+0x0025B6C8,FUN_0025b6c8,plate: HYPOTHESIS func_0025B6C8,S2b: HDD op 0xF delete save (dead)
+0x0025B948,FUN_0025b948,plate: HYPOTHESIS func_0025B948,S2b: HDD op 0x10 write one file (dead)
+0x0025BBD0,FUN_0025bbd0,plate: HYPOTHESIS func_0025BBD0,S2b: HDD op 0x11 read one file (dead)
+0x0025BED8,FUN_0025bed8,plate: HYPOTHESIS func_0025BED8,S2b: HDD job 0x26 space query (dead)
+0x0022CBB8,func_0022CBB8,GetProgressBgmTrack,S2b: result passed to PlayMenuBgm by the options page; track per page kind and campaign mission
+0x0023F350,FUN_0023f350,UpdateOptionsHelp,S2b: options help line by view and selected item (toggles show their state)
+0x0023F4D0,FUN_0023f4d0,SyncOptionToggles,S2b: toggle column cursors from option flags 0x002A15CC
+0x0023F538,FUN_0023f538,SetOptionsView,"S2b: view 0 list, 1 screen position, 2 brightness"
+0x0023F740,FUN_0023f740,CreateOptionsPage,"S2b: page object, BGM, return target by sub 0x29/0x2A"
+0x0023F7D8,FUN_0023f7d8,OptionsBack,S2b: triangle in the options list
+0x0023F870,FUN_0023f870,OptionsSelect,"S2b: confirm in the options list (views, toggle columns)"
+0x0023FB48,FUN_0023fb48,OptionsListUpdate,"S2b: options list state machine, toggles written live"
+0x0023FD10,FUN_0023fd10,OptionsAdjustCancel,S2b: restores screen position or brightness on cancel
+0x0023FDB8,FUN_0023fdb8,OptionsAdjustAccept,S2b: keeps the adjusted screen position or brightness
+0x0023FE60,FUN_0023fe60,ScreenPositionUpdate,"S2b: screen position view input (-12..12, reset with pad bit 0x4000)"
+0x00240088,FUN_00240088,BrightnessUpdate,"S2b: brightness view input (0-6, reset with pad bit 0x4000)"
+0x002402E0,FUN_002402e0,OptionsUpdate,S2b: options page update dispatch by view
+0x00240368,FUN_00240368,DrawScreenFrame,S2b: screen frame rectangle of the screen position view
+0x00240540,FUN_00240540,DrawBrightnessTexts,S2b: brightness view texts and level marks
+0x002408E0,FUN_002408e0,BuildGreyRamp,S2b: 17-step grey ramp test pattern
+0x002409D0,FUN_002409d0,BuildLevelSquares,S2b: white/grey/black square rows test pattern
+0x00240A88,FUN_00240a88,BuildColorRamps,S2b: red/green/blue ramps test pattern
+0x00240BB8,FUN_00240bb8,DrawBrightnessPatterns,S2b: brightness test patterns with alpha by level
+0x00240D28,FUN_00240d28,DrawOptionsPage,S2b: options page draw list
+0x00240E78,FUN_00240e78,EnterOptionsPage,S2b: subs 0x29/0x2A enter (DATA 0xB4)
+0x00240F18,FUN_00240f18,LoadOptionsPage,S2b: sub 0x2B wait for DATA 0xB4
+0x00240F68,FUN_00240f68,RunOptionsPage,S2b: sub 0x2C run handler
+0x00240FA0,FUN_00240fa0,CombSortDescending,"S2b: comb sort of signed 64-bit values, largest first (shrink K 0x00410368)"
+0x00241068,FUN_00241068,BuildUsageList,"S2b: aircraft/colour usage list sorted in the scratchpad, totals, shares"
+0x002412B8,FUN_002412b8,SelectRecordsPage,"S2b: records page select, cursor, bar targets"
+0x002413D0,FUN_002413d0,RecordsPageInput,S2b: up/down page change with wrap
+0x00241480,FUN_00241480,AnimateRecordBars,S2b: usage bars approach their targets
+0x002414E0,FUN_002414e0,CreateRecordsPage,"S2b: frame-count pad allocation, page object, usage list"
+0x002415D0,FUN_002415d0,RecordsUpdate,S2b: records page state machine
+0x00241708,FUN_00241708,DrawRecordsTexts,S2b: records texts typed out by panel timers
+0x00241E70,FUN_00241e70,DrawRecordIcons,S2b: aircraft icons and usage bars of the visible rows
+0x00242198,FUN_00242198,DrawRecordsPage,S2b: records page draw list
+0x002422B8,FUN_002422b8,EnterRecordsPage,"S2b: sub 0x37 enter (DATA 0xB7, BGM 4)"
+0x00242360,FUN_00242360,LoadRecordsPage,S2b: sub 0x38 wait for DATA 0xB7
+0x002423A0,FUN_002423a0,RunRecordsPage,S2b: sub 0x39 run handler
+0x002423D8,FUN_002423d8,UpdateControllerHelp,S2b: controller help line per row (table 0x003AF540)
+0x00242468,FUN_00242468,SetControllerCursor,"S2b: cursor on row/column, setting values from the player's word"
+0x00242528,FUN_00242528,StoreControllerSettings,"S2b: values back into the player's word (bits 1,2,8,4), vibration test"
+0x002425F0,FUN_002425f0,ControllerInput,S2b: controller page input from both pads
+0x00242978,FUN_00242978,AnimateControllerRows,S2b: row animation timers advance by mask
+0x002429C8,FUN_002429c8,CreateControllerPage,"S2b: page object, BGM, settings copy of 0x002A15D0"
+0x00242AE8,FUN_00242ae8,ControllerUpdate,S2b: controller page state machine
+0x00242BE8,FUN_00242be8,DrawControllerTexts,"S2b: controller labels, mapping, values, marks, pulse boxes"
+0x00243330,FUN_00243330,DrawControllerImage,S2b: controller picture sprite (DATA 0xB5)
+0x002434A0,FUN_002434a0,DrawControllerGrid,S2b: mapping table lines
+0x00243618,FUN_00243618,DrawControllerPage,S2b: controller page draw list
+0x002436D8,FUN_002436d8,EnterControllerPage,S2b: subs 0x2D/0x2E enter (DATA 0xB5)
+0x00243778,FUN_00243778,LoadControllerPage,S2b: sub 0x2F wait for DATA 0xB5
+0x002437C8,FUN_002437c8,RunControllerPage,S2b: sub 0x30 run handler
+0x00243800,FUN_00243800,UpdateSoundHelp,sound page help: message per row from table 0x003AF670 into message box +0x284 (S2b)
+0x00243890,FUN_00243890,CreateSoundPage,"allocs 0x330 page object, copies options 0x002A15C4, InitPanel rects 0x003AF640, menu BGM (S2b)"
+0x002439D8,FUN_002439d8,SoundUpdate,"sound page state machine: cancel ApplySoundOptions(0x002A15C4), accept stores working copy, rows/levels (S2b)"
+0x00243D18,FUN_00243d18,ApplySoundPageValues,cursor start from row/value; values into working copy +0x240; ApplySoundOptions(obj+0x240) (S2b)
+0x00243DB8,FUN_00243db8,DrawSoundTexts,"draws SOUND/BGM/SE/VOICE/JET SE labels, ""LEVEL %02d"", MONO/STEREO (S2b)"
+0x00244018,FUN_00244018,DrawSoundMarks,draws the 2+4x16 level marks and the pulse boxes on the values (S2b)
+0x00244248,FUN_00244248,DrawSoundPage,"sound page draw: panel, texts, marks, message box, fades (S2b)"
+0x00244320,FUN_00244320,EnterSoundPage,"subs 0x3A/0x3B: creates page, queues DATA 0xB6, RequestSubState(0x3C) (S2b)"
+0x002443C0,FUN_002443c0,LoadSoundPage,"waits for DATA 0xB6, loads font, RequestSubState(0x3D) (S2b)"
+0x00244410,FUN_00244410,RunSoundPage,"sub 0x3D: fade, SoundUpdate, DrawSoundPage (S2b)"
+0x00244448,FUN_00244448,UpdateBgmPlayerHelp,BGM player help: message 0 into message box +0x2E0 (S2b)
+0x002444B8,FUN_002444b8,SetBgmPlayerCursor,crosshair on column/line; cursor track = line*18+column (S2b)
+0x00244508,FUN_00244508,CreateBgmPlayer,"allocs 0x330 object, InitPanel rects 0x003AF850, target page 4 (S2b)"
+0x002445B0,FUN_002445b0,UpdateBgmPlayerTimer,counts frames of the playing track; at length FadeOutMenuBgm(6) (S2b)
+0x002445F8,FUN_002445f8,BgmPlayerInput,"plays track from table 0x003AF6A0 via PlayMenuBgm, stop, cancel, 18x2 grid (S2b)"
+0x002447D0,FUN_002447d0,BgmPlayerUpdate,BGM player state machine (S2b)
+0x00244930,FUN_00244930,DrawBgmPlayerTexts,"draws BGM NUMBER/TITLE, ""#%02d"", track name, 36 marks, pulse box (S2b)"
+0x00244D08,FUN_00244d08,DrawBgmPlayer,"BGM player draw: panel, texts, message box, fades (S2b)"
+0x00244DA8,FUN_00244da8,EnterBgmPlayer,"sub 0x31: creates page, queues DATA 0xB8, RequestSubState(0x32), FadeOutMenuBgm(0.5) (S2b)"
+0x00244E50,FUN_00244e50,LoadBgmPlayer,"waits for DATA 0xB8, loads font, RequestSubState(0x33) (S2b)"
+0x00244EA0,FUN_00244ea0,RunBgmPlayer,"sub 0x33: fade, BgmPlayerUpdate, DrawBgmPlayer (S2b)"
+0x00270B58,sceMpegSetImageBuff,sceMpegAddBs,"(S3) libmpeg: stores bitstream address/size, called per SMV chunk with chunk video (was sceMpegSetImageBuff hypothesis)"
+0x00270B90,sceMpegAddBs,sceMpegGetPicture,"(S3) libmpeg: (mp, rgb32 buffer, 0x460 mbs) sets output buffer and runs the decoder; game uploads the result in 16-px columns (was sceMpegAddBs hypothesis)"
+0x00270870,sceMpegInit,sceMpegInit,"(S3) libmpeg init (IPU reset), called in SMV reader state 0"
+0x00270CA8,sceMpegIsEnd,sceMpegIsEnd,(S3) returns end flag at mp->sys; reader swaps chunk when set
+0x00270CC8,sceMpegReset,sceMpegReset,(S3) clears end flag and frameCount; reader resets before each chunk
+0x00212150,MovieStart,StartMovie,"(S3) movie table lookup, stream tracks, CreateSmvReader"
+0x002122C0,FUN_002122c0,ResetMovieTimer,(S3) T0_COUNT = 0
+0x002122D0,MovieDecodeFrame,DecodeMovieFrame,(S3) reader step + picture; stops stream slots at end
+0x00212498,FUN_00212498,UpdateMovieAudioFade,(S3) steps feeder 0x002BBCB8 volume fade
+0x002124A8,FUN_002124a8,ClearMovieRequest,"(S3) clears request +0x20/+0xC, func_0021A680"
+0x002124C8,FUN_002124c8,plate: HYPOTHESIS RequestMovieStop,"(S3) request +0x14 = time, flags "
+0x00212508,FUN_00212508,InitSmvReader,"(S3) carves chunk/work/image/packet buffers, inits reader fields"
+0x00212630,FUN_00212630,ReadSmvHeader,"(S3) reader state 0: header sector read, sceMpegInit"
+0x002126C0,FUN_002126c0,ReadSmvFirstChunk,(S3) reader state 1: reads chunk 0
+0x00212788,SmvReaderStart,StartSmvReader,"(S3) reader state 2: sceMpegCreate, chunk 1 read, PCM feeder priming"
+0x00212960,SmvReaderStream,StreamSmvReader,"(S3) reader state 3: PCM refill, chunk swap at sequence end"
+0x00212C78,FUN_00212c78,DrainSmvReader,(S3) reader state 4: last chunk
+0x00212DF0,FUN_00212df0,FadeOutSmvReader,"(S3) reader state 5: silence, stop PCM after 0.1 s"
+0x00212EF0,FUN_00212ef0,FinishSmvReader,"(S3) reader state 6: release PCM ring, state 7"
+0x00212F88,FUN_00212f88,StepSmvReader,(S3) reader state dispatch
+0x00213048,FUN_00213048,DrawMoviePicture,(S3) sceMpegGetPicture + per-column IMAGE upload and sprite
+0x00213578,FUN_00213578,AddPacketTest2,(S3) packet builder: A+D TEST_2
+0x00213610,FUN_00213610,AddPacketAlpha2,(S3) packet builder: A+D ALPHA_2
+0x002136A8,FUN_002136a8,AddPacketTex1_2,(S3) packet builder: A+D TEX1_2
+0x00213740,FUN_00213740,AddPacketBitBltBuf,(S3) packet builder: A+D BITBLTBUF
+0x002137D8,FUN_002137d8,AddPacketTrxPos,(S3) packet builder: A+D TRXPOS
+0x00213870,FUN_00213870,AddPacketTrxReg,(S3) packet builder: A+D TRXREG
+0x00213908,FUN_00213908,AddPacketTrxDir,(S3) packet builder: A+D TRXDIR
+0x002139A0,FUN_002139a0,AddPacketTexFlush,(S3) packet builder: A+D TEXFLUSH
+0x00213A38,FUN_00213a38,AddPacketTex0_1,(S3) packet builder: A+D TEX0_1
+0x00213AD0,FUN_00213ad0,AddPacketPrim,(S3) packet builder: A+D PRIM
+0x00213B68,FUN_00213b68,plate: HYPOTHESIS AddPacketSprites,(S3) PRIM 
+0x00213C28,FUN_00213c28,SendMoviePacket,(S3) sceDmaSend of the packet chain
+0x00213CA0,FUN_00213ca0,StopMovieAudioIfRunning,(S3) PCM feeder stop if running
+0x00213CD8,FUN_00213cd8,IsMovieAudioIdle,(S3) feeder +4 == 0
+0x00213CE8,FUN_00213ce8,SetMovieAudioBuffer,(S3) half size and IOP ring *0x00353BF8
+0x00213D10,FUN_00213d10,SendMovieAudioBlock,(S3) sceSifSetDma of one block into ring half
+0x00213D80,FUN_00213d80,IsMovieAudioDmaBusy,(S3) sceSifDmaStat of last block
+0x00213DC8,FUN_00213dc8,StartMovieAudio,(S3) SOUND cmd 0xA dst 0 (core-0 input)
+0x00213E30,FUN_00213e30,StopMovieAudio,"(S3) SOUND cmd 0xA {0,0,0}"
+0x00213E78,FUN_00213e78,plate: HYPOTHESIS GetMovieAudioHalf,(S3) block-transfer status from SOUND reply (half being played)
+0x00213EA0,FUN_00213ea0,SetMovieAudioVolume,(S3) input volume at once or fade
+0x00213F60,FUN_00213f60,StepMovieAudioVolume,(S3) input volume fade step
+0x00214058,FUN_00214058,AllocMovieBlock,"(S3) arena alloc (size, arena)"
+0x00214080,FUN_00214080,AllocMovieWork,"(S3) arena alloc (size, arena)"
+0x002140C0,FUN_002140c0,InitMovieArena,(S3) arena base/size
+0x002140D0,FUN_002140d0,AllocFromMovieArena,"(S3) arena alloc, end rounded to alignment"
+0x00214130,FUN_00214130,CreateSmvReader,(S3) arena + reader alloc + InitSmvReader
+0x002141E8,FUN_002141e8,UpdateSmvReader,(S3) reader step + DrawMoviePicture
+0x00217848,FUN_00217848,GetSoundTransferStatus,(S3) client +0x30 = status word of the transfer reply record
+0x0021A6B0,FUN_0021a6b0,ClearReverbDepths,"(S3) func_0021CFA0(0/1, 0, 0)"
+0x0021FC80,FUN_0021fc80,RequestStreamPlayArg,"(S3) VAG queue {slot, 0, id, arg} after stop"
+0x0022B650,FUN_0022b650,UploadSubtitleGlyphs,"(S3) glyphs of up to 3 message-box lines to 0x2C00 + i*0x100, CLUT 0x2F00"
+0x0022C1B0,FUN_0022c1b0,DrawSubtitleText,(S3) 3-layer glyph sprites of the message-box lines
+0x0022CA78,FUN_0022ca78,FadeOutStreamSlots,(S3) func_0021F190 fades on slots 2-5
+0x002528C0,FUN_002528c0,UploadMessageGlyphs16,"(S3) thunk: UploadMessageGlyphs(list, index, id, dbp & 0xFFFF)"
+0x00238480,FUN_00238480,SetMoviePageDisplay,"(S3) 640x448, draw mode 2, disp flags 0x8100"
+0x00238560,FUN_00238560,SetMoviePlayDisplay,"(S3) draw mode 0, disp flags 0xC000, draw FBP 0x8C"
+0x00238660,FUN_00238660,SetMenuDisplayAfterMovie,"(S3) disp flags 0x8200, FBP 0"
+0x002386D8,FUN_002386d8,AreMovieStreamSlotsIdle,"(S3) VAG slots 0 and 2 state 1, else printf CH0/CH2"
+0x00238728,FUN_00238728,StepMovieToEnd,(S3) MovieDecodeFrame != 0
+0x00238770,FUN_00238770,SetMoviePageDisplayThunk,(S3) j SetMoviePageDisplay
+0x00238808,FUN_00238808,ResetMovieTimerThunk,(S3) T0_COUNT = 0
+0x00238918,FUN_00238918,SetMenuDisplayAfterMovieThunk,(S3) j SetMenuDisplayAfterMovie
+0x00238920,FUN_00238920,DrawMovieLineBlend,(S3) draw buffer copied one line up with ALPHA 0x64 FIX
+0x00238AA8,FUN_00238aa8,SetSubtitleLine,"(S3) SetMessageBoxText(mb, entry.message)"
+0x00238AB0,FUN_00238ab0,UpdateSubtitles,(S3) subtitle entry timing by movie time
+0x00238D10,FUN_00238d10,StartPageMovie,"(S3) movie id n+1 / INTRO / STAFF, 16:9 y 0x38"
+0x00238D80,FUN_00238d80,HandleMenuMovieInput,"(S3) movie time, subtitles, Start skip after 30 iterations"
+0x00238E88,FUN_00238e88,DrawMovieWidescreen,(S3) 16:9: rows 112-447 stretched over the frame
+0x00238FE0,FUN_00238fe0,DrawMenuMoviePage,"(S3) page buckets, subtitles, fade, line blend, send"
+0x00239188,FUN_00239188,MenuMovieWait,"(S3) sub 0xB: font + slots idle, start movie"
+0x00239248,FUN_00239248,MenuMoviePlay,(S3) sub 0xC: one movie iteration + MovieFrameSync
+0x00244ED8,FUN_00244ed8,UpdateInterludeHelp,(S3) interlude viewer help line
+0x00244F48,FUN_00244f48,UpdateInterludePreview,(S3) preview level up/down
+0x00245038,FUN_00245038,SetInterludeCursor,"(S3) cursor 0-11, crosshair"
+0x00245070,FUN_00245070,HandleInterludeInput,"(S3) X plays, left/right move"
+0x00245170,FUN_00245170,CreateInterludePage,(S3) page object 0x330
+0x00245218,FUN_00245218,UpdateInterludePage,(S3) page states 0-5
+0x00245390,FUN_00245390,DrawInterludeTexts,"(S3) number, length, 12 boxes"
+0x00245728,FUN_00245728,DrawInterludePreview,(S3) preview still sprite
+0x00245980,FUN_00245980,DrawInterludePage,(S3) page draw
+0x00245A58,FUN_00245a58,EnterInterludePage,(S3) sub 0x34
+0x00245B00,FUN_00245b00,LoadInterludePage,(S3) sub 0x35
+0x00245B50,FUN_00245b50,RunInterludePage,(S3) sub 0x36
+0x00212150,StartMovie,plate: rewritten for S3 (behaviour from code),(S3) plate updated
+0x002122D0,DecodeMovieFrame,plate: rewritten for S3 (behaviour from code),(S3) plate updated
+0x00212788,StartSmvReader,plate: rewritten for S3 (behaviour from code),(S3) plate updated
+0x00212960,StreamSmvReader,plate: rewritten for S3 (behaviour from code),(S3) plate updated
+0x00270B58,sceMpegAddBs,plate: rewritten for S3 (behaviour from code),(S3) plate updated
+0x00270B90,sceMpegGetPicture,plate: rewritten for S3 (behaviour from code),(S3) plate updated
+0x00270870,sceMpegInit,plate: rewritten for S3 (behaviour from code),(S3) plate updated
+0x00270CA8,sceMpegIsEnd,plate: rewritten for S3 (behaviour from code),(S3) plate updated
+0x00270CC8,sceMpegReset,plate: rewritten for S3 (behaviour from code),(S3) plate updated
+0x00213E78,GetMovieAudioHalf,GetMovieAudioHalf,(S3) confirmed by PCSX2 run 09: reader +0x70 equal mid-movie; capture correlation 0.97-0.995
+0x0022A478,FUN_0022a478,WriteDescriptorSprite,(S4) writes a REGLIST GIF tag (TEX0_2 RGBAQ UV XYZ3 UV XYZ2) and its registers from a sprite descriptor; title image 0x0039D8B0
+0x0022A558,FUN_0022a558,DrawLetterboxBars,(S4) two black sprite strips over the top/bottom lines of the draw buffer at level*128 alpha; title card 0x380/0x380
+0x002301F0,FUN_002301f0,InitMissionTitle,"(S4) page 2 object init: state, menu fade requests 0, fade cleared, mission index from g_MissionNo"
+0x00230258,FUN_00230258,CreateMissionTitle,"(S4) allocates the 0x260-byte title page object, queues DATA 0xBB+index"
+0x00230548,FUN_00230548,DrawMissionTitleImage,(S4) DMA call to the title image packet + descriptor sprite at alpha = zoom*128
+0x00230668,FUN_00230668,DrawMissionTitlePage,"(S4) page 2 draw: title image, frame filter, letterbox bars, black fade"
+0x00230708,FUN_00230708,EnterMissionTitle,"(S4) scene 4 sub 14 (page 2 enter); checked in the port: title card shown, then the opening movie page"
+0x00230728,FUN_00230728,LoadMissionTitle,"(S4) scene 4 sub 15: waits for DATA 0xBB+n, fades in 0.5 s, menu BGM out over 3 s"
+0x00411814,DAT_00411814,g_MissionTitle,(S4) pointer to the mission title page object (0x260 bytes)
+0x00226320,FUN_00226320,GetCampaignMissionNumber,(S4) mission id -> campaign mission number (u8 table 0x003847A8 stride 2; 1 above 0x28)
+0x002363C8,FUN_002363c8,SetBriefingSubtitle,"(S4) SetMessageBoxText(mb, entry.message) for a briefing subtitle entry"
+0x002363D0,FUN_002363d0,UpdateBriefingSubtitles,"(S4) briefing subtitle timing against movie time: wait, type out 2 chars/frame (SE 9), next line"
+0x002364D8,FUN_002364d8,DrawBriefingSubtitle,(S4) briefing subtitle line until 0.5 s before the movie end
+0x00236568,FUN_00236568,StartBriefingMovie,(S4) header panel (5 rects 0x003A51E0) and StartMenuMovie(0xD + mission index)
+0x002366F8,FUN_002366f8,BriefingInput,(S4) Start ends the briefing movie; Circle completes/advances subtitle lines
+0x002369A8,FUN_002369a8,DrawBriefingHeader,"(S4) briefing header texts (DATE/AREA, PARALLEL, OPERATION, COORDINATES, CONDITION) typed out by panel level"
+0x00236C50,FUN_00236c50,DrawBriefingMoviePage,(S4) movie-loop draw of the briefing page into its own packet list + send + buffer swap
+0x00236D28,FUN_00236d28,SelectBriefingCameraPreset,(S4) copies map camera preset n (6 floats) and moves the crosshair
+0x00236DA8,FUN_00236da8,InitBriefingMap,"(S4) after the movie: fades, map panel (7 rects 0x003A5230), terrain map init"
+0x00236E30,FUN_00236e30,EnterBriefingMap,"(S4) map view start: menu display, fade in, coordinates and camera presets of the mission"
+0x00236F28,FUN_00236f28,UpdateBriefingMapCamera,"(S4) orbiting eye eased with sceVu0InterVector, target/scale/position ApproachValue"
+0x00237038,FUN_00237038,BriefingMapUpdate,"(S4) map view states 0-5 (jump table 0x004089F0): preset browsing, end -> MenuGoTo"
+0x002372A0,FUN_002372a0,DrawBriefingMapTexts,"(S4) map info texts: coordinates, enemy AIR/GROUND/SEA/TARGET counts and TOTAL"
+0x00237808,FUN_00237808,WriteBriefingUnitIcon,"(S4) unit icon sprite (type sizes 0x003A5550, faction colours 0x003A55C0), faction 0 extra frame/marker"
+0x00237998,FUN_00237998,WriteBriefingUnitLink,(S4) line cross from a unit icon to its ground point at half colour
+0x00237A98,FUN_00237a98,DrawBriefingUnits,"(S4) unit icons on the map: view culling, VU0 projection with the map camera, screen window check"
+0x00237EF8,FUN_00237ef8,DrawBriefingMapFrame,(S4) map inset image and the view rectangle (clamped) as a line strip
+0x00238148,FUN_00238148,DrawBriefingMapPage,"(S4) map view draw: terrain, units, fades, panel, texts, frame, message box, menu fade"
+0x00238278,FUN_00238278,EnterBriefing,"(S4) scene 4 subs 17/18: creates the briefing, queues DATA 0x111+mission, movie page display"
+0x00238310,FUN_00238310,LoadBriefing,"(S4) scene 4 sub 19: font block, first subtitle, panel, briefing movie"
+0x00238380,FUN_00238380,RunBriefingMovie,(S4) scene 4 sub 20: briefing movie iteration (checked in the port with MIS01)
+0x002383E8,FUN_002383e8,EndBriefingMovie,"(S4) scene 4 sub 21: movie end -> map init, sub 22"
+0x00238440,FUN_00238440,RunBriefingMap,(S4) scene 4 sub 22: map view update + draw (checked in the port)
+0x0023EBA8,FUN_0023eba8,InitTerrainMap,"(S4) briefing terrain map camera and data pointers (heights data+0x70, colours data+0x100D0)"
+0x0023EE20,FUN_0023ee20,WriteTerrainPoints,"(S4) 128x128 terrain point sprites: MMI height interpolation, VU0 projection, colour by height"
+0x0023F260,FUN_0023f260,DrawTerrainMap,(S4) map image DMA call + terrain points
+0x0023F320,FUN_0023f320,UpdateTerrainMapCamera,(S4) SetCameraLookAt + UpdateCameraMatrices for the terrain map
+0x001029E0,FUN_001029e0,UpdateCameraMatrices,"(S4) camera per-frame matrices: world->view, view->screen, clip, world->screen, world->clip, scissor"
+0x00102B68,FUN_00102b68,ResetCameraLookAt,"(S4) look-at record reset: eye/target (0,0,0,1), distance 512, roll/offsets 0"
+0x00102B90,FUN_00102b90,GetDirectionAngles,"(S4) pitch = -atan2(y, sqrt(x^2+z^2)) (VU0 root), yaw = atan2(x, z)"
+0x00102C08,FUN_00102c08,SetCameraLookAt,"(S4) camera position/rotation from a look-at record, optional screen offsets"
+0x001031C0,FUN_001031c0,BuildClipMatrix,"(S4) clip matrix from screen size, distance, near, far"
+0x00104F80,FUN_00104f80,plate: HYPOTHESIS GetVectorLength,(S4) 
+0x002307C0,FUN_002307c0,UpdateCampaignMenuHelp,(S4) campaign menu help line per selected item (0x0039DA28)
+0x00230858,FUN_00230858,CreateCampaignMenu,"(S4) campaign menu object (0x680), BGM, menu tree 0x0039D920"
+0x00230940,FUN_00230940,LeaveCampaignMenu,"(S4) leave to menu page (MenuGoTo kind 0), fades out"
+0x002309C0,FUN_002309c0,LeaveCampaignMenuToSubPage,(S4) leave to sub-page (MenuGoTo kind 1)
+0x00230A78,FUN_00230a78,CampaignMenuSelect,(S4) campaign menu X: jump table 0x00407120 (19 items)
+0x00230E20,FUN_00230e20,DrawCampaignMenuPage,(S4) campaign menu draw
+0x00230EB0,FUN_00230eb0,EnterCampaignMenu,(S4) scene 4 subs 23/24 (page 5 enter); checked in the port
+0x00230F78,FUN_00230f78,LoadCampaignMenu,(S4) scene 4 sub 25
+0x00411820,DAT_00411820,g_Briefing,(S4) briefing/campaign menu page globals
+0x00411078,DAT_00411078,g_BriefingCameraPresets,(S4) briefing/campaign menu page globals
+0x0041107C,DAT_0041107c,g_BriefingUnitLists,(S4) briefing/campaign menu page globals
+0x00411818,DAT_00411818,g_CampaignMenu,(S4) briefing/campaign menu page globals
+0x00104F50,FUN_00104f50,GetDistanceXZ,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00105178,FUN_00105178,BuildScaleMatrix,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x001051A8,FUN_001051a8,EvalHermite,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x001051F0,FUN_001051f0,ClampVector,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x001089B0,FUN_001089b0,BuildRotationMatrix,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00108C68,FUN_00108c68,RotateMatrix,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00108F00,FUN_00108f00,MulMatrixVu0,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x001096A8,FUN_001096a8,SetUnitMatrixVu0,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00144238,FUN_00144238,CountModelNodes,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00144340,FUN_00144340,BindModelNodes,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0013F4D0,FUN_0013f4d0,InterpolatePartPose,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0013F6C0,FUN_0013f6c0,BuildMorphMesh,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00140F68,FUN_00140f68,SetModelPartValue,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00136AA0,FUN_00136aa0,InitLightSet,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00136DA0,FUN_00136da0,SetLight,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00136F48,FUN_00136f48,SetAmbient,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00137068,FUN_00137068,SetLightTexture,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0014AE60,FUN_0014ae60,InitMenuObject,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0014AEF8,FUN_0014aef8,BindMenuObject,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0014B078,FUN_0014b078,SetMenuObjectTexturePos,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0014B0A0,FUN_0014b0a0,SetMenuObjectPart,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0014B168,FUN_0014b168,UpdateMenuObject,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0014B1D0,FUN_0014b1d0,SetMenuObjectPose,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0014B238,FUN_0014b238,SetMenuObjectMatrices,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0014B280,FUN_0014b280,UploadMenuObjectProgram,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0014B2A8,FUN_0014b2a8,WriteMenuObjectTexture,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0014B3F8,FUN_0014b3f8,WriteMenuObjectCamera,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0014B5A0,FUN_0014b5a0,DrawMenuObject,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00231000,FUN_00231000,CreateMenuObject,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002310C8,FUN_002310c8,InitLights,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00231100,FUN_00231100,SetLightDirection,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002311B8,FUN_002311b8,ApplyLights,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00231238,FUN_00231238,ApplyLightsTransformed,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002312E0,FUN_002312e0,BuildShadowMatrix,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002313B8,FUN_002313b8,BuildModelMatrices,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00231420,FUN_00231420,UpdateFreeCamera,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002316D0,FUN_002316d0,ClampFreeCamera,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00231728,FUN_00231728,ClampFreeCameraSpecial,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00231DE0,FUN_00231de0,DrawSpecialIcons,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00231ED0,FUN_00231ed0,DrawHangarGauges,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00231FB8,FUN_00231fb8,DrawHangarSpecialText,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00232260,FUN_00232260,DrawHangarNameText,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00232408,FUN_00232408,DrawHangarStatsText,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002325A8,FUN_002325a8,DrawHangarWeaponText,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002327A0,FUN_002327a0,DrawHangarColourText,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00232930,FUN_00232930,DrawHangarOwnedMarks,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00232AD0,FUN_00232ad0,DrawHangarSpecialMarks,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00232BE8,FUN_00232be8,DrawHangarPriceText,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00232E70,FUN_00232e70,DrawPriceBox,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00232F80,FUN_00232f80,DrawHangarTexts,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233138,FUN_00233138,DrawHangarPanels,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233450,FUN_00233450,CheckHangarSaleHint,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233720,FUN_00233720,PurchaseStateToList,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233790,FUN_00233790,PurchaseStateToSave,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233808,FUN_00233808,SetHangarPageForSub,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233908,FUN_00233908,GetStateMask,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233950,FUN_00233950,BuildAvailabilityMasks,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233B48,FUN_00233b48,ListSetBits,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233BA0,FUN_00233ba0,SelectFirstAvailable,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233D48,FUN_00233d48,SelectAvailableSpecial,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233DF0,FUN_00233df0,MoveHangarCrosshair,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233E58,FUN_00233e58,ClearValues,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233E88,FUN_00233e88,ApproachValues,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00233EF0,FUN_00233ef0,GetSpecialWeaponCount,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00234000,FUN_00234000,BuildPanelList,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00234078,FUN_00234078,OpenHangarPage,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00234150,FUN_00234150,SetHangarPhase,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00234190,FUN_00234190,AnimateHangarPanels,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00234588,FUN_00234588,GetAircraftArrows,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00234628,FUN_00234628,GetSpecialArrows,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002346B0,FUN_002346b0,ApplyHangarChange,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002334F8,FUN_002334f8,UpdateHangarHelp,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00234BC8,FUN_00234bc8,CountOwnedFields,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00234C50,FUN_00234c50,GetPurchasePrice,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00234740,FUN_00234740,HangarAircraftInput,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00234A08,FUN_00234a08,HangarSpecialInput,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00234EB8,FUN_00234eb8,HangarAccept,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002351B0,FUN_002351b0,HangarCancel,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002353E8,FUN_002353e8,HangarConfirmInput,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00235540,FUN_00235540,PlayHangarBgm,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00235580,FUN_00235580,InitHangarPanels,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00235828,FUN_00235828,SyncHangarViewer,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00235988,FUN_00235988,UpdateHangar,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002359F0,FUN_002359f0,DrawHangar,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00231CE0,FUN_00231ce0,UpdateHangarCamera,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022DF70,FUN_0022df70,SetViewerSpecialList,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022DFA8,FUN_0022dfa8,InitAircraftViewer,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022E1A8,FUN_0022e1a8,QueueViewerData,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022E1F0,FUN_0022e1f0,QueueViewerAircraft,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022E218,FUN_0022e218,QueueViewerSpecials,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022E2B0,FUN_0022e2b0,UpdateViewerLoad,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022E450,FUN_0022e450,CreateHangarObjects,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022E580,FUN_0022e580,CreateAircraftRecord,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022E660,FUN_0022e660,CreateAircraftColour,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022E800,FUN_0022e800,CreateSpecialRecords,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022E978,FUN_0022e978,SetAircraftParts,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022EBD0,FUN_0022ebd0,FinishAircraftObjects,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022EC28,FUN_0022ec28,WriteViewerPassState,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022ED70,FUN_0022ed70,DrawHangarRoom,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022EE30,FUN_0022ee30,DrawHangarRoomGlass,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022EEF0,FUN_0022eef0,DrawAircraft,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022F048,FUN_0022f048,DrawAircraftReflection,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022F130,FUN_0022f130,DrawAircraftShadow,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022F200,FUN_0022f200,DrawSpecials,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022F3D8,FUN_0022f3d8,DrawSpecialReflections,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022F5B0,FUN_0022f5b0,DrawSpecialShadows,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022F750,FUN_0022f750,UpdateViewerCamera3D,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022F7B8,FUN_0022f7b8,ClampViewerLookAt,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022F810,FUN_0022f810,DrawCeilingLights,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022FCD0,FUN_0022fcd0,ClearViewerBackground,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022FDA0,FUN_0022fda0,DrawViewerScene,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002300A8,FUN_002300a8,ResetViewerLookAt,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002301C8,FUN_002301c8,SetAircraftViewerSelection,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00239C58,FUN_00239c58,UpdateMissionSelectHelp,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00239D50,FUN_00239d50,GetMissionCounts,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00239E10,FUN_00239e10,SelectMissionRow,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00239E58,FUN_00239e58,InitMissionList,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00239F58,FUN_00239f58,InitMissionSettings,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023A208,FUN_0023a208,LerpFrame,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023A360,FUN_0023a360,ResetMissionFrame,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023A380,FUN_0023a380,AnimateMissionFrame,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023A550,FUN_0023a550,AcceptMission,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023A668,FUN_0023a668,MissionListInput,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023A770,FUN_0023a770,UpdateMissionPreview,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023A8B8,FUN_0023a8b8,UpdateMissionList,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023AB48,FUN_0023ab48,LeaveMissionSelect,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023ABA0,FUN_0023aba0,LeaveMissionSelectMenu,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023AC00,FUN_0023ac00,MissionSettingsCancel,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023B930,FUN_0023b930,DrawMissionThumbnail,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023BBA0,FUN_0023bba0,DrawMissionFrame,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023BD78,FUN_0023bd78,DrawMissionList,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023BE88,FUN_0023be88,DrawMissionSettingsTexts,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023C230,FUN_0023c230,DrawTitleBar,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023C4C0,FUN_0023c4c0,DrawMissionSettings,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023C600,FUN_0023c600,EnterMissionSelect,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023C6A8,FUN_0023c6a8,LoadMissionSelect,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0023C708,FUN_0023c708,MissionSelectRun,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x001041E8,FUN_001041e8,AllocBucketPacket,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x001042D0,FUN_001042d0,AddBucketRef,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x001066D8,FUN_001066d8,WriteTex0Tex1,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00112A10,FUN_00112a10,BuildClippedSpriteStripsUv,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x002281E0,FUN_002281e0,DrawPageFadeBar,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022AB20,FUN_0022ab20,BuildFilledBox,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x0022A868,FUN_0022a868,BuildIconBox,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00226430,FUN_00226430,GetAircraftAtListPosition,translated in S4 from the disassembly (docs/port/s4-inventory.md)

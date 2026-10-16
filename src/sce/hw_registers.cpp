@@ -17,18 +17,33 @@ EeRegisters& EeRegisters::Get() {
 void EeRegisters::Install(guest::GuestMemory& memory) {
     std::memset(regs_, 0, sizeof(regs_));
     t0_count_ = 0;
+    field_reads_ = 0;
+    field_len_ = 262;
     memory.MapHardware(kBase, kSize, this);
 }
 
 void EeRegisters::OnVBlank(u64 vblank_index) {
-    // NTSC interlaced: 525 lines per frame, alternating 262 / 263 per field.
-    t0_count_ = (t0_count_ + ((vblank_index & 1) ? 263u : 262u)) & 0xFFFFu;
+    // NTSC interlaced: 525 lines per frame, alternating 262 / 263 per field. Timer 0 (mode 0x83,
+    // H-blank count) is only read by the movie code; each read stands for one H-blank of the field,
+    // so the vblank adds the field's remaining lines.
+    const u32 field = field_len_;
+    t0_count_ = (t0_count_ + (field_reads_ < field ? field - field_reads_ : 0u)) & 0xFFFFu;
+    field_reads_ = 0;
+    field_len_ = (vblank_index & 1) ? 262u : 263u;  // the field that starts now
+}
+
+bool EeRegisters::AdvanceLine() {
+    if (field_reads_ + 1 >= field_len_) return false;
+    t0_count_ = (t0_count_ + 1) & 0xFFFFu;
+    ++field_reads_;
+    return true;
 }
 
 void EeRegisters::Read(u32 address, void* dst, u32 size) {
     const u32 off = address - kBase;
     if (address == kT0Count && size == 4) {
         t0_count_ = (t0_count_ + 1) & 0xFFFFu;
+        ++field_reads_;
         std::memcpy(dst, &t0_count_, 4);
         return;
     }

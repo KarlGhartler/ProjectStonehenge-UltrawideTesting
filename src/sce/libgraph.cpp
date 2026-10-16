@@ -3,9 +3,14 @@
 // code and RAM comparisons see the same values as on the PS2. DMA chains are walked and counted
 // (milestone C); nothing is drawn yet.
 #include <cmath>
+#include <cstring>
+
+#include <vector>
 
 #include "common/guest_ref.h"
 #include "platform/log.h"
+#include "platform/render/vu1/vif1.h"
+#include "sce/ee_hw.h"
 #include "sce/hw_registers.h"
 #include "sce/runtime.h"
 #include "sce/sce.h"
@@ -32,8 +37,10 @@ u32 ChannelIndex(u32 chan) {
 }
 
 // Walks a source-chain DMA list (tag modes cnt/next/ref/refs/refe/call/ret/end) and returns the
-// number of qwords it transfers. Stops on end tags, a bad tag or a runaway chain.
-u64 WalkChain(u32 tag_addr, bool& ok) {
+// number of qwords it transfers. Stops on end tags, a bad tag or a runaway chain. `on_tag` gets the
+// address of each tag (for TTE), `on_data` each data block (guest address, qwords).
+template <typename OnTag, typename OnData>
+u64 WalkChain(u32 tag_addr, bool& ok, OnTag on_tag, OnData on_data) {
     u64 qwords = 0;
     u32 call_stack[2] = {};
     u32 asp = 0;
@@ -44,20 +51,26 @@ u64 WalkChain(u32 tag_addr, bool& ok) {
         const u32 id = static_cast<u32>(tag >> 28) & 7;
         const u32 addr = static_cast<u32>(tag >> 32) & 0x7FFFFFF0u;
         qwords += qwc;
+        on_tag(tag_addr);
         switch (id) {
             case 0:  // refe
+                on_data(addr, qwc);
                 return qwords;
             case 1:  // cnt
+                on_data(tag_addr + 16, qwc);
                 tag_addr = tag_addr + 16 + qwc * 16;
                 break;
             case 2:  // next
+                on_data(tag_addr + 16, qwc);
                 tag_addr = addr;
                 break;
             case 3:  // ref
             case 4:  // refs
+                on_data(addr, qwc);
                 tag_addr += 16;
                 break;
             case 5:  // call
+                on_data(tag_addr + 16, qwc);
                 if (asp >= 2) {
                     ok = false;
                     return qwords;
@@ -66,15 +79,25 @@ u64 WalkChain(u32 tag_addr, bool& ok) {
                 tag_addr = addr;
                 break;
             case 6:  // ret
+                on_data(tag_addr + 16, qwc);
                 if (asp == 0) return qwords;
                 tag_addr = call_stack[--asp];
                 break;
             case 7:  // end
+                on_data(tag_addr + 16, qwc);
                 return qwords;
         }
     }
     ok = false;
     return qwords;
+}
+
+// VIF1 (DIRECT data, UNPACK into VU1 memory, microcode uploads and the VU1 programs' XGKICK
+// output): one persistent instance, since VU1 memory and the resident program outlive a send.
+ac04::render::vu1::Vif1& Vif1Unit(std::vector<u8>& gif) {
+    static ac04::render::vu1::Vif1 vif(gif);
+    vif.SetOutput(gif);
+    return vif;
 }
 
 }  // namespace
@@ -146,20 +169,60 @@ void sceGsPutDispEnv(u32 disp) {
     for (u32 i = 0; i < 5; ++i) d[i] = GRef<u64>(disp + 8 * i);
 }
 
-// PS2 (0x00261C20): waits for the start of the next vblank and returns CSR.FIELD for interlaced
-// modes (1 otherwise). Port: parks the game thread until the host releases the next 59.94 Hz tick
-// (ADR-002); the field alternates per tick.
-s32 sceGsSyncV(s32 /*mode*/) {
+namespace {
+
+// One vblank passes: the step's GS data goes to the renderer, the IOP stand-ins advance, the game
+// thread parks until the vblank, timer 0 advances. Returns CSR.FIELD.
+u32 PassVBlank() {
     auto& rt = ac04::sce::GameRuntime::Get();
     auto& dma = ac04::sce::Dma();
     dma.frame_qwords_gif = dma.step_qwords_gif;
     dma.frame_qwords_vif1 = dma.step_qwords_vif1;
     dma.step_qwords_gif = 0;
     dma.step_qwords_vif1 = 0;
+    // The GS data of the step goes to the renderer (taken by the host while the game is parked).
+    if (dma.capture_active) {
+        dma.capture_active = false;
+        if (ac04::sce::Host().on_dma_capture)
+            ac04::sce::Host().on_dma_capture(rt.VBlankCount(), dma.capture_vif1, dma.gs_step);
+        dma.capture_vif1.clear();
+    }
+    dma.gs_steps.push_back(std::move(dma.gs_step));
+    dma.gs_step.clear();
+    if (!dma.gs_step_pool.empty()) {
+        dma.gs_step = std::move(dma.gs_step_pool.back());
+        dma.gs_step_pool.pop_back();
+        dma.gs_step.clear();
+    }
+    dma.gs_steps_marks.push_back(std::move(dma.gs_step_marks));
+    dma.gs_step_marks.clear();
+    if (ac04::sce::Host().on_vblank) ac04::sce::Host().on_vblank();
     g_csr_field = rt.WaitVBlank();
     ac04::sce::EeRegisters::Get().OnVBlank(rt.VBlankCount());
+    if (ac04::sce::Host().dma_capture_at != 0 && rt.VBlankCount() == ac04::sce::Host().dma_capture_at)
+        dma.capture_active = true;
+    return g_csr_field;
+}
+
+}  // namespace
+
+// PS2 (0x00261C20): waits for the start of the next vblank and returns CSR.FIELD for interlaced
+// modes (1 otherwise). Port: parks the game thread until the host releases the next 59.94 Hz tick
+// (ADR-002); the field alternates per tick.
+s32 sceGsSyncV(s32 /*mode*/) {
+    PassVBlank();
     return GParam(0) == 1 ? static_cast<s32>(g_csr_field) : 1;
 }
+
+namespace ac04::sce {
+
+// The game busy-waits on EE timer 0 (MovieFrameSync): each poll lets one H-blank pass; at the end
+// of the field the vblank passes (the game thread parks until the next 59.94 Hz tick).
+void EeHwWaitTimer() {
+    if (!EeRegisters::Get().AdvanceLine()) PassVBlank();
+}
+
+}  // namespace ac04::sce
 
 // PS2 (0x00261CB8): waits until the VIF1/GIF paths are idle (mode 0) and returns 0. Transfers
 // complete at once in the port.
@@ -210,7 +273,57 @@ s32 sceDmaSend(u32 chan, u32 tag) {
     const u32 ch = ChannelIndex(chan);
     if (ch >= 10) return -1;
     bool ok = true;
-    const u64 qw = WalkChain(tag & 0x7FFFFFF0u, ok);
+    u64 qw = 0;
+    std::vector<u8>& gif = dma.gs_step;
+    if (ch == 1) {
+        // VIF1: with CHCR.TTE the upper 64 bits of each tag go to the VIF as two VIF codes.
+        const bool tte = (ac04::sce::EeDmaReadChcr(chan) & 0x40) != 0;
+        ac04::render::vu1::Vif1& vif = Vif1Unit(gif);
+        qw = WalkChain(
+            tag & 0x7FFFFFF0u, ok,
+            [&](u32 t) {
+                if (tte) {
+                    if (dma.capture_active) {
+                        for (u32 o : {8u, 12u}) {
+                            dma.capture_vif1.push_back(t + o);
+                            dma.capture_vif1.push_back(GRef<u32>(t + o));
+                        }
+                    }
+                    vif.Word(GRef<u32>(t + 8), t + 8);
+                    vif.Word(GRef<u32>(t + 12), t + 12);
+                }
+            },
+            [&](u32 addr, u32 qwc) {
+                if (dma.capture_active) {
+                    for (u32 i = 0; i < qwc * 4; ++i) {
+                        dma.capture_vif1.push_back(addr + 4 * i);
+                        dma.capture_vif1.push_back(GRef<u32>(addr + 4 * i));
+                    }
+                }
+                if (const u8* p = ac04::guest::Mem().Translate(addr, qwc * 16)) {
+                    vif.Words(p, qwc * 4, addr);
+                } else {
+                    for (u32 i = 0; i < qwc * 4; ++i) vif.Word(GRef<u32>(addr + i * 4), addr + i * 4);
+                }
+            });
+    } else if (ch == 2) {
+        // GIF (PATH3): the data is GIF packets.
+        qw = WalkChain(
+            tag & 0x7FFFFFF0u, ok, [](u32) {},
+            [&](u32 addr, u32 qwc) {
+                const u8* p = ac04::guest::Mem().Translate(addr, qwc * 16);
+                if (p == nullptr) return;
+                // Movie upscaling side path: mark data read from the movie image buffer.
+                const ac04::sce::MoviePicture& mp = dma.movie_picture;
+                if (ac04::sce::Host().movie_pictures && mp.serial != 0 && addr >= mp.guest_addr &&
+                    addr - mp.guest_addr < mp.guest_bytes) {
+                    dma.gs_step_marks.push_back({static_cast<u32>(gif.size()), qwc * 16, addr});
+                }
+                gif.insert(gif.end(), p, p + qwc * 16);
+            });
+    } else {
+        qw = WalkChain(tag & 0x7FFFFFF0u, ok, [](u32) {}, [](u32, u32) {});
+    }
     if (!ok) {
         ++dma.bad_chains;
         ac04::log::WriteOnce("dma:badchain", ac04::log::Level::Warning, "dma",
@@ -236,78 +349,7 @@ u32 sceVif1PkSize(u32) {
 }
 void sceVif1PkEnd(u32, u32) { AC04_SCE_STUB("sceVif1PkEnd"); }
 
-// ---- libvu0 ---------------------------------------------------------------------------------
-// Matrices are 4x4 floats, column-major as libvu0 stores them (m[col][row], 16-byte aligned).
-// NOTE: computed with host floats in the natural VU0 order; not yet checked to be bit-exact with
-// the VU0 macro code (and _sceVu0ecossin's polynomial for the rotations). None of these are on the
-// boot path; exact versions come with the first gameplay code that uses them (risks.md).
-
-namespace {
-
-void LoadM(u32 m, float out[4][4]) {
-    for (u32 c = 0; c < 4; ++c)
-        for (u32 r = 0; r < 4; ++r) out[c][r] = GRef<f32>(m + 16 * c + 4 * r);
-}
-void StoreM(u32 m, const float in[4][4]) {
-    for (u32 c = 0; c < 4; ++c)
-        for (u32 r = 0; r < 4; ++r) GRef<f32>(m + 16 * c + 4 * r) = in[c][r];
-}
-// out = a * b (libvu0 sceVu0MulMatrix order: m0 = m1 * m2 applied as column vectors).
-void Mul(const float a[4][4], const float b[4][4], float out[4][4]) {
-    for (u32 c = 0; c < 4; ++c)
-        for (u32 r = 0; r < 4; ++r) {
-            float s = 0.0f;
-            for (u32 k = 0; k < 4; ++k) s += a[k][r] * b[c][k];
-            out[c][r] = s;
-        }
-}
-void Rot(u32 m0, u32 m1, f32 angle, int axis) {
-    float rot[4][4] = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
-    const float c = std::cos(angle), s = std::sin(angle);
-    if (axis == 0) {
-        rot[1][1] = c; rot[1][2] = s; rot[2][1] = -s; rot[2][2] = c;
-    } else if (axis == 1) {
-        rot[0][0] = c; rot[0][2] = -s; rot[2][0] = s; rot[2][2] = c;
-    } else {
-        rot[0][0] = c; rot[0][1] = s; rot[1][0] = -s; rot[1][1] = c;
-    }
-    float src[4][4], out[4][4];
-    LoadM(m1, src);
-    Mul(rot, src, out);
-    StoreM(m0, out);
-}
-
-}  // namespace
-
-// v0 = m * v1
-void sceVu0ApplyMatrix(u32 v0, u32 m, u32 v1) {
-    float a[4][4];
-    LoadM(m, a);
-    float v[4], out[4];
-    for (u32 i = 0; i < 4; ++i) v[i] = GRef<f32>(v1 + 4 * i);
-    for (u32 r = 0; r < 4; ++r) out[r] = a[0][r] * v[0] + a[1][r] * v[1] + a[2][r] * v[2] + a[3][r] * v[3];
-    for (u32 i = 0; i < 4; ++i) GRef<f32>(v0 + 4 * i) = out[i];
-}
-
-// Inverse of a rotation + translation matrix (transpose of the 3x3, negated rotated translation).
-void sceVu0InversMatrix(u32 m0, u32 m1) {
-    float a[4][4], out[4][4] = {};
-    LoadM(m1, a);
-    for (u32 c = 0; c < 3; ++c)
-        for (u32 r = 0; r < 3; ++r) out[c][r] = a[r][c];
-    for (u32 r = 0; r < 3; ++r) out[3][r] = -(out[0][r] * a[3][0] + out[1][r] * a[3][1] + out[2][r] * a[3][2]);
-    out[3][3] = 1.0f;
-    StoreM(m0, out);
-}
-
-void sceVu0UnitMatrix(u32 m) {
-    for (u32 c = 0; c < 4; ++c)
-        for (u32 r = 0; r < 4; ++r) GRef<f32>(m + 16 * c + 4 * r) = c == r ? 1.0f : 0.0f;
-}
-
-void sceVu0RotMatrixZ(u32 m0, u32 m1, f32 rz) { Rot(m0, m1, rz, 2); }
-void sceVu0RotMatrixX(u32 m0, u32 m1, f32 rx) { Rot(m0, m1, rx, 0); }
-void sceVu0RotMatrixY(u32 m0, u32 m1, f32 ry) { Rot(m0, m1, ry, 1); }
+// ---- libvu0 (matrix and vector functions: libvu0.cpp) -----------------------------------------
 
 // PS2 (0x00263BF0, hypothesis name): resets VIF0. Nothing to do on the host.
 void sceVu0ResetVif0() {}

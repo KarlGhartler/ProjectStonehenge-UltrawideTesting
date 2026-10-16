@@ -120,6 +120,19 @@ Rules:
 - `func_0013D698`: segment against terrain. It walks the cells between the two points and returns the hit flag, point, normal and material. It is used by bullets, missiles, shells, landing gear, player crashes and falling units.
 - Two different cell-rounding rules exist: `func_0013E338` (adds 0x7FF for negatives) and `func_00139000` (uses 0x7F as the base for negatives). Both are original; keep each where it is used.
 
+#### Segment test in detail (from the disassembly; translated in `src/game/collision.cpp`)
+
+`func_0013D698(map, hit, attr, from, to, normal)`:
+1. Cell of each end coordinate (x, z of both points): r = `fmodf`(v, 2048); i = `cvt.w.s`(v − 2048) when v < 0 and r ≠ 0, else `cvt.w.s`(v); cell = ((i < 0 ? i + 0x7FF : i) >> 11) + 0x80.
+2. x range [xmin, xmax], z range [zmin, zmax]; slope k = (from.z − to.z) / (from.x − to.x), intercept c = from.z − k · from.x (EE FPU, in that order). z cell per column boundary into map+0x4F8 (s32): span 0 → (z0, z1); span ≥ 0x11 → span = 16 and the table is **not refilled** (stale values from the previous call are used); else for k = 0 … span + 1: z = (float)((k + xmin − 0x80) << 11) · k + c, cell = ((iz < 0 ? iz + 0x7FF : iz) >> 11) + 0x80, or + 0x7F when z < 0; the first and last entries are clamped to [zmin, zmax].
+3. Cells (x, z) into map+0x4B8 / +0x4D8 (s16, at most 16), column by column in the segment's x direction; per column the z run from one boundary value to the next in the segment's z direction (a column whose run goes the wrong way adds nothing).
+4. Per cell, best t = 1.0: the static objects first (`func_00144DC8` with the object store *0x0041069C); a nearer hit replaces the best (point, `normal`, `attr` = the object's attribute word) and **ends the search**. Otherwise the 3 × 3 heights of the cell (corner samples +0 / +1 / +0x20 / +0x21 of the four neighbouring sample blocks, `func_0013D590`) are written into the terrain object's fan template (bytes +0x1B9, +0x1C9, … +0x249: one height byte per 16-byte vertex record) and the 8 fan triangles (centre record +0x1B8, rim records 1…8) are tested with `func_0017C4E8`; vertex = ((x idx + 2(cell x − 0x80)) << 10, height · −80, (z idx + 2(cell z − 0x80)) << 10). A nearer triangle hit stores the material (u16 attribute of the cell >> 12, via map+0x1C / +0x20) and the normal; a hit in a cell ends the search.
+5. Result 1 when hit: `hit` = point with w = 1.0.
+
+`func_00144DC8(objects, hit, from, to, x, z, normal, attr)`: cell (x, z) folded like `func_0013D590`; object kind from +0x7018 (block table) / +0x7014 (per-block kinds), 0xFF = none; no test when both ends have y < −(instance +0x40); a kind placed once tests its only triangle buffer without a position check, otherwise the buffer of the placement whose x / z bytes (+0x704C / +0x7050) match; `attr` = instance +0x38 whenever a kind exists.
+
+`func_00143EF8(tris, count, hit, from, to, normal)` and `func_0017C250` (one triangle, normal given; zero normal = no hit): i1 = (to − from) · n, i0 = (p0 − from) · n (libvu0 inner products); `func_00143EF8` skips i1 = i0 = 0; the plane is reached when (i1 > 0 and 0 ≤ i0 ≤ i1) or (i1 ≤ 0 and i1 ≤ i0 ≤ 0); t = i0 / i1, P = from + (to − from) · t; edge products k_j = ((p_j − P) × (p_j+1 − P)) · n are truncated to integers (`cvt.w.s`) and P is inside when all three are ≥ 0 or all ≤ 0. Hit point w = t; the nearest t wins. `func_0017C4E8` first computes the triangle normal `func_0017BFD0` ((c − a) × (b − a), normalised with VU0 `vsqrt`/`vdiv`, w = 0) and stores it to its `normal` argument.
+
 ### Units
 
 - `func_0017C758` / `func_0017C778`: a moving unit's swept volume against collision meshes. Mesh kinds come from flags 0x10000 / 0x20000 / 0x40000.

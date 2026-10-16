@@ -1,0 +1,18 @@
+start,end,category,reason
+0x0039D4E0,0x0039D4F0,timing,menu fade object at title sub 6: PCSX2 loads DATA 0xB0 about 20 frames slower (CD latency model) and enters sub 6 with 30 fade steps instead of 10; identical byte for byte at port hit 21 (validation.md S2a-3)
+0x00CCFF98,0x00CCFF9C,timing,title menu data-load queue timer (UpdateMenuDataLoad): seconds spent loading DATA 0xB0 (CD latency model)
+0x00CCFF80,0x00CCFF88,timing,title menu bucket list pointers into the current packet buffer half (frame parity)
+0x004CFF80,0x004D4800,timing,title/menu draw packets in buffer half A: scanline band positions (BuildScanlineBands) and pulse colours (GetMenuPulse) follow the frame counter; DMA tags point into the other half (frame parity). Draw output checked by screenshots (S2a-4)
+0x008CFF80,0x008D4800,timing,title/menu draw packets in buffer half B (as above)
+0x0042CA90,0x0042CC90,timing,VAG client send buffers: the same commands are in swapped buffers (frame parity)
+0x0029F194,0x0029F1A4,timing,CD file-system request counters (g_CdFsState): one VAG stream refill read more or less, as the music has played for a different time (boot frame count and title time)
+0x002BBD08,0x002BC408,timing,CD queue 0 records: the extra/missing VAG refill read (as above)
+0x002BCB08,0x002BCB14,timing,CD queue 0 read/write indices (as above)
+0x00353BF8,0x00353D20,timing,VAG slots 0/1 (title and menu BGM): stream positions and ring indices follow how long the music has played
+0x0042CC90,0x0042CD00,timing,VAG client reply area: stream positions (as above)
+0x0029F5AA,0x0029F5AC,input,ctx pad repeat counter: the confirm press is held for a different number of frames
+0x00410D00,0x00410D04,input,SE request counter: number of type-out ticks depends on when the cursor was moved during the help-line type-out (owner pressed Down/Up at another moment than the pad script)
+0x00424250,0x00424FD0,input,SOUND voice table: request ids of the type-out / cursor SE voices (as above)
+0x00429E00,0x0042A400,input,SOUND reply area: voice status of the SE voices at the checkpoint (as above)
+0x0042A400,0x0042A410,input,menu SE record: last request id (as above)
+0x00CD0608,0x00CD0618,input,title menu object (g_TitleMenu = 0x00CCFF80) +0x688 idle time, +0x68C title time, +0x690 logo alpha and the following word: depend on when Start and X were pressed

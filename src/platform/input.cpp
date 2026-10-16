@@ -46,8 +46,11 @@ constexpr NamedAxis kPadAxes[] = {
     {"rightx", SDL_GAMEPAD_AXIS_RIGHTX}, {"righty", SDL_GAMEPAD_AXIS_RIGHTY},
     {"lefttrigger", SDL_GAMEPAD_AXIS_LEFT_TRIGGER}, {"righttrigger", SDL_GAMEPAD_AXIS_RIGHT_TRIGGER}};
 
+// Neutral 0x7F like PCSX2's DualShock 2 (run 06: a centred stick reads 0x7F); full deflection
+// reaches 0x00 and 0xFF.
 std::uint8_t StickByte(float negative, float positive) {
-    const float v = 128.0f + (positive - negative) * 127.5f;
+    const float d = positive - negative;
+    const float v = 127.0f + (d >= 0.0f ? d * 128.0f : d * 127.0f);
     return static_cast<std::uint8_t>(std::clamp(static_cast<int>(std::lround(v)), 0, 255));
 }
 
@@ -103,6 +106,20 @@ void InputBackend::ApplySettings(const InputSettings& input) {
             }
         }
     }
+}
+
+void InputBackend::Start() {
+    int count = 0;
+    SDL_JoystickID* ids = SDL_GetJoysticks(&count);
+    if (count == 0) AC04_LOG_INFO("input", "no joystick or gamepad connected (keyboard on port 1)");
+    for (int i = 0; i < count; ++i) {
+        const char* name = SDL_GetJoystickNameForID(ids[i]);
+        const bool gamepad = SDL_IsGamepad(ids[i]);
+        AC04_LOG_INFO("input", "device %d: '%s' (%s)", i, name ? name : "?",
+                      gamepad ? "gamepad" : "no SDL gamepad mapping: not used");
+    }
+    SDL_free(ids);
+    OpenGamepads();
 }
 
 void InputBackend::OpenGamepads() {

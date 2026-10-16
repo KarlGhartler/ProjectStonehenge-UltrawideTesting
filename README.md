@@ -10,5 +10,5 @@ These projects are used as tools or references. No code from them is copied into
 - **[Ghidra](https://github.com/NationalSecurityAgency/ghidra)**: the reverse-engineering framework used as the research database.
 - **[ghidra-mcp](https://github.com/bethington/ghidra-mcp)** by bethington: the MCP server used to drive Ghidra during analysis.
 - **[ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded)** by chaoticgd: the Emotion Engine (R5900) processor plugin for Ghidra.
-- **[PCSX2](https://github.com/PCSX2/pcsx2)**: debugger and behaviour reference for the original game; its source was read (not copied) to document the Folder Memory Card layout for save compatibility.
+- **[PCSX2](https://github.com/PCSX2/pcsx2)**: debugger and behaviour reference for the original game; its source was read (not copied) to document the Folder Memory Card layout for save compatibility, the input-recording (`.p2m2`) format used to replay PCSX2 input in validation, and the IPU colour-conversion method that the port's movie decoding follows.
 - **[ps2sdk](https://github.com/ps2dev/ps2sdk)**: syscall tables and SDK references used to identify library functions.

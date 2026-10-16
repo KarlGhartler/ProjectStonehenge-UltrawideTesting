@@ -11,6 +11,7 @@
 
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "platform/log.h"
 #include "sce/sce.h"
 
 namespace ac04::game {
@@ -153,6 +154,10 @@ void func_00217818(u32 v) { GRef<u32>(Client() + 0x28) = v; }
 u32 func_00217828() { return GRef<u32>(Client() + 0x28); }
 // EE: 0x00217838
 void func_00217838(u32 v) { GRef<u32>(Client() + 0x30) = v; }
+// EE: 0x00217848
+// Status word of the last transfer record (sceSdBlockTransStatus >> 24): the half of the movie PCM
+// ring the SPU2 is playing (movie audio feeder 0x00213E78).
+u32 GetSoundTransferStatus() { return GRef<u32>(Client() + 0x30); }
 // EE: 0x00217858
 // Transfer `ticket` done (signed 64-bit compare of sign-extended words).
 s32 func_00217858(s32 ticket) {
@@ -507,6 +512,24 @@ void func_00218EE8(u32 v) { GRef<u32>(0x00410D08) = v; }
 u32 func_00218EF0() { return GRef<u32>(0x00411800); }
 // EE: 0x00218EF8
 void func_00218EF8(u32 v) { GRef<u32>(0x00411800) = v; }
+// EE: 0x00218ED0
+u32 func_00218ED0() { return GRef<u32>(0x00410D04); }
+// EE: 0x00218F00
+u16 func_00218F00(s32 n) { return GRef<u16>(kBankId + 2 * static_cast<u32>(n)); }
+
+// EE: 0x00218B28
+// Keeps the first n sound banks: the SPU allocation pointer back to the end of bank n - 1 (the
+// base for n = 0), the rest freed. Returns -1 (nothing changed) when there are not n + 1 banks.
+s32 func_00218B28(s32 n) {
+    if (GRef<s32>(kBankCount) < n + 1) return -1;
+    func_00218EF8(n == 0 ? func_00218ED0() : func_00218CB0(n - 1));
+    for (s32 k = n; k < GRef<s32>(kBankCount); ++k) {
+        GRef<u32>(kBankSpu + 4 * static_cast<u32>(k)) = 0;
+        GRef<u16>(kBankId + 2 * static_cast<u32>(k)) = 0xFFFF;
+    }
+    GRef<s32>(kBankCount) = n;
+    return 0;
+}
 
 // EE: 0x00218F18
 // Per frame: when the previous batch completed, process its reply list, then send the next batch.
@@ -922,6 +945,13 @@ void func_0021CFA0(u8 core, s16 left, s16 right) {
     }, QueueSoundCmd16);
 }
 
+// EE: 0x0021A6B0
+// Reverb depth 0 on both cores (movie start).
+void ClearReverbDepths() {
+    func_0021CFA0(0, 0, 0);
+    func_0021CFA0(1, 0, 0);
+}
+
 // EE: 0x0021D138
 s32 func_0021D138(u32 rec) {
     if (func_002174D0(3, rec) == -1) return -1;
@@ -980,6 +1010,311 @@ s32 func_0021E240(u8 voice, s16 volume, u8 left_pan, u8 right_pan) {
     if (func_002174D0(2, rec) == -1) return -1;
     QueueSoundVoiceCmd(rec);
     return 0;
+}
+
+// ---- Sound effects (slice S1) --------------------------------------------------------------------
+// SE request record (0x48 bytes, the voice record layout): +0x0C bank, +0x0E voice (-1 new),
+// +0x14 pan mode, +0x18 sound, +0x1A priority, +0x1C flags, +0x1E linked sound, +0x20 pan law,
+// +0x21 pan, +0x28 category, +0x29 pitch variation, +0x2A volume, +0x2C/+0x2E left/right volume.
+// The sub-record at +0x18 holds the sound's variation parameters: +0x0A pan range, +0x0B random
+// sign flags, +0x11 volume range, +0x1A/+0x1B note/fine.
+
+// EE: 0x002179D8
+// Queues a 12-byte command.
+s32 func_002179D8(u32 cmd) {
+    if (Cw(5) + 0xCu >= 0x2401) return -1;
+    const u32 dst = SendBuffer() + Cw(5);
+    GRef<u64>(dst) = GRef<u64>(cmd);
+    GRef<u32>(dst + 8) = GRef<u32>(cmd + 8);
+    Cw(0) += 1;
+    Cw(5) += 0xC;
+    return 1;
+}
+
+// EE: 0x002186C0
+// Key-off bookkeeping for a voice mask command {5, mask 0-23, mask 24-47}: voices that finished
+// (status 3) become free, and the masked voices are marked stopped (+0x1C).
+void func_002186C0(u32 cmd) {
+    for (u32 a = kVoiceStatus; a <= 0x00424FFF; ++a) {
+        if (GRef<u8>(a) == 3) GRef<u8>(a) = 0;
+    }
+    for (u32 v = 0; v < 0x18; ++v) {
+        if (((GRef<s32>(cmd + 4) >> v) & 1) != 0) GRef<u8>(Voice(static_cast<s32>(v)) + 0x1C) = 0;
+    }
+    for (u32 v = 0x18; v < 0x30; ++v) {
+        if (((GRef<s32>(cmd + 8) >> (v - 0x18)) & 1) != 0) GRef<u8>(Voice(static_cast<s32>(v)) + 0x1C) = 0;
+    }
+}
+
+// EE: 0x002196A8
+// HYPOTHESIS: PlayMenuSe. Plays sound `sound` of bank `bank` with the menu SE record 0x0042A400.
+// Returns 1 when started, -1 when no voice was available.
+s32 PlayMenuSe(s16 bank, s16 sound) {
+    const s32 r = func_0021D188(bank, sound, 0x0042A400);
+    return r == 0 ? 1 : r;
+}
+
+// EE: 0x002197E8
+// Keys off all 48 voices.
+void StopAllVoices() { func_0021E0E8(0xFFFFFF, 0x3FFFF); }
+
+// EE: 0x0021A988
+// Left/right volumes (+0x2C/+0x2E) from `volume` and a pan of -127..127 (table 0x00351B50). Pans
+// below -63 invert the phase of the right channel, -63..-1 of the left channel.
+void func_0021A988(s16 volume, s8 pan, u32 rec) {
+    s32 v = volume;
+    if (v >= 0x4000) v = 0x3FFF;
+    else if (v < -0x4000) v = -0x4000;
+    s32 p = pan;
+    if (p < -0x7F) p = 0x7F;
+    auto table = [](s32 i) -> s32 { return GRef<s16>(0x00351B50 + static_cast<u32>(i) * 2); };
+    if (p >= 0) {
+        GRef<s16>(rec + 0x2C) = static_cast<s16>((v * table(0x7F - p)) >> 14);
+        GRef<s16>(rec + 0x2E) = static_cast<s16>((v * table(p)) >> 14);
+        return;
+    }
+    p = static_cast<s16>(-p);
+    if (pan < -0x3F) {
+        GRef<s16>(rec + 0x2C) = static_cast<s16>((v * table(0x7F - p)) >> 14);
+        GRef<s16>(rec + 0x2E) = static_cast<s16>(-(static_cast<s32>(static_cast<u32>(v * table(p)) << 2) >> 16));
+        return;
+    }
+    const s16 left = static_cast<s16>((v * table(0x7F - p)) >> 14);
+    GRef<s16>(rec + 0x2C) = left;
+    GRef<s16>(rec + 0x2C) = static_cast<s16>(-left);
+    GRef<s16>(rec + 0x2E) = static_cast<s16>((v * table(p)) >> 14);
+}
+
+// EE: 0x0021AAC8
+// Pan + offset wrapped into -127..127.
+s8 func_0021AAC8(s8 pan, s16 offset) {
+    s32 v = static_cast<s16>(offset + pan) % 0xFE;
+    if (v >= 0x80) v = static_cast<s16>(v - 0xFE);
+    else if (v < -0x7F) v = static_cast<s16>(v + 0xFE);
+    return static_cast<s8>(v);
+}
+
+// EE: 0x0021AB30
+// Random pitch variation of a sound (+0x1E range in cents/100): changes the note/fine pair.
+void func_0021AB30(u32 snd) {
+    if (GRef<s16>(snd + 0x1E) == 0) return;
+    const s16 range = func_0021CD48(GRef<s16>(snd + 0x1E));
+    const s32 r = NextSoundRandom();
+    if (range == 0) {
+        log::WriteOnce("sound:pitch-range-zero", log::Level::Warning, "game",
+                       "func_0021AB30: pitch range 0 (division trap on the PS2)");
+        return;
+    }
+    s16 delta = static_cast<s16>(r % range);
+    bool positive;
+    if ((GRef<u8>(snd + 0xB) & 1) != 0) {
+        positive = (NextSoundRandom() & 1) == 1;
+    } else {
+        positive = range > 0;
+    }
+    if (!positive) delta = static_cast<s16>(-delta);
+    const u32 pair = (static_cast<u32>(static_cast<s32>(GRef<s8>(snd + 0x1B))) |
+                      static_cast<u32>(GRef<u8>(snd + 0x1A)) << 8) & 0xFFFF;
+    const u16 out = func_0021CD70(pair, delta);
+    GRef<u8>(snd + 0x1B) = static_cast<u8>(out & 0x7F);
+    GRef<u8>(snd + 0x1A) = static_cast<u8>((out & 0x7F00) >> 8);
+}
+
+// EE: 0x0021AC28
+// Random volume variation within +-range (+0x11).
+s32 func_0021AC28(u32 snd) {
+    const s8 range = GRef<s8>(snd + 0x11);
+    if (range == 0) return 0;
+    s32 v = static_cast<s32>(NextSoundRandom()) % range;
+    if ((GRef<u8>(snd + 0xB) & 2) != 0) {
+        if ((NextSoundRandom() & 1) == 0) v = -v;
+    } else if (range < 0) {
+        v = static_cast<s16>(-v);
+    }
+    return v;
+}
+
+// EE: 0x0021ACB8
+// Random pan variation within +-range (+0x0A).
+s8 func_0021ACB8(u32 snd) {
+    const s8 range = GRef<s8>(snd + 0xA);
+    if (range == 0) return 0;
+    const s8 v = static_cast<s8>(static_cast<s32>(NextSoundRandom()) % range);
+    if ((GRef<u8>(snd + 0xB) & 4) != 0) {
+        if ((NextSoundRandom() & 1) != 0) return v;
+    } else if (range >= 0) {
+        return v;
+    }
+    return static_cast<s8>(-v);
+}
+
+// EE: 0x0021CD08
+// Category volume `n` (0x0042CA50).
+f32 func_0021CD08(s32 n) { return GRef<f32>(0x0042CA50 + static_cast<u32>(n) * 4); }
+
+// EE: 0x0021CD20
+// HYPOTHESIS: NextSoundRandom. 15-bit LFSR (taps 0 and 7) in gp 0x00410D30 (docs/game/random.md).
+u16 NextSoundRandom() {
+    u16& s = GRef<u16>(0x00410D30);
+    const u32 v = s;
+    const u32 bit = v & 1;
+    s = static_cast<u16>(((v >> 1) | bit << 14) ^ bit << 7);
+    return s;
+}
+
+// EE: 0x0021CD48
+// Pitch range: x * 128 / 100.
+s16 func_0021CD48(s16 x) { return static_cast<s16>(((static_cast<s32>(x) << 16) >> 9) / 100); }
+
+// EE: 0x0021CDD0
+// Volume + delta clamped to 0..127.
+u32 func_0021CDD0(u32 volume, s8 delta) {
+    s32 v = static_cast<s32>(volume & 0xFF) + delta;
+    if (v >= 0x80) v = 0x7F;
+    else if (v < 0) v = 0;
+    return static_cast<u32>(v) & 0xFF;
+}
+
+// EE: 0x0021CFE8
+// Command 8 (16 bytes): key on with reverb for voice `voice`. The other bytes of the command are
+// whatever the stack holds, as on the PS2.
+void func_0021CFE8(u8 voice) {
+    QueueSmallCommand(16, [voice](u32 c) {
+        GRef<u32>(c) = 8;
+        GRef<u8>(c + 5) = voice;
+    }, QueueSoundCmd16);
+}
+
+// EE: 0x0021D018
+// Command 9 (16 bytes): key on without reverb for voice `voice`.
+void func_0021D018(u8 voice) {
+    QueueSmallCommand(16, [voice](u32 c) {
+        GRef<u32>(c) = 9;
+        GRef<u8>(c + 5) = voice;
+    }, QueueSoundCmd16);
+}
+
+// EE: 0x0021D0C8
+// Sends a prepared SE request: pitch variation, reverb flag command, voice table copy, voice
+// command.
+void func_0021D0C8(u32 rec) {
+    func_0021AB30(rec + 0x18);
+    if ((GRef<u8>(rec + 0x1C) & 2) == 0) func_0021D018(GRef<u8>(rec + 0xE));
+    else func_0021CFE8(GRef<u8>(rec + 0xE));
+    func_00218318(rec);
+    QueueSoundVoiceCmd(rec);
+}
+
+// EE: 0x0021D188
+s32 func_0021D188(s16 bank, s16 sound, u32 rec) {
+    return func_0021D1C0(bank, sound, rec, -1) == -1 ? -1 : 0;
+}
+
+// EE: 0x0021D1C0
+s32 func_0021D1C0(s16 bank, s16 sound, u32 rec, s8 priority) {
+    return func_0021D500(bank, sound, 0xFF, 0, rec, priority) == -1 ? -1 : 0;
+}
+
+// EE: 0x0021D500
+// Plays sound `sound` of bank `bank` with volume `volume` and pan offset `pan` into the request
+// record `rec`: key-on request, random volume/pan variation, category volume, pan law, then sends
+// it. A linked sound (+0x1E >= 0) is played the same way into a stack record, and its voice is
+// kept in rec+8.
+s32 func_0021D500(s16 bank, s16 sound, s16 volume, s16 pan, u32 rec, s8 priority) {
+    GRef<s16>(rec + 0x18) = sound;
+    GRef<s16>(rec + 0xC) = bank;
+    GRef<s8>(rec + 0x1A) = priority;
+    GRef<u32>(rec + 8) = 0;
+    const f32 fvolume = static_cast<f32>(volume);
+    GRef<s8>(rec + 0xE) = -1;
+    if (func_002174D0(1, rec) == -1) return -1;
+    const s8 dv = static_cast<s8>(func_0021AC28(rec + 0x18));
+    GRef<u16>(rec + 0x2A) = static_cast<u16>(func_0021CDD0(GRef<u8>(rec + 0x2A), dv));
+    const f32 category = func_0021CD08(GRef<u8>(rec + 0x28));
+    const s16 v = GRef<s16>(rec + 0x2A);
+    const s16 scaled = static_cast<s16>(fpu::FloatToInt(fvolume * category));
+    const s16 level = func_0021A800(GRef<u8>(rec + 0x20), static_cast<s16>(v * 129), scaled);
+    const s8 dp = func_0021ACB8(rec + 0x18);
+    const s8 p = func_0021AAC8(GRef<s8>(rec + 0x21), static_cast<s16>(pan + dp));
+    func_0021A988(level, p, rec);
+    GRef<s32>(rec + 0x14) = func_0021AD48(GRef<s16>(rec + 0x2C), GRef<s16>(rec + 0x2E));
+    func_0021D0C8(rec);
+    if (GRef<s16>(rec + 0x1E) >= 0) {
+        guest::GuestFrame linked(0x50);
+        func_0021D500(bank, GRef<s16>(rec + 0x1E), volume, pan, linked.Address(), priority);
+        GRef<u32>(rec + 8) = GRef<u32>(linked.Address() + 4);
+    }
+    return 0;
+}
+
+// EE: 0x0021E0E8
+// Command 5 (12 bytes): key off the voices in the two masks.
+s32 func_0021E0E8(u32 mask_lo, u32 mask_hi) {
+    guest::GuestFrame cmd(0x10);
+    const u32 c = cmd.Address();
+    GRef<u32>(c) = 5;
+    GRef<u32>(c + 4) = mask_lo;
+    GRef<u32>(c + 8) = mask_hi;
+    func_002186C0(c);
+    func_002179D8(c);
+    return 0;
+}
+
+// EE: 0x00219798
+// Stops a voice; a result of 0 becomes 1.
+s32 func_00219798(u32 rec) {
+    const s32 r = StopSound(rec);
+    return r == 0 ? 1 : r;
+}
+
+// EE: 0x0021A8D8
+// Doppler parameters.
+void func_0021A8D8(u32 a, u32 b, u32 c) {
+    GRef<u32>(0x00410D24) = a;
+    GRef<u32>(0x00410D28) = b;
+    GRef<u32>(0x00410D20) = c;
+}
+
+// EE: 0x0021AEE0
+// Clears the two queued positional-list heads (0x00351F60, 0x00351F60 - 0x110).
+void func_0021AEE0() {
+    GRef<u32>(0x00351F60) = 0;
+    GRef<u32>(0x00351F60 - 0x110) = 0;
+}
+
+// EE: 0x0021B030
+// Per-player positional sound blocks (0x0042AA10, 0x1020 each): listener header, 4 voice slots
+// (stride 0x130), 5 slots at +0x5F0 (stride 0x130), 4 slots at +0xBE0 (stride 0x110); then the
+// Doppler parameters (0x10, 5, 600).
+void func_0021B030() {
+    for (u32 p = 0; p < 2; ++p) {
+        const u32 b = 0x0042AA10 + p * 0x1020;
+        GRef<u16>(b + 0) = 0xFFFF;
+        GRef<u16>(b + 2) = 0;
+        for (u32 k = 0, s = b; k < 4; ++k, s += 0x130) {
+            GRef<s32>(s + 0x254) = -1;
+            GRef<u8>(s + 0x25C) = 1;
+            GRef<u32>(s + 0x134) = 0;
+            GRef<u32>(s + 0x184) = 0;
+            GRef<u32>(s + 0x1D4) = 0;
+        }
+        for (u32 k = 0, s = b + 0x5F0; k < 5; ++k, s += 0x130) {
+            GRef<s32>(s + 0x124) = -1;
+            GRef<u8>(s + 0x12C) = 1;
+            GRef<u32>(s + 0x54) = 0;
+        }
+        for (u32 k = 0, s = b + 0xBE0; k < 4; ++k, s += 0x110) {
+            GRef<u16>(s + 0x104) = 0;
+            GRef<u16>(s + 0x106) = 0;
+            GRef<u32>(s + 4) = 0;
+            GRef<u32>(s + 0x54) = 0;
+            GRef<u32>(s + 0xA4) = 0;
+        }
+        GRef<u32>(b + 0xE4) = 0;
+        GRef<u32>(b + 0x54) = 0;
+        GRef<u32>(b + 0x9C) = 0;
+    }
+    func_0021A8D8(0x10, 5, 600);
 }
 
 }  // namespace ac04::game

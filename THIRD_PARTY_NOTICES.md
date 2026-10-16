@@ -29,3 +29,5 @@ One row per dependency:
 | nlohmann_json | v3.12.0 (json.tar.xz release asset) | MIT | https://github.com/nlohmann/json | no | FetchContent (URL_HASH SHA256) |
 | doctest | v2.5.3 | MIT | https://github.com/doctest/doctest | no | FetchContent (URL_HASH SHA256) |
 | imgui | v1.92.9b | MIT | https://github.com/ocornut/imgui | no | FetchContent (URL_HASH SHA256); core + `imgui_impl_sdl3` + `imgui_impl_vulkan` compiled by us, debug overlay only |
+| FidelityFX-FSR | v1.0.2 (FSR 1, `ffx_fsr1.h` v1.20210629) | MIT | https://github.com/GPUOpen-Effects/FidelityFX-FSR | no | FetchContent (URL_HASH SHA256); only the shader headers `ffx-fsr/ffx_a.h` and `ffx-fsr/ffx_fsr1.h` are used, compiled into our SPIR-V (movie upscaling stage, ADR-006 §5); the sample is not built |
+| libmpeg2 | 0.5.1 (release archive, VideoLAN contrib mirror) | GPL-2.0-or-later | https://libmpeg2.sourceforge.io/ | no | FetchContent (URL_HASH SHA256); the decoder core (`libmpeg2/*.c` without the CPU-specific files) compiled by us as plain C with our own `config.h`; `libvo`, `convert` and the tools are not built |

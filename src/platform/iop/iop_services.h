@@ -5,14 +5,16 @@
 // Milestone C stand-ins return the replies measured in PCSX2 (docs/pcsx2/sessions-03.md):
 // - SOUND (0x81000101) fno 0: count 2, then zeros. fno 1 (command batch): the documented reply
 //   records (docs/subsystems/iop-sound.md), with transfers finishing at once and no mixing yet.
-// - VAG (0x81000102): every call returns the measured fno 0 block (IOP stream area 0x0008DA40, ring
-//   indices 1, 0x200 at +0x50/+0x60) (HYPOTHESIS for fno 1: no stream ever starts in the skeleton).
+// - VAG (0x81000102): VAG.IRX's VagAllInit / VagCtrl / VagMain (stream channels driven by the SPU2 IRQ).
 // - USBJOY (0x80000210) fno 2: "no device" block.
 // Commands the stand-ins do not implement are accepted and logged once per (rpc, fno).
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
+
+#include "platform/audio/spu_mixer.h"
 
 namespace ac04::platform::iop {
 
@@ -28,8 +30,12 @@ public:
                       std::uint32_t reply_size) = 0;
 };
 
-std::unique_ptr<RpcService> MakeSoundService();
-std::unique_ptr<RpcService> MakeVagService();
+// Reads size bytes of IOP RAM at ddr (null when out of range).
+using IopRead = std::function<const std::uint8_t*(std::uint32_t addr, std::uint32_t size)>;
+// SOUND service; with a mixer the voices are played and the voice status comes from it.
+std::unique_ptr<RpcService> MakeSoundService(audio::SpuMixer* mixer = nullptr, IopRead iop_read = {});
+// VAG service (VAG.IRX stand-in); with a mixer the streams play on core-1 voices 18-23.
+std::unique_ptr<RpcService> MakeVagService(audio::SpuMixer* mixer = nullptr, IopRead iop_read = {});
 std::unique_ptr<RpcService> MakeUsbJoyService();
 
 }  // namespace ac04::platform::iop

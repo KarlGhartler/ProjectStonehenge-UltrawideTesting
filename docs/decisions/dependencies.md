@@ -1,6 +1,6 @@
 # Third-party dependencies
 
-Status: **Approved by the owner on 2026-10-11**: SDL3, Vulkan-Headers, volk, VulkanMemoryAllocator, glslang, doctest, nlohmann/json, Dear ImGui, libmpeg2 (not used before the movie phase). MoltenVK stays "later" (macOS). Any dependency not in this list still needs the owner's approval.
+Status: **Approved by the owner on 2026-10-11**: SDL3, Vulkan-Headers, volk, VulkanMemoryAllocator, glslang, doctest, nlohmann/json, Dear ImGui, libmpeg2 (not used before the movie phase). **Approved on 2026-10-13**: AMD FidelityFX FSR 1 (movie upscaling stage, ADR-006 §5). MoltenVK stays "later" (macOS). Any dependency not in this list still needs the owner's approval.
 
 When a dependency is added, its exact version and the license file shipped in that version are checked again and recorded in the table "Added" below and in `../../THIRD_PARTY_NOTICES.md`.
 
@@ -19,6 +19,7 @@ Repo license: **GPL-3.0** (`LICENSE`). A dependency is compatible if its license
 | **MPEG-2 video decoder** (for SMV, see below) | decode MIS/SS/INTRO/STAFF movies | see options | — | must handle MPEG-2 MP@ML 640×448 elementary streams |
 | **JSON library** for `settings.json` (ADR-005/006) | read/write settings | see options below | — | added 2026-10-11 |
 | **Dear ImGui** (debug overlay only, `../port/debug-overlay.md`) | immediate-mode UI for the optional debug layer; its repo includes SDL3 and Vulkan backends | MIT | yes | added in milestone D (v1.92.9b); fetched by FetchContent pinned to the release archive with checksum; compiled only into the debug layer, inactive unless the overlay is opened |
+| **AMD FidelityFX FSR 1** (`FidelityFX-FSR`) | movie upscaling stage: EASU upscaling (+ RCAS sharpening if it improves the result) of decoded movie pictures to the internal-resolution factor (ADR-006 §5); passthrough at 1× | MIT | yes | approved 2026-10-13; shader headers only (`ffx_a.h`, `ffx_fsr1.h`), included by our GLSL with `A_GLSL`; added v1.0.2 |
 
 ### MPEG-2 decoder options
 
@@ -82,3 +83,5 @@ Recommendation: **nlohmann/json**, pinned by FetchContent with a checksum. Setti
 | nlohmann/json | v3.12.0 | `LICENSE.MIT`: MIT | yes | milestone A |
 | doctest | v2.5.3 | `LICENSE.txt`: MIT | yes | milestone A |
 | Dear ImGui | v1.92.9b | `LICENSE.txt`: MIT (Omar Cornut, 2014-2026) | yes | milestone D |
+| FidelityFX-FSR (FSR 1) | v1.0.2 (release archive, SHA-256 `92ee8f96…04acd`) | `license.txt`: MIT (Advanced Micro Devices, 2021); same MIT text in the headers | yes | 2026-10-13, decisions for the slice plan (ADR-006 §5) |
+| libmpeg2 | 0.5.1 (release archive from the VideoLAN contrib mirror, SHA-256 `dee22e89…71d4`) | `COPYING`: GPL-2.0, files say "version 2 or (at your option) any later version" | yes (GPL-2.0-or-later → GPL-3.0) | 2026-10-14, slice S3 (approved 2026-10-11, fetch confirmed by the owner 2026-10-14) |

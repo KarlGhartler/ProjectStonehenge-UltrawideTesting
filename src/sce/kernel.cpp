@@ -122,9 +122,7 @@ s32 sceDevctl(u32, s32, u32, u32, u32, u32) {
 
 // ---- libmc ------------------------------------------------------------------------------------
 
-// PS2: binds the MCSERV RPC; returns 0. The save backend (folder memory cards) comes with the save
-// milestone; nothing else from libmc is reached before it.
-s32 sceMcInit() { return 0; }
+// libmc: src/sce/libmc.cpp.
 
 // ---- libsif -----------------------------------------------------------------------------------
 // sceSifClientData: rpcd {paddr, pid, tid, mode} +0x00, command +0x10, buff +0x14, cbuff +0x18,
@@ -184,6 +182,31 @@ s32 sceSifCallRpc(u32 client, u32 fno, u32 /*mode*/, u32 send, s32 ssize, u32 re
 
 // PS2: non-zero while the last call on this client is in progress. Port: calls complete at once.
 s32 sceSifCheckStatRpc(u32) { return 0; }
+
+// PS2: queues `count` EE -> IOP DMA transfers ({u32 data, u32 addr, s32 size, s32 mode}, 16 bytes
+// each) and returns a non-zero transfer id (0 when the queue is full). Port: copies into IopRam()
+// at once; the ids count up from 1.
+u32 sceSifSetDma(u32 transfers, s32 count) {
+    static u32 next_id = 0;
+    auto& iop = ac04::sce::IopRam();
+    for (s32 i = 0; i < count; ++i) {
+        const u32 t = transfers + static_cast<u32>(i) * 16;
+        const u32 src = GRef<u32>(t), dst = GRef<u32>(t + 4);
+        const u32 size = static_cast<u32>(GRef<s32>(t + 8));
+        const u8* p = ac04::guest::Mem().Translate(src, size);
+        if (p == nullptr || static_cast<u64>(dst) + size > iop.size()) {
+            ac04::log::WriteOnce("sif:dma", ac04::log::Level::Warning, "sif", "sceSifSetDma: transfer out of range");
+            continue;
+        }
+        std::memcpy(iop.data() + dst, p, size);
+    }
+    next_id = next_id == 0xFFFFFFFFu ? 1 : next_id + 1;
+    return next_id;
+}
+
+// PS2: >= 0 while transfer `id` is queued or running, negative once it has finished. Port:
+// transfers finish in sceSifSetDma.
+s32 sceSifDmaStat(u32) { return -1; }
 
 // PS2: binds the IOP heap RPC; returns 0.
 s32 sceSifInitIopHeap() { return 0; }

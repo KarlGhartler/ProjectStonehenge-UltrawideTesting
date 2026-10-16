@@ -28,6 +28,10 @@ u32 func_002597B8() {
     return 0x004BE0C0;
 }
 
+// EE: 0x00259C98
+// HDD state byte +0x4399 of the HDD context (0 when no HDD: always on the retail path).
+u8 GetHddState(u32 ctx) { return GRef<u8>(ctx + 0x4399); }
+
 // EE: 0x002597C8
 u32 func_002597C8() {
     return GRef<u32>(func_002597B8() + 0x4364);
@@ -299,6 +303,555 @@ void EnterHddErrorScene() {
     GRef<u32>(GRef<u32>(0x00411718)) = ctx->scene;
     if (disp_h > 0x100) ctx->disp_flags = 0x4200;
     RequestScene(7);
+}
+
+// ---- HDD save operations (slice S2b; reached only from the save page's HDD modes) --------------
+// Context fields used here: +0 step, +4 operation, +0x360 worker job, +0x48E8 registered-file mask,
+// +0x4904 request C (+0x491C argument), +0x4BD8 request A (mount/unmount, +0x4BE0 flag,
+// +0x4BE4 pfs unit), +0x4D30 request B (+0x4D34 error, +0x4D40 size, +0x4D48 buffer, +0x4D4C open
+// mode, +0x4D50 u16 permissions, +0x4D60 mode word), +0x4DA0 path, +0x4DA8 file table
+// (6 x {path, buffer, size}).
+
+namespace {
+
+constexpr u32 kHddPath = 0x003F61E0;   // path buffer
+constexpr u32 kHddSaveDir = 0x0040A440;  // "/Your Saves/BISLUS-20152AC04"
+constexpr u32 kFmtPfs = 0x0040A340;     // "pfs%d:%s"
+constexpr u32 kFmtPfsFile = 0x0040A430; // "pfs%d:%s/%s"
+
+AC04_GUEST_VAR(s32, g_HddDirFailed, 0x00411628)
+AC04_GUEST_VAR(u32, g_HddDirError, 0x0041162C)
+AC04_GUEST_VAR(s32, g_HddSaveFailed, 0x00411630)
+AC04_GUEST_VAR(s32, g_HddSaveFile, 0x00411634)
+AC04_GUEST_VAR(u32, g_HddSaveError, 0x00411638)
+AC04_GUEST_VAR(s32, g_HddSaveRetry, 0x0041163C)
+AC04_GUEST_VAR(s32, g_HddSaveResume, 0x00411890)
+AC04_GUEST_VAR(s32, g_HddDeleteFile, 0x00411640)
+AC04_GUEST_VAR(s32, g_HddWriteFailed, 0x00411644)
+AC04_GUEST_VAR(u32, g_HddWriteError, 0x00411648)
+AC04_GUEST_VAR(s32, g_HddReadFailed, 0x0041164C)
+AC04_GUEST_VAR(u32, g_HddReadError, 0x00411650)
+
+s32& HStep(u32 ctx) { return GRef<s32>(ctx); }
+
+// The registered files other than the main file (index 5) must all have a path.
+bool HddFilesMissingPath(u32 ctx) {
+    const u32 mask = GRef<u32>(ctx + 0x48E8);
+    for (u32 i = 0; i < 6; ++i) {
+        if (((mask >> i) & 1) != 0 && i != 5 && GRef<u32>(ctx + 0x4DA8 + i * 0xC) == 0) return true;
+    }
+    return false;
+}
+
+void FormatHddPath(u32 ctx, u32 name) {
+    const u64 args[3] = {GRef<u32>(ctx + 0x4BE4), kHddSaveDir, name};
+    ee::sprintf(kHddPath, name == 0 ? kFmtPfs : kFmtPfsFile, args, name == 0 ? 2 : 3);
+}
+
+}  // namespace
+
+// EE: 0x002597E8
+// HYPOTHESIS: stores the HDD error code (+0x4364, read back by func_002597C8).
+void func_002597E8(u32 error) { GRef<u32>(func_002597B8() + 0x4364) = error; }
+
+// EE: 0x00259878
+u16 func_00259878() { return GRef<u16>(func_002597B8() + 0x4394); }
+
+// EE: 0x00259898
+u16 func_00259898() { return GRef<u16>(func_002597B8() + 0x4396); }
+
+// EE: 0x00259C90
+u32 func_00259C90(u32 ctx) { return GRef<u32>(ctx + 0x4390); }
+
+// EE: 0x00259CA0
+// HDD mode for saves (+0x4398; 3 on the retail path, written by the boot scene).
+u8 GetHddSaveMode(u32 ctx) { return GRef<u8>(ctx + 0x4398); }
+
+// EE: 0x0025AEE0
+// HYPOTHESIS: operation 0xD, checks the HDD save directory: mount (job 0x12), open the directory
+// "pfs%d:/Your Saves/BISLUS-20152AC04/BISLUS-20152AC04" (job 0x16; +0x216 = found), unmount (0x13).
+s32 func_0025AEE0(u32 ctx) {
+    s32 ret = 0;
+    func_002598E8(ctx, 0xD);
+    switch (HStep(ctx)) {
+        case 0:
+        case 1: {
+            if (HStep(ctx) == 0) {
+                const u64 args[3] = {GRef<u32>(ctx + 0x4BE4), kHddSaveDir, 0x0040A460};
+                ee::sprintf(kHddPath, kFmtPfsFile, args, 3);
+                g_HddDirFailed() = 0;
+                g_HddDirError() = 0;
+                GRef<u32>(ctx + 0x4DA0) = kHddPath;
+                HStep(ctx) = 1;
+            }
+            GRef<u32>(ctx + 0x4BE0) = 1;
+            const s32 r = func_0025E248(ctx + 0x360, ctx + 0x4BD8, 0x12);
+            if (r == 1) {
+                HStep(ctx) = 2;
+            } else {
+                ret = r == -1 ? -1 : 0;
+            }
+            break;
+        }
+        case 2: {
+            const s32 r = func_0025E248(ctx + 0x360, ctx + 0x4D30, 0x16);
+            if (r == 1) {
+                GRef<u8>(ctx + 0x216) = 1;
+                HStep(ctx) = 3;
+            } else if (r == -1) {
+                if (func_002597C8() == 2) {
+                    GRef<u8>(ctx + 0x216) = 0;
+                    HStep(ctx) = 3;
+                } else {
+                    HStep(ctx) = 3;
+                    g_HddDirError() = func_002597C8();
+                    g_HddDirFailed() = -1;
+                }
+            }
+            break;
+        }
+        case 3: {
+            const s32 r = func_0025E248(ctx + 0x360, ctx + 0x4BD8, 0x13);
+            if (r == 1) {
+                if (g_HddDirFailed() == -1) {
+                    ret = -1;
+                    func_002597E8(g_HddDirError());
+                } else {
+                    HStep(ctx) = 4;
+                }
+            } else if (r == -1) {
+                ret = -1;
+                if (g_HddDirFailed() == -1) func_002597E8(g_HddDirError());
+            }
+            break;
+        }
+        case 4:
+            ret = 1;
+            break;
+        default:
+            break;
+    }
+    if (ret != 0) HStep(ctx) = 0;
+    return ret;
+}
+
+// EE: 0x0025B0D8
+// HYPOTHESIS: operation 0xE, HDD save: mount, create the save directory (jobs 0x25, 0x22, 0x17),
+// then each registered file: open (0x18, mode 0x203), write (0x1C), close (0x19), set its mode
+// (0x17, 0x8497); unmount. Error 0x1C (HYPOTHESIS: disk full) unmounts and retries through the
+// extension jobs 5/1/6 on request C.
+s32 func_0025B0D8(u32 ctx) {
+    s32 ret = 0;
+    const u32 job = ctx + 0x360;
+    const u32 req_a = ctx + 0x4BD8;
+    const u32 req_b = ctx + 0x4D30;
+    const u32 req_c = ctx + 0x4904;
+    const u32 files = ctx + 0x4DA8;
+    func_002598E8(ctx, 0xE);
+    auto fail_to = [&](s32 step, s32 r) {  // records the error and goes to `step`
+        HStep(ctx) = step;
+        g_HddSaveError() = func_002597C8();
+        g_HddSaveFailed() = r;
+    };
+    s32 step = HStep(ctx);
+    if (!(static_cast<u32>(step) < 0xF)) return 0;
+    switch (step) {
+        case 0:
+            if (HddFilesMissingPath(ctx)) ret = -1;
+            g_HddSaveFile() = 0;
+            g_HddSaveFailed() = 0;
+            g_HddSaveError() = 0;
+            g_HddSaveRetry() = 0;
+            g_HddSaveResume() = 0;
+            FormatHddPath(ctx, 0);
+            GRef<u16>(ctx + 0x4D50) = 0x1FF;
+            GRef<u32>(ctx + 0x4DA0) = kHddPath;
+            HStep(ctx) = 1;
+            break;
+        case 1: {
+            GRef<u32>(ctx + 0x4BE0) = 0;
+            const s32 r = func_0025E248(job, req_a, 0x12);
+            if (r == 1) {
+                if (g_HddSaveRetry() == 0) {
+                    HStep(ctx) = 2;
+                } else {
+                    g_HddSaveRetry() = 0;
+                    HStep(ctx) = g_HddSaveResume();
+                }
+            } else if (r == -1) {
+                g_HddSaveRetry() = 0;
+                ret = -1;
+            }
+            break;
+        }
+        case 2: {
+            const s32 r = func_0025E248(job, req_a, 0x25);
+            if (r == 1) {
+                HStep(ctx) = 3;
+            } else if (r == -1) {
+                fail_to(10, -1);
+            }
+            break;
+        }
+        case 3: {
+            const s32 r = func_0025E248(job, req_b, 0x22);
+            if (r == 1) {
+                HStep(ctx) = 4;
+            } else if (r == -1) {
+                if (GRef<s32>(ctx + 0x4D34) == 0x1C) {
+                    g_HddSaveResume() = HStep(ctx);
+                    g_HddSaveRetry() = 1;
+                    HStep(ctx) = 10;
+                } else {
+                    fail_to(10, -1);
+                }
+            }
+            break;
+        }
+        case 4: {
+            GRef<u32>(ctx + 0x4D60) = 0xC4A7;
+            const s32 r = func_0025E248(job, req_b, 0x17);
+            if (r == 1) {
+                HStep(ctx) = 5;
+            } else if (r == -1) {
+                fail_to(10, -1);
+            }
+            break;
+        }
+        case 5:
+        case 6: {
+            if (step == 5) {
+                bool found = false;
+                do {
+                    const s32 next = g_HddSaveFile() + 1;
+                    if (((GRef<u32>(ctx + 0x48E8) >> (static_cast<u32>(g_HddSaveFile()) & 0x1F)) & 1) != 0) {
+                        found = true;
+                        break;
+                    }
+                    g_HddSaveFile() = next;
+                } while (g_HddSaveFile() < 6);
+                if (!found) HStep(ctx) = 10;
+                if (HStep(ctx) == 10) break;
+                const u32 e = files + static_cast<u32>(g_HddSaveFile()) * 0xC;
+                FormatHddPath(ctx, GRef<u32>(e));
+                GRef<u32>(ctx + 0x4D4C) = 0x203;
+                GRef<u16>(ctx + 0x4D50) = 0x1B6;
+                GRef<u32>(ctx + 0x4DA0) = kHddPath;
+                const u32 buf = GRef<u32>(e + 4);
+                GRef<u32>(ctx + 0x4D40) = GRef<u32>(e + 8);
+                GRef<u32>(ctx + 0x4D48) = buf;
+                HStep(ctx) = 6;
+            }
+            const s32 r = func_0025E248(job, req_b, 0x18);
+            if (r == 1) {
+                HStep(ctx) = 7;
+            } else if (r == -1) {
+                if (GRef<s32>(ctx + 0x4D34) == 0x1C) {
+                    g_HddSaveRetry() = 1;
+                    g_HddSaveResume() = 5;
+                    HStep(ctx) = 10;
+                } else {
+                    g_HddSaveRetry() = 0;
+                    fail_to(10, -1);
+                }
+            }
+            break;
+        }
+        case 7: {
+            const s32 r = func_0025E248(job, req_b, 0x1C);
+            if (r == 1) {
+                HStep(ctx) = 8;
+            } else if (r == -1) {
+                if (GRef<s32>(ctx + 0x4D34) != 0x1C) {
+                    g_HddSaveRetry() = 0;
+                    fail_to(8, -1);
+                } else {
+                    g_HddSaveRetry() = 1;
+                    g_HddSaveResume() = 5;
+                    HStep(ctx) = 8;
+                }
+            }
+            break;
+        }
+        case 8: {
+            const s32 r = func_0025E248(job, req_b, 0x19);
+            if (r == 1) {
+                if (g_HddSaveFailed() != -1 && g_HddSaveRetry() == 0) {
+                    HStep(ctx) = 9;
+                    break;
+                }
+                HStep(ctx) = 10;
+            } else if (r == -1) {
+                if (g_HddSaveFailed() != -1) {
+                    g_HddSaveFailed() = -1;
+                    g_HddSaveError() = func_002597C8();
+                }
+                g_HddSaveRetry() = 0;
+                HStep(ctx) = 10;
+            }
+            break;
+        }
+        case 9: {
+            GRef<u32>(ctx + 0x4D60) = 0x8497;
+            const s32 r = func_0025E248(job, req_b, 0x17);
+            if (r == 1) {
+                g_HddSaveFile() = g_HddSaveFile() + 1;
+                HStep(ctx) = g_HddSaveFile() < 6 ? 5 : 10;
+            } else if (r == -1) {
+                g_HddSaveFailed() = -1;
+                g_HddSaveError() = func_002597C8();
+                HStep(ctx) = 10;
+            }
+            break;
+        }
+        case 10: {
+            const s32 r = func_0025E248(job, req_a, 0x13);
+            if (r != 1) {
+                if (r == -1) {
+                    ret = -1;
+                    if (g_HddSaveFailed() == -1) func_002597E8(g_HddSaveError());
+                }
+            } else if (g_HddSaveRetry() != 0) {
+                g_HddSaveFailed() = 0;
+                HStep(ctx) = 0xB;
+            } else if (g_HddSaveFailed() != -1) {
+                HStep(ctx) = 0xE;
+            } else {
+                ret = -1;
+                func_002597E8(g_HddSaveError());
+            }
+            break;
+        }
+        case 0xB: {
+            GRef<u32>(ctx + 0x491C) = 3;
+            const s32 r = func_0025E248(job, req_c, 5);
+            if (r == 1) {
+                HStep(ctx) = 0xC;
+            } else {
+                ret = r == -1 ? -1 : 0;
+            }
+            break;
+        }
+        case 0xC: {
+            const s32 r = func_0025E248(job, req_c, 1);
+            if (r == 1) {
+                HStep(ctx) = 0xD;
+            } else if (r == -1) {
+                fail_to(0xD, -1);
+            }
+            break;
+        }
+        case 0xD: {
+            const s32 r = func_0025E248(job, req_c, 6);
+            if (r != 1) {
+                ret = r == -1 ? -1 : 0;
+            } else if (g_HddSaveFailed() != -1) {
+                HStep(ctx) = 1;
+            } else {
+                ret = -1;
+                func_002597E8(g_HddSaveError());
+            }
+            break;
+        }
+        case 0xE:
+            ret = 1;
+            break;
+        default:
+            break;
+    }
+    if (ret != 0) HStep(ctx) = 0;
+    return ret;
+}
+
+// EE: 0x0025B6C8
+// HYPOTHESIS: operation 0xF, HDD delete: mount, remove each registered file (job 0x1D), remove the
+// directory (job 0x23), unmount (prints "unmount").
+s32 func_0025B6C8(u32 ctx) {
+    s32 ret = 0;
+    func_002598E8(ctx, 0xF);
+    s32 step = HStep(ctx);
+    if (!(static_cast<u32>(step) < 7)) return 0;
+    switch (step) {
+        case 0:
+            if (HddFilesMissingPath(ctx)) ret = -1;
+            g_HddDeleteFile() = 0;
+            HStep(ctx) = 1;
+            break;
+        case 1: {
+            GRef<u32>(ctx + 0x4BE0) = 0;
+            const s32 r = func_0025E248(ctx + 0x360, ctx + 0x4BD8, 0x12);
+            if (r == 1) {
+                HStep(ctx) = 2;
+            } else {
+                ret = r == -1 ? -1 : 0;
+            }
+            break;
+        }
+        case 2:
+        case 3: {
+            if (step == 2) {
+                bool found = false;
+                do {
+                    if (((GRef<u32>(ctx + 0x48E8) >> (static_cast<u32>(g_HddDeleteFile()) & 0x1F)) & 1) != 0) {
+                        found = true;
+                        break;
+                    }
+                    g_HddDeleteFile() = g_HddDeleteFile() + 1;
+                } while (g_HddDeleteFile() < 6);
+                if (!found) HStep(ctx) = 4;
+                if (HStep(ctx) != 2) break;
+                FormatHddPath(ctx, GRef<u32>(ctx + 0x4DA8 + static_cast<u32>(g_HddDeleteFile()) * 0xC));
+                GRef<u32>(ctx + 0x4D4C) = 0x203;
+                GRef<u32>(ctx + 0x4DA0) = kHddPath;
+                HStep(ctx) = 3;
+            }
+            if (func_0025E248(ctx + 0x360, ctx + 0x4D30, 0x1D) != 0) {
+                g_HddDeleteFile() = g_HddDeleteFile() + 1;
+                HStep(ctx) = 2;
+            }
+            break;
+        }
+        case 4:
+            FormatHddPath(ctx, 0);
+            if (func_0025E248(ctx + 0x360, ctx + 0x4D30, 0x23) != 0) HStep(ctx) = 5;
+            break;
+        case 5: {
+            const s32 r = func_0025E248(ctx + 0x360, ctx + 0x4BD8, 0x13);
+            if (r == 1) {
+                ee::printf(0x0040A4E0 /* "unmount\n" */, nullptr, 0);
+                HStep(ctx) = 6;
+            } else {
+                ret = r == -1 ? -1 : 0;
+            }
+            break;
+        }
+        case 6:
+            ret = 1;
+            break;
+        default:
+            break;
+    }
+    if (ret != 0) HStep(ctx) = 0;
+    return ret;
+}
+
+namespace {
+
+// Shared body of the single-file HDD operations 0x10 (write) and 0x11 (read): mount, open the
+// file (job 0x18), transfer (`xfer_job`), close (0x19), unmount.
+s32 HddFileOp(u32 ctx, s32 index, s32 op, u32 mode, bool read, s32 xfer_job, s32& failed, u32& error) {
+    s32 ret = 0;
+    const u32 req_b = ctx + 0x4D30;
+    func_002598E8(ctx, op);
+    s32 step = HStep(ctx);
+    if (!(static_cast<u32>(step) < 7)) return 0;
+    auto fail_to = [&](s32 s, s32 r) {
+        HStep(ctx) = s;
+        error = func_002597C8();
+        failed = r;
+    };
+    switch (step) {
+        case 0:
+        case 1: {
+            if (step == 0) {
+                const u32 e = ctx + 0x4DA8 + static_cast<u32>(index) * 0xC;
+                FormatHddPath(ctx, GRef<u32>(e));
+                const u32 buf = GRef<u32>(e + 4);
+                GRef<u32>(ctx + 0x4D4C) = mode;
+                GRef<u32>(ctx + 0x4DA0) = kHddPath;
+                const u32 size = GRef<u32>(e + 8);
+                if (!read) GRef<u16>(ctx + 0x4D50) = 0x180;
+                GRef<u32>(ctx + 0x4D40) = size;
+                HStep(ctx) = 1;
+                GRef<u32>(ctx + 0x4D48) = buf;
+                failed = 0;
+                error = 0;
+            }
+            GRef<u32>(ctx + 0x4BE0) = read ? 1 : 0;
+            const s32 r = func_0025E248(ctx + 0x360, ctx + 0x4BD8, 0x12);
+            if (r == 1) {
+                HStep(ctx) = 2;
+            } else {
+                ret = r == -1 ? -1 : 0;
+            }
+            break;
+        }
+        case 2: {
+            const s32 r = func_0025E248(ctx + 0x360, req_b, 0x18);
+            if (r == 1) {
+                HStep(ctx) = 3;
+            } else if (r == -1) {
+                fail_to(5, -1);
+            }
+            break;
+        }
+        case 3: {
+            const s32 r = func_0025E248(ctx + 0x360, req_b, static_cast<u32>(xfer_job));
+            if (r == 1) {
+                HStep(ctx) = 4;
+            } else if (r == -1) {
+                fail_to(4, -1);
+            }
+            break;
+        }
+        case 4: {
+            const s32 r = func_0025E248(ctx + 0x360, req_b, 0x19);
+            if (r != 1) {
+                if (r != -1) break;
+                if (failed != -1) {
+                    error = func_002597C8();
+                    failed = -1;
+                }
+            }
+            HStep(ctx) = 5;
+            break;
+        }
+        case 5: {
+            const s32 r = func_0025E248(ctx + 0x360, ctx + 0x4BD8, 0x13);
+            if (r == 1) {
+                if (failed == -1) {
+                    ret = -1;
+                    func_002597E8(error);
+                } else {
+                    HStep(ctx) = 6;
+                }
+            } else if (r == -1) {
+                ret = -1;
+                if (failed == -1) func_002597E8(error);
+            }
+            break;
+        }
+        case 6:
+            ret = 1;
+            break;
+        default:
+            break;
+    }
+    if (ret != 0) HStep(ctx) = 0;
+    return ret;
+}
+
+}  // namespace
+
+// EE: 0x0025B948
+// HYPOTHESIS: operation 0x10, writes registered file `index` to the HDD (open mode 3, permissions
+// 0x180, job 0x1C).
+s32 func_0025B948(u32 ctx, s32 index) {
+    return HddFileOp(ctx, index, 0x10, 3, false, 0x1C, g_HddWriteFailed(), g_HddWriteError());
+}
+
+// EE: 0x0025BBD0
+// HYPOTHESIS: operation 0x11, reads registered file `index` from the HDD (open mode 1, job 0x1B).
+s32 func_0025BBD0(u32 ctx, s32 index) {
+    return HddFileOp(ctx, index, 0x11, 1, true, 0x1B, g_HddReadFailed(), g_HddReadError());
+}
+
+// EE: 0x0025BED8
+// HYPOTHESIS: job 0x26 on request A (free space query); 1 done, -1 failed, 0 running.
+s32 func_0025BED8(u32 ctx) {
+    const s32 r = func_0025E248(ctx + 0x360, ctx + 0x4BD8, 0x26);
+    if (r == 1) return 1;
+    return r == -1 ? -1 : 0;
 }
 
 }  // namespace ac04::game

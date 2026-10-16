@@ -26,13 +26,13 @@ address,name,subsystem,status,note
 0x00100FB0,FreeWorkHeap,core,understood,
 0x00100FB8,FUN_00100fb8,core,dead,"clear three counters (D_0041178C/90/94) and 4 words at 0x00412198; no reference of any kind (code gap, created 2026-10-11)"
 0x00101000,WorkHeapAlloc,core,understood,skeleton-readiness.md
-0x00101060,FUN_00101060,core,understood,"WorkHeapAlloc(n * 16, 16)"
+0x00101060,AllocQwords,core,understood,"WorkHeapAlloc(n * 16, 16)"
 0x00101080,FUN_00101080,core,understood,work heap: bytes remaining
 0x00101090,FUN_00101090,core,understood,work heap: set current offset from a pointer (rewind)
 0x001010A8,SetWorkHeapMark,core,understood,
 0x001010F0,ResetWorkHeapToMark,core,understood,
-0x00101138,FUN_00101138,core,understood,work heap: push current offset on the mark stack 0x00412198 (returns free bytes)
-0x00101170,FUN_00101170,core,understood,work heap: pop the mark stack (free everything allocated since the push)
+0x00101138,PushWorkHeapMark,core,understood,work heap: push current offset on the mark stack 0x00412198 (returns free bytes)
+0x00101170,PopWorkHeapMark,core,understood,work heap: pop the mark stack (free everything allocated since the push)
 0x001011B0,ReadPadData,core,understood,
 0x001011F0,InitPadPort,core,understood,
 0x00101298,UpdatePadConnection,core,understood,
@@ -53,24 +53,24 @@ address,name,subsystem,status,note
 0x001025C8,FUN_001025c8,core,understood,"pad: request vibration (motor on flag, strength, 16-frame timer) unless locked"
 0x00102620,TickPadVibration,core,understood,
 0x00102668,AllocAndLoadDataEntry,core,understood,
-0x001026B8,FUN_001026b8,camera,understood,"camera object init: unit matrices, default projection 640x480 / near-far, viewport = draw buffer"
+0x001026B8,Init2dCamera,camera,understood,"camera object init: unit matrices, default projection 640x480 / near-far, viewport = draw buffer"
 0x00102798,FUN_00102798,unreached,dead,
-0x00102810,FUN_00102810,camera,understood,"camera: set projection (screen w, h, distance, aspect, far) (+0x160..+0x170)"
+0x00102810,SetCameraProjection,camera,understood,"camera: set projection (screen w, h, distance, aspect, far) (+0x160..+0x170)"
 0x00102838,FUN_00102838,camera,understood,camera: copy projection params
 0x00102870,FUN_00102870,camera,dead,"camera: set screen centre (+0x178/+0x17C); no reference of any kind (code gap, created 2026-10-11)"
 0x00102880,FUN_00102880,camera,dead,"camera: set aspect scale (+0x180/+0x184), clear flag +0x198 bit 0, recompute +0x160/+0x164; no reference of any kind (code gap, created 2026-10-11)"
-0x001028D8,FUN_001028d8,camera,understood,"camera: set viewport (x, y, w, h), z range, screen centre offsets 2048 - size/2"
+0x001028D8,SetCameraViewport,camera,understood,"camera: set viewport (x, y, w, h), z range, screen centre offsets 2048 - size/2"
 0x00102990,FUN_00102990,camera,understood,camera: copy viewport params
-0x001029E0,FUN_001029e0,camera,understood,"camera update: world->view (from position + rotation), view->screen (sceVu0ViewScreenMatrix), clip matrix 0x001031C0, world->screen (+0xE0), world->clip (+0x120), scissor regs"
-0x00102B68,FUN_00102b68,camera,understood,"look-at camera params reset (eye, target, distance 512)"
-0x00102B90,FUN_00102b90,camera,understood,direction vector -> pitch/yaw angles (atan2)
-0x00102C08,FUN_00102c08,camera,understood,"look-at camera: rotation from eye->target, roll, optional orbit/offset"
+0x001029E0,UpdateCameraMatrices,camera,understood,"camera update: world->view (from position + rotation), view->screen (sceVu0ViewScreenMatrix), clip matrix 0x001031C0, world->screen (+0xE0), world->clip (+0x120), scissor regs"
+0x00102B68,ResetCameraLookAt,camera,understood,"look-at camera params reset (eye, target, distance 512)"
+0x00102B90,GetDirectionAngles,camera,understood,direction vector -> pitch/yaw angles (atan2)
+0x00102C08,SetCameraLookAt,camera,understood,"look-at camera: rotation from eye->target, roll, optional orbit/offset"
 0x00102D28,FUN_00102d28,core,understood,"rotation matrix from Euler angles (wrap to +-pi, order Z, X, Y)"
 0x00102EF0,FUN_00102ef0,core,understood,compose two Euler rotations -> Euler angles (asin/atan2)
 0x00103070,FUN_00103070,core,understood,"point = base + rotate(euler, offset)"
 0x001030F0,FUN_001030f0,core,understood,rotate vector by Euler angles
 0x00103150,FUN_00103150,unreached,dead,
-0x001031C0,FUN_001031c0,camera,understood,"perspective clip matrix from screen size, distance, near/far"
+0x001031C0,BuildClipMatrix,camera,understood,"perspective clip matrix from screen size, distance, near/far"
 0x00103290,FUN_00103290,core,understood,"rotation matrix -> Euler angles (yaw atan2, pitch asin, roll acos)"
 0x00103330,FUN_00103330,core,dead,"direction vector -> Euler angles; unreachable: called only by unreachable 0x00109598 (raw call graph + data/code-address scan, 2026-10-11)"
 0x00103420,FUN_00103420,core,dead,"sphere overlap test (|a-b|^2 <= (r1+r2)^2); unreachable: called only by unreachable 0x001034A0,0x00103660 (raw call graph + data/code-address scan, 2026-10-11)"
@@ -90,22 +90,22 @@ address,name,subsystem,status,note
 0x00103D80,GetSprWorkBuffer,unreached,dead,"see skeleton-readiness.md; unreachable: called only by unreachable 0x00103CC8 (raw call graph + data/code-address scan, 2026-10-11)"
 0x00103D98,FlushSprWorkBuffer,unreached,dead,"see skeleton-readiness.md; unreachable: called only by unreachable 0x00103CC8 (raw call graph + data/code-address scan, 2026-10-11)"
 0x00103E38,ResetDoubleBuffer,core,understood,
-0x00103E48,FUN_00103e48,core,understood,allocate the two halves of a double buffer (n qwords each)
+0x00103E48,AllocDoubleBuffer,core,understood,allocate the two halves of a double buffer (n qwords each)
 0x00103E90,SwapDoubleBuffer,core,understood,
-0x00103EB8,FUN_00103eb8,render,understood,begin DMA cnt packet: tag (QWC patched later) + VIF NOP/DIRECT placeholder
-0x00103ED0,FUN_00103ed0,render,understood,close DMA cnt packet: QWC from size; >0xFFFF qwords splits into ref chains
-0x00103FD8,FUN_00103fd8,render,understood,"InitPacketBuckets: allocate N bucket heads (DMA next tags) in the frame buffer, linked in order (ordering table)"
+0x00103EB8,WriteDmaCallTag,render,understood,begin DMA cnt packet: tag (QWC patched later) + VIF NOP/DIRECT placeholder
+0x00103ED0,CloseDmaPacket,render,understood,close DMA cnt packet: QWC from size; >0xFFFF qwords splits into ref chains
+0x00103FD8,InitBucketList,render,understood,"InitPacketBuckets: allocate N bucket heads (DMA next tags) in the frame buffer, linked in order (ordering table)"
 0x00104090,FUN_00104090,render,understood,link a bucket list into bucket n of another list
-0x00104100,FUN_00104100,render,understood,begin inline packet (remember start in 0x004117A4)
-0x00104118,FUN_00104118,render,understood,end inline packet and link it into bucket n
-0x00104198,FUN_00104198,render,understood,link a finished packet into bucket n (next tag)
-0x001041E8,FUN_001041e8,render,understood,append a cnt packet of n qwords with VIF words into bucket n
+0x00104100,BeginPacket,render,understood,begin inline packet (remember start in 0x004117A4)
+0x00104118,EndPacket,render,understood,end inline packet and link it into bucket n
+0x00104198,LinkPacket,render,understood,link a finished packet into bucket n (next tag)
+0x001041E8,AllocBucketPacket,render,understood,append a cnt packet of n qwords with VIF words into bucket n
 0x00104250,FUN_00104250,render,understood,append an empty cnt tag with VIF words into bucket n
 0x001042A0,FUN_001042a0,render,understood,allocate a cnt packet of n qwords from the frame buffer
-0x001042D0,FUN_001042d0,render,understood,"append a ref tag (address, qwc) into bucket n"
+0x001042D0,AddBucketRef,render,understood,"append a ref tag (address, qwc) into bucket n"
 0x00104338,FUN_00104338,render,understood,"append a DMA call tag (0x50000000 | qwc, address) with qwc inline qwords, then a next tag, into bucket n"
 0x001043B0,ResetPacketList,core,understood,
-0x001043C0,FUN_001043c0,render,understood,set packet list head/tail from a bucket list (replaces the list; does not append)
+0x001043C0,SetPacketListBuckets,render,understood,set packet list head/tail from a bucket list (replaces the list; does not append)
 0x001043E8,FUN_001043e8,render,understood,append a bucket list to a packet list
 0x00104418,FUN_00104418,render,dead,"close a packet list with a DMA next tag (0x20000000) to the given chain; no reference of any kind (code gap, created 2026-10-11)"
 0x00104438,SendDmaPacketList,core,understood,
@@ -116,31 +116,31 @@ address,name,subsystem,status,note
 0x001049B0,FUN_001049b0,core,understood,skeleton-readiness.md
 0x00104E28,PutDispAndDrawEnv,core,understood,
 0x00104F10,FUN_00104f10,core,understood,3D distance
-0x00104F50,FUN_00104f50,core,understood,horizontal (XZ) distance
-0x00104F80,FUN_00104f80,core,understood,vector length
+0x00104F50,GetDistanceXZ,core,understood,horizontal (XZ) distance
+0x00104F80,FUN_00104f80,core,partly,vector length
 0x00104FA8,FUN_00104fa8,core,understood,horizontal vector length
-0x00104FC8,FUN_00104fc8,core,understood,"RGBA lerp (MMI): a + (b-a)*t, t in 4.12, clamped"
+0x00104FC8,LerpColor,core,understood,"RGBA lerp (MMI): a + (b-a)*t, t in 4.12, clamped"
 0x00105028,FUN_00105028,core,understood,skeleton-readiness.md
 0x00105070,FUN_00105070,render,dead,"MMI colour lerp of two packed RGBA values by t (pextlb/psubh/pmulth); no reference of any kind (code gap, created 2026-10-11)"
 0x001050D8,FUN_001050d8,core,understood,"RGBA x2 lerp (MMI, 8 bytes)"
-0x00105178,FUN_00105178,core,understood,"build scale matrix (x, y, z) with MMI: rows (sx, 0, h(sx), 0), (0, sy, 0, h(sy)), (0, 0, sz, h(sz)), vf0, where h(v) = upper word of the sign-extended mfc1 = 0 for positive, 0xFFFFFFFF for negative scales (quirk to keep when translating; validation.md V-3)"
-0x001051A8,FUN_001051a8,core,understood,cubic Hermite/Bezier ease (VU0)
-0x001051F0,FUN_001051f0,core,understood,clamp vector between min and max (VU0)
+0x00105178,BuildScaleMatrix,core,understood,"build scale matrix (x, y, z) with MMI: rows (sx, 0, h(sx), 0), (0, sy, 0, h(sy)), (0, 0, sz, h(sz)), vf0, where h(v) = upper word of the sign-extended mfc1 = 0 for positive, 0xFFFFFFFF for negative scales (quirk to keep when translating; validation.md V-3)"
+0x001051A8,EvalHermite,core,understood,cubic Hermite/Bezier ease (VU0)
+0x001051F0,ClampVector,core,understood,clamp vector between min and max (VU0)
 0x00105210,FUN_00105210,render,dead,"direct hardware: fromSPR DMA (channel 8) of n qwords; no reference of any kind (code gap, created 2026-10-11)"
 0x00105278,FUN_00105278,render,dead,"direct hardware: wait for fromSPR DMA (channel 8); no reference of any kind (code gap, created 2026-10-11)"
 0x001052A8,FUN_001052a8,render,dead,"direct hardware: toSPR DMA (channel 9) of n qwords; no reference of any kind (code gap, created 2026-10-11)"
 0x00105340,FUN_00105340,core,understood,"ApplyOptionSettings: sound, display offset, brightness, vibration, SCREEN RATIO -> ctx flag 0x10000"
 0x001053C8,FUN_001053c8,core,understood,skeleton-readiness.md
 0x001053F8,FUN_001053f8,core,understood,"InitOptionData: campaign block defaults 0x001053C8(0x002A0318), 0x00246FE0"
-0x00105418,FUN_00105418,frontend,understood,"new game: reset campaign data (0x00105728(0x002A15B8), 0x001056D8(0x002A0318))"
-0x00105448,FUN_00105448,frontend,understood,"clamp campaign statistics before saving: credits (+0xA18) <= 999,999,999, play time (+0x38) <= 0x80BEFBC4, counters <= 999,999, 21x3 per-aircraft counters, +0x44 <= 0x3C14D81"
+0x00105418,ResetCampaignData,frontend,understood,"new game: reset campaign data (0x00105728(0x002A15B8), 0x001056D8(0x002A0318))"
+0x00105448,ClampStatistics,frontend,understood,"clamp campaign statistics before saving: credits (+0xA18) <= 999,999,999, play time (+0x38) <= 0x80BEFBC4, counters <= 999,999, 21x3 per-aircraft counters, +0x44 <= 0x3C14D81"
 0x00105528,FUN_00105528,core,understood,skeleton-readiness.md
 0x00105568,FUN_00105568,core,understood,skeleton-readiness.md
 0x00105578,FUN_00105578,core,understood,skeleton-readiness.md
 0x00105670,FUN_00105670,core,understood,skeleton-readiness.md
 0x00105690,FUN_00105690,core,understood,skeleton-readiness.md
-0x001056A8,FUN_001056a8,frontend,understood,reset screen position option (dx = dy = 0)
-0x001056B8,FUN_001056b8,frontend,understood,reset brightness option (level 3)
+0x001056A8,ResetScreenPosition,frontend,understood,reset screen position option (dx = dy = 0)
+0x001056B8,ResetBrightness,frontend,understood,reset brightness option (level 3)
 0x001056C8,FUN_001056c8,core,understood,option defaults: two u16 = 8
 0x001056D8,FUN_001056d8,core,understood,skeleton-readiness.md
 0x00105728,FUN_00105728,core,understood,skeleton-readiness.md
@@ -150,11 +150,11 @@ address,name,subsystem,status,note
 0x001058D8,ApplyDisplayOffset,core,understood,
 0x00105988,ApplyBrightness,core,understood,was HYPOTHESIS ApplyScreenScale; options page brightness level 0x002A15CD 0..6 -> ctx +0x80/84/88 colour scale used by DrawDisplayTransfer
 0x00105A08,InitGimTexture,render,understood,"InitGimTexture: bind a GIM texture header (pixel and CLUT sizes by PSM, log2 width/height for TEX0) (named)"
-0x00105CF8,FUN_00105cf8,core,understood,store two u16 outputs through optional pointers
-0x00105D18,FUN_00105d18,render,understood,"emit textured sprite packet from a GIM texture record (TEX0/TEX1/CLAMP, UV, colour, size; several modes)"
+0x00105CF8,SetTextureVramAddress,core,understood,store two u16 outputs through optional pointers
+0x00105D18,BuildTextureUpload,render,understood,"emit textured sprite packet from a GIM texture record (TEX0/TEX1/CLAMP, UV, colour, size; several modes)"
 0x00106468,FUN_00106468,render,dead,"texture upload packet for a GIM (BITBLTBUF/TRXPOS/TRXREG, image data); no reference of any kind (code gap, created 2026-10-11)"
-0x001065E8,FUN_001065e8,render,understood,build GS TEX0 value from a GIM record (TBP/TBW/PSM/TW/TH/CBP)
-0x001066D8,FUN_001066d8,render,understood,emit TEX0 setup packet for a GIM record
+0x001065E8,GetTextureTex0,render,understood,build GS TEX0 value from a GIM record (TBP/TBW/PSM/TW/TH/CBP)
+0x001066D8,WriteTex0Tex1,render,understood,emit TEX0 setup packet for a GIM record
 0x00106810,FUN_00106810,unreached,dead,
 0x00106938,FUN_00106938,sequence,understood,"load sequence still images (part 3): N GIM textures (TBP 0x2500, CBP 0x3E00), 256 image slots (0x2810 bytes)"
 0x00106A20,FUN_00106a20,sequence,understood,reset the 256 image overlay slots
@@ -178,16 +178,16 @@ address,name,subsystem,status,note
 0x00108678,FUN_00108678,unreached,dead,
 0x001086D8,FUN_001086d8,core,dead,"C_PCCON profiler: set flow n (""C_PCCON::set : error : no flow!""); no reference of any kind (code gap, created 2026-10-11)"
 0x00108718,FUN_00108718,core,dead,"VU0 sin/cos pair from the polynomial tables 0x002A15E0/0x002A1600; no reference of any kind (code gap, created 2026-10-11)"
-0x001089B0,FUN_001089b0,core,understood,VU0 rotation matrix + translation from Euler angles using polynomial sin/cos (coefficients 0x002A15E0/0x002A1600); exact EE float behaviour needed (vu0_math)
-0x00108C68,FUN_00108c68,core,understood,"VU0 rotation matrix from Euler angles (polynomial sin/cos, same tables)"
-0x00108F00,FUN_00108f00,core,understood,VU0 4x4 matrix multiply
+0x001089B0,BuildRotationMatrix,core,understood,VU0 rotation matrix + translation from Euler angles using polynomial sin/cos (coefficients 0x002A15E0/0x002A1600); exact EE float behaviour needed (vu0_math)
+0x00108C68,RotateMatrix,core,understood,"VU0 rotation matrix from Euler angles (polynomial sin/cos, same tables)"
+0x00108F00,MulMatrixVu0,core,understood,VU0 4x4 matrix multiply
 0x00108F78,FUN_00108f78,core,dead,"VU0 float vector -> fixed 12-bit (vftoi12); no reference of any kind (code gap, created 2026-10-11)"
 0x00108F90,FUN_00108f90,unreached,dead,
 0x00108FC0,FUN_00108fc0,render,understood,"clip a triangle against the view frustum with VU0 clip flags (vclip), returns the number of output triangles"
 0x00109500,FUN_00109500,render,understood,"transform N vertices to screen (VU0, perspective divide, offsets)"
 0x00109598,FUN_00109598,unreached,dead,
 0x00109658,FUN_00109658,core,understood,"VU0 unit normal of a triangle (cross product, rsqrt)"
-0x001096A8,FUN_001096a8,core,understood,VU0 unit matrix (vmr32 idiom)
+0x001096A8,SetUnitMatrixVu0,core,understood,VU0 unit matrix (vmr32 idiom)
 0x001096D8,BindUsbJoyRpc,core,understood,
 0x00109780,ReadUsbJoy,core,understood,
 0x00109CA0,FUN_00109ca0,core,understood,skeleton-readiness.md
@@ -291,13 +291,13 @@ address,name,subsystem,status,note
 0x00111EC8,FUN_00111ec8,render,understood,emit upsample/blend pass (level n) back to the frame
 0x001120E8,FUN_001120e8,render,understood,full-screen glow/blur post effect with intensity (downsample chain + blend)
 0x00112450,FUN_00112450,render,understood,full-screen blur effect variant (fixed levels)
-0x00112820,FUN_00112820,render,understood,emit sprite strips (max 1024 px each) covering a screen rectangle
-0x001128D8,FUN_001128d8,render,understood,emit textured sprite strips covering a rectangle (UV stepped per 1024 px strip)
-0x00112A10,FUN_00112a10,render,understood,emit textured strips with clipping to a window
+0x00112820,BuildSpriteStrips,render,understood,emit sprite strips (max 1024 px each) covering a screen rectangle
+0x001128D8,BuildSpriteStripsUv,render,understood,emit textured sprite strips covering a rectangle (UV stepped per 1024 px strip)
+0x00112A10,BuildClippedSpriteStripsUv,render,understood,emit textured strips with clipping to a window
 0x00112CA8,FUN_00112ca8,render,understood,"frame-buffer feedback effect (copy to texture page 0x1B01..., motion blur/ghosting)"
 0x00113010,FUN_00113010,render,dead,"GS packet: page-split IMAGE transfer of a buffer (1024-qword pages); no reference of any kind (code gap, created 2026-10-11)"
-0x001130B8,FUN_001130b8,render,understood,"full-screen colour fill/fade rectangle (alpha 0..255, blend mode)"
-0x00113248,FUN_00113248,render,understood,fade a view rectangle (alpha from float level)
+0x001130B8,BuildFadeQuad,render,understood,"full-screen colour fill/fade rectangle (alpha 0..255, blend mode)"
+0x00113248,DrawScreenFade,render,understood,fade a view rectangle (alpha from float level)
 0x001132E0,FUN_001132e0,render,understood,full-screen flash/white-out with alpha
 0x00113468,FUN_00113468,render,understood,emit drawing-context setup with given FRAME/SCISSOR/XYOFFSET values
 0x00113548,FUN_00113548,render,understood,generate 400 sky stars: srand(seed from render settings +0x80) then rand() (NOTE: reseeds the global rand state)
@@ -519,11 +519,11 @@ address,name,subsystem,status,note
 0x001368C0,FUN_001368c0,unreached,dead,
 0x00136968,FUN_00136968,render,dead,"VU0 micro call (vcallms 0) on three vectors, returns VI1 (H: unused VU0 micro clip test); no reference of any kind (code gap, created 2026-10-11)"
 0x00136990,FUN_00136990,render,understood,build a clip matrix for a view with a custom far distance (0x001031C0 with the camera +0x160..+0x16C) and transform the camera position
-0x00136AA0,FUN_00136aa0,render,understood,"clear a light set (3 directional lights, colours, ambient)"
+0x00136AA0,InitLightSet,render,understood,"clear a light set (3 directional lights, colours, ambient)"
 0x00136B68,FUN_00136b68,render,understood,set directional light n from two angles (RotX/RotY of -z) with intensity
-0x00136DA0,FUN_00136da0,render,understood,set light n colour from packed RGBA (x 1/128) and direction
-0x00136F48,FUN_00136f48,render,understood,set ambient colour from packed RGBA (x 1/128)
-0x00137068,FUN_00137068,render,understood,alloc a GIM texture object (0x28) for a light-set/world object and upload it (0x00105CF8)
+0x00136DA0,SetLight,render,understood,set light n colour from packed RGBA (x 1/128) and direction
+0x00136F48,SetAmbient,render,understood,set ambient colour from packed RGBA (x 1/128)
+0x00137068,SetLightTexture,render,understood,alloc a GIM texture object (0x28) for a light-set/world object and upload it (0x00105CF8)
 0x001370D8,WriteLightSetPacket,render,understood,"write the light-set block (light directions, colours, ambient as VU1 data) into a packet bucket; used before model draws"
 0x00137318,FUN_00137318,render,understood,"copy the light-set block to a buffer (same layout as 0x001370D8, no packet)"
 0x001373E8,FUN_001373e8,render,understood,negated light direction matrix of a light set
@@ -577,16 +577,16 @@ address,name,subsystem,status,note
 0x0013EC20,FUN_0013ec20,render,understood,reset the per-frame sequence-model list (D_00410698): counts 0
 0x0013EC38,FUN_0013ec38,render,understood,"append a model list (pointer, count) to the per-frame sequence-model list"
 0x0013EC60,FUN_0013ec60,render,understood,draw every model of the per-frame sequence-model list (0x001E0A98)
-0x0013ED58,FUN_0013ed58,render,understood,"draw a lens/screen overlay quad set for the view (sprites over the viewport, depth from +0x178): full-viewport overlay: GIF packet with TEX/ALPHA state and a row of 64-pixel-wide sprites over the view (centre +0x178/+0x17C, size +0x18C/+0x18E) in colour 0x808080 with the given alpha, then restores the frame state from the draw environment; linked into the given bucket"
+0x0013ED58,FUN_0013ed58,render,understood,"set the frame alpha of the view rectangle to a value: ALPHA_1 0x4A (RGB kept, source alpha written), Z writes masked, row of 64-pixel sprites over the view (centre +0x178/+0x17C, size +0x18C/+0x18E), then ZBUF restored; linked into the given bucket"
 0x0013F018,CreateModelInstance,render,understood,"create a model instance from model data: per-node matrices (2 x 0x40), vectors, flags, visibility bytes, packet pointers (node +0x2C), animation weights; counts triangles of each node chain (DMA ret 0x60000000 terminated)"
-0x0013F4D0,FUN_0013f4d0,render,understood,"animate one node: sample its key track (+0x20) at the instance animation time (x100, clamped 0..100) into translation/rotation"
-0x0013F6C0,FUN_0013f6c0,render,understood,"vertex-animated node (node flag 4): rewrite the node packet vertices from key frames, FlushCache: vertex-animated node (node flag 4): rewrites the node packet vertices from its key frames (node fields +0x20, +0x2C, +0x30), then flushes the data cache; draw-only"
+0x0013F4D0,InterpolatePartPose,render,understood,"animate one node: sample its key track (+0x20) at the instance animation time (x100, clamped 0..100) into translation/rotation"
+0x0013F6C0,BuildMorphMesh,render,understood,"vertex-animated node (node flag 4): rewrite the node packet vertices from key frames, FlushCache: vertex-animated node (node flag 4): rewrites the node packet vertices from its key frames (node fields +0x20, +0x2C, +0x30), then flushes the data cache; draw-only"
 0x0013FE58,UpdateModelHierarchy,render,understood,"update the node hierarchy depth-first: local matrix from animated T/R (0x001089B0), world = parent x local (2 matrices), recursion over +0x30 children"
 0x001400A0,FUN_001400a0,unreached,dead,
 0x00140408,FUN_00140408,render,understood,"model instance: hide nodes by node flag class (+0x38 bit 0x10 with mask bit 1, bit 0x20 with mask bit 2) -> instance node flag 2"
 0x001404A8,EmitModelInstance,render,understood,"emit a model instance for VU1: optional call to the model base packet, then per visible node: VIF UNPACK of 3 matrices (camera +0xE0 x node, camera +0x120 x node, light x node 2nd matrix), 4 GIF tag templates (PRIM by node flags, context 1/2), DMA call of the node packet (+0x2C); returns the packet end"
 0x00140998,FUN_00140998,unreached,dead,
-0x00140F68,FUN_00140f68,render,understood,model instance: set animation track n time; mark the nodes that use the track for re-evaluation (flag 4)
+0x00140F68,SetModelPartValue,render,understood,model instance: set animation track n time; mark the nodes that use the track for re-evaluation (flag 4)
 0x00141000,FUN_00141000,render,understood,model instance: animation track n time
 0x00141040,FUN_00141040,render,understood,model instance: show/hide every node of node id n (flag 1)
 0x001410D0,FUN_001410d0,unreached,dead,
@@ -598,8 +598,8 @@ address,name,subsystem,status,note
 0x00143C10,FUN_00143c10,collision,understood,"extract the triangles of a model instance (node packets walked to the DMA ret tag, positions x node matrix, face normals 0x00109658) into a collision triangle list"
 0x00143EF8,FUN_00143ef8,collision,understood,"segment vs triangle list: plane side test, intersection point and normal, nearest hit"
 0x00144228,FUN_00144228,render,understood,model data: header +0x34 -> +0x0C (texture/packet base)
-0x00144238,FUN_00144238,render,understood,"model data: count nodes recursively, max depth (+0x2C) and max node id (+0x3C, 0xFF = none)"
-0x00144340,FUN_00144340,render,understood,"model data: flatten the node tree into 0x50-byte node records (relative pointers fixed for version >= 0xB4), node id -> index table"
+0x00144238,CountModelNodes,render,understood,"model data: count nodes recursively, max depth (+0x2C) and max node id (+0x3C, 0xFF = none)"
+0x00144340,BindModelNodes,render,understood,"model data: flatten the node tree into 0x50-byte node records (relative pointers fixed for version >= 0xB4), node id -> index table"
 0x00144618,BindModelData,render,understood,"bind model data (0x28-byte model object): header +0x10/+0x14 offsets, node count, track count, id table (version >= 0xBF), flattened nodes"
 0x001446F0,FUN_001446f0,render,dead,"model object: radius (+0x28) of node n; no reference of any kind (code gap, created 2026-10-11)"
 0x00144710,FUN_00144710,core,dead,"returns 1.0f; no reference of any kind (code gap, created 2026-10-11)"
@@ -650,21 +650,21 @@ address,name,subsystem,status,note
 0x0014AA38,FUN_0014aa38,render,understood,store a value in the aircraft model tables (+0x40/+0x44)
 0x0014AA78,FUN_0014aa78,render,understood,"draw a missile model (light set, VU0 clip, model emit); called by the missile draw 0x0014D798"
 0x0014ACB0,FUN_0014acb0,render,understood,draw a special-weapon model (same as 0x0014AA78); called by 0x0014F940
-0x0014AE60,FUN_0014ae60,frontend,understood,"init a menu 3D object: VU1 program by lighting mode (1 0x00297C00, 0 0x00298AC0, 2 0x00299820), frame/Z formats"
-0x0014AEF8,FUN_0014aef8,frontend,understood,"load a menu 3D object: model data, instance, GIM textures, optional second model"
-0x0014B078,FUN_0014b078,frontend,understood,menu 3D object: set two u16 texture values
-0x0014B0A0,FUN_0014b0a0,frontend,understood,menu 3D object: set animation time on its two instances
+0x0014AE60,InitMenuObject,frontend,understood,"init a menu 3D object: VU1 program by lighting mode (1 0x00297C00, 0 0x00298AC0, 2 0x00299820), frame/Z formats"
+0x0014AEF8,BindMenuObject,frontend,understood,"load a menu 3D object: model data, instance, GIM textures, optional second model"
+0x0014B078,SetMenuObjectTexturePos,frontend,understood,menu 3D object: set two u16 texture values
+0x0014B0A0,SetMenuObjectPart,frontend,understood,menu 3D object: set animation time on its two instances
 0x0014B110,FUN_0014b110,unreached,dead,
 0x0014B148,FUN_0014b148,frontend,dead,"menu 3D object: show/hide node (instance +0x90); no reference of any kind (code gap, created 2026-10-11)"
-0x0014B168,FUN_0014b168,frontend,understood,menu 3D object: update both node hierarchies
-0x0014B1D0,FUN_0014b1d0,frontend,understood,menu 3D object: transform from Euler angles and position
-0x0014B238,FUN_0014b238,frontend,understood,menu 3D object: copy two matrices
-0x0014B280,FUN_0014b280,frontend,understood,menu 3D object: reference its VU1 program into bucket n
-0x0014B2A8,FUN_0014b2a8,frontend,understood,menu 3D object: texture upload and VU1 texture constants
-0x0014B3F8,FUN_0014b3f8,frontend,understood,"menu 3D object: VIF packet (sent twice) that UNPACKs one vector (param 5) to VU1 address 0x1E and the camera's world->screen and world->clip matrices (camera +0xE0..+0x15F) to VU1 address 0, then MSCAL 0; linked into the given bucket. The light set is written separately (WriteLightSetPacket) [corrected by validation.md V-4; earlier note said 'light/colour constants']"
+0x0014B168,UpdateMenuObject,frontend,understood,menu 3D object: update both node hierarchies
+0x0014B1D0,SetMenuObjectPose,frontend,understood,menu 3D object: transform from Euler angles and position
+0x0014B238,SetMenuObjectMatrices,frontend,understood,menu 3D object: copy two matrices
+0x0014B280,UploadMenuObjectProgram,frontend,understood,menu 3D object: reference its VU1 program into bucket n
+0x0014B2A8,WriteMenuObjectTexture,frontend,understood,menu 3D object: texture upload and VU1 texture constants
+0x0014B3F8,WriteMenuObjectCamera,frontend,understood,"menu 3D object: VIF packet (sent twice) that UNPACKs one vector (param 5) to VU1 address 0x1E and the camera's world->screen and world->clip matrices (camera +0xE0..+0x15F) to VU1 address 0, then MSCAL 0; linked into the given bucket. The light set is written separately (WriteLightSetPacket) [corrected by validation.md V-4; earlier note said 'light/colour constants']"
 0x0014B568,FUN_0014b568,frontend,dead,"menu 3D object: store byte +0xAC; no reference of any kind (code gap, created 2026-10-11)"
 0x0014B570,FUN_0014b570,frontend,dead,"menu 3D object: flag +0xB0 bit 0 on/off; no reference of any kind (code gap, created 2026-10-11)"
-0x0014B5A0,FUN_0014b5a0,frontend,understood,"draw a menu 3D object: draw-env, model emit, glow pass: draw a menu 3D model (hangar/aircraft select): two-pass packet (TEST/ALPHA setup, then 0x001404A8 model passes 8/12, and for mode 2 the extra passes 10/14 and 9/13 with the alpha from +0xAC), optional reflection/environment pass with the draw-environment template when +0xA4 is set (per sub-model of +0x90), sends via 0x00104118; draw-only"
+0x0014B5A0,DrawMenuObject,frontend,understood,"draw a menu 3D object: draw-env, model emit, glow pass: draw a menu 3D model (hangar/aircraft select): two-pass packet (TEST/ALPHA setup, then 0x001404A8 model passes 8/12, and for mode 2 the extra passes 10/14 and 9/13 with the alpha from +0xAC), optional reflection/environment pass with the draw-environment template when +0xA4 is set (per sub-model of +0x90), sends via 0x00104118; draw-only"
 0x0014B9D8,CreateProjectilePools,weapons,understood,"WorkHeapAlloc(0x8A50) projectile pools gp 0x004106AC and 0x160 at 0x004106B0, then ResetProjectiles"
 0x0014BA10,ResetProjectiles,weapons,understood,clears occupancy masks/cursors at +0x8A00..+0x8A4F and calls the reset of the 7 projectile kinds
 0x0014BAF8,AgeProjectiles,weapons,understood,per-frame lifetime/gravity step of the 7 projectile kinds
@@ -1156,7 +1156,7 @@ address,name,subsystem,status,note
 0x0017BC70,FUN_0017bc70,mission,understood,trial mode: select the ghost record table by trial id 0x15-0x19
 0x0017BD68,FUN_0017bd68,mission,understood,"trial mode: append route sample (time/2, value)"
 0x0017BDD0,FUN_0017bdd0,mission,understood,trial mode: read recorded route sample for time
-0x0017BE38,FUN_0017be38,mission,understood,trial mode: store the best route when the record improves
+0x0017BE38,FUN_0017be38,mission,partly,trial mode: store the best route when the record improves
 0x0017BF90,FUN_0017bf90,mission,understood,clear tutorial hint mask
 0x0017BF98,FUN_0017bf98,mission,understood,set tutorial hint bit n (event command 0x43)
 0x0017BFB0,FUN_0017bfb0,mission,understood,"request the tutorial control-hint icons: if *0x004117E4 != 0, OR it into 0x004BE040 (tail call 0x00258400); drawn later by 0x00258690"
@@ -1633,57 +1633,57 @@ address,name,subsystem,status,note
 0x00211FB0,FUN_00211fb0,movie,dead,"scene 3 sub 2: per frame: T0 reset, decode (MovieDecodeFrame 0x002122D0, skip flag from the movie object), 0x00212498, busy-wait until T0 >= 300 H-blanks; toggles the display buffer (DISPFB 0x8C) every frame; next sub when the movie ends [dead: scene 3 is only in the scene table, never requested; validation.md V-2]"
 0x002120D8,FUN_002120d8,movie,dead,"scene 3 sub 3: stops the movie (0x002124A8), display flags 0x200, 0x00101170, returns to the saved scene (SetRequestFlags 0x40) [dead: scene 3 is only in the scene table, never requested; validation.md V-2]"
 0x00212110,FUN_00212110,core,understood,skeleton-readiness.md
-0x00212150,FUN_00212150,movie,understood,"MovieStart (H): from the movie table g_MovieTable[id] (5 words: file, flags, track A, track B base, track B id) starts the stream-audio tracks once (slot 0/1 by the screen option, slot 2/4) and creates the SMV reader (0x00214130: buffer 0x600000, LSN, 0x2300-sector window); 0x0021A6B0"
-0x002122C0,FUN_002122c0,movie,understood,T0 reset (RCNT0_COUNT = 0)
-0x002122D0,FUN_002122d0,movie,understood,MovieDecodeFrame (H): one reader step (0x002141E8); at the end stops the stream tracks; fades the stream tracks out when the movie reaches state 3; returns != 0 at the end
-0x00212498,FUN_00212498,movie,understood,movie audio feeder 0x002BBCB8: per-frame volume fade step (0x00213F60)
-0x002124A8,FUN_002124a8,movie,understood,"movie: clear the playback request (+0x20, +0x0C) and call 0x0021A680"
+0x00212150,StartMovie,movie,understood,"MovieStart (H): from the movie table g_MovieTable[id] (5 words: file, flags, track A, track B base, track B id) starts the stream-audio tracks once (slot 0/1 by the screen option, slot 2/4) and creates the SMV reader (0x00214130: buffer 0x600000, LSN, 0x2300-sector window); 0x0021A6B0"
+0x002122C0,ResetMovieTimer,movie,understood,T0 reset (RCNT0_COUNT = 0)
+0x002122D0,DecodeMovieFrame,movie,understood,MovieDecodeFrame (H): one reader step (0x002141E8); at the end stops the stream tracks; fades the stream tracks out when the movie reaches state 3; returns != 0 at the end
+0x00212498,UpdateMovieAudioFade,movie,understood,movie audio feeder 0x002BBCB8: per-frame volume fade step (0x00213F60)
+0x002124A8,ClearMovieRequest,movie,understood,"movie: clear the playback request (+0x20, +0x0C) and call 0x0021A680"
 0x002124B8,FUN_002124b8,movie,dead,"movie: store a word through game state +0x20; no reference of any kind (code gap, created 2026-10-11)"
-0x002124C8,FUN_002124c8,movie,understood,"movie: request a volume value (game state +0x20 object +0x14, flag 2)"
+0x002124C8,FUN_002124c8,movie,partly,"movie: request a volume value (game state +0x20 object +0x14, flag 2)"
 0x002124E8,FUN_002124e8,movie,dead,"movie: word +0x94 of the movie state D_00410C60; no reference of any kind (code gap, created 2026-10-11)"
 0x002124F8,FUN_002124f8,movie,understood,"static constructor (.ctors entry at 0x0029F31C): init the movie memory allocator 0x002BBA00 (alignment 0x40, 0x002140A8); created as a function 2026-10-11"
-0x00212508,FUN_00212508,movie,understood,"movie player setup: two 0x180000 chunk buffers and the libmpeg work area 0x13B800 from the movie allocator (0x002140D0), image buffers"
-0x00212630,FUN_00212630,movie,understood,"movie reader state 0: stop the audio feeder, queue the read of chunk 0, sceMpegInit"
-0x002126C0,FUN_002126c0,movie,understood,"movie reader state 1: wait for chunk 0, queue the rest of the header chunk"
-0x00212788,FUN_00212788,movie,understood,"SMV reader state 2 (H: start): waits for chunk 0, sceMpegCreate (work 0x13B800), adds the chunk-0 video, queues chunk 1 (CD queue 0), starts the PCM feeder (0x4000-byte blocks, two IOP slots) unless video-only; then state 3"
-0x00212960,FUN_00212960,movie,understood,"SMV reader state 3 (stream): with the end flag set starts the end fade (+0xA0/+0xA4/+0xA8, 0x00213EA0) and returns 5 after it; feeds the 0x4000-byte PCM blocks of the current chunk to the IOP (0x00213D10, two-slot ping-pong) while the CD has the data (GetCdDoneTicket against +0x8C, otherwise underrun handling: state 5 with the stop fade 0x0040FF88/0x0040FF8C); when libmpeg has consumed the bitstream (0x00270CA8) swaps the two 0x180000 chunk buffers, adds the next chunk's video (0x00270B58) and queues the following chunk read (QueueCdRead queue 0, size from the chunk header word 0; 0 = last chunk)"
-0x00212C78,FUN_00212c78,movie,understood,movie reader state 4: drain the last chunk and the audio blocks: SMV reader state 4: drains the last chunk: keeps feeding audio blocks (two-slot ping-pong) and counts down the end delay (+0xA4 += 0x0040FF90 until +0xA8); state 5 when libmpeg reports the bitstream consumed
-0x00212DF0,FUN_00212df0,movie,understood,"movie reader state 5: feed the remaining audio blocks, wait for the audio feeder to finish"
-0x00212EF0,FUN_00212ef0,movie,understood,"movie reader state 6: audio fade-out over 2 s (0x0040FF98 per frame), stop the feeder"
-0x00212F88,FUN_00212f88,movie,understood,"movie reader step: dispatch by state +0x90 (0x00212630, 0x002126C0, 0x00212788, 0x00212960, 0x00212C78, 0x00212DF0, 0x00212EF0)"
-0x00213048,FUN_00213048,movie,understood,"movie frame upload: decode the next picture (sceMpegGetPicture), build the image transfer packets (10 strip helpers) centred in 640x448, send on GIF channel 2: SMV frame upload: for states 3/4 decodes a picture (0x00270B90 into +0x5C, 0x460 bytes per macroblock row) and builds the DMA chain that uploads it to the display buffer as 16x16 macroblock columns (BITBLTBUF/TRXPOS/TRXREG/TRXDIR + IMAGE, IMAGE packets split at 0x7FFF qwords), centred in 640x448 plus the offset +0x98/+0x9C, alpha 0x80 (0 when fading out); sends it on PATH3 (DMA channel 2, sceGsSyncPath/sceGsResetPath around it); stores the frame state in +0x94"
-0x00213578,FUN_00213578,movie,understood,"movie upload packet helper (one of 10 identical copies): close the pending tag, return the write pointer"
-0x00213610,FUN_00213610,movie,understood,movie upload packet helper (copy 2 of 0x00213578)
-0x002136A8,FUN_002136a8,movie,understood,movie upload packet helper (copy 3 of 0x00213578)
-0x00213740,FUN_00213740,movie,understood,movie upload packet helper (copy 4 of 0x00213578)
-0x002137D8,FUN_002137d8,movie,understood,movie upload packet helper (copy 5 of 0x00213578)
-0x00213870,FUN_00213870,movie,understood,movie upload packet helper (copy 6 of 0x00213578)
-0x00213908,FUN_00213908,movie,understood,movie upload packet helper (copy 7 of 0x00213578)
-0x002139A0,FUN_002139a0,movie,understood,movie upload packet helper (copy 8 of 0x00213578)
-0x00213A38,FUN_00213a38,movie,understood,"movie upload packet helper (copy 9 of 0x00213578): open an A+D GIF tag if none is open, reserve one A+D qword for TEX0_1 (register 6) and return it"
-0x00213AD0,FUN_00213ad0,movie,understood,movie upload packet helper (copy 10 of 0x00213578)
-0x00213B68,FUN_00213b68,movie,understood,"movie upload packet: GIF tag for an image strip (BITBLTBUF/TRXPOS/TRXREG/TRXDIR + IMAGE, 0x5400000000008000)"
-0x00213C28,FUN_00213c28,movie,understood,"send a movie DMA chain on a channel (sceDmaSend, tag address with the SPR bit cleared): send a movie DMA chain (sceDmaSend with the scratchpad bit cleared)"
+0x00212508,InitSmvReader,movie,understood,"movie player setup: two 0x180000 chunk buffers and the libmpeg work area 0x13B800 from the movie allocator (0x002140D0), image buffers"
+0x00212630,ReadSmvHeader,movie,understood,"movie reader state 0: stop the audio feeder, queue the read of chunk 0, sceMpegInit"
+0x002126C0,ReadSmvFirstChunk,movie,understood,"movie reader state 1: wait for chunk 0, queue the rest of the header chunk"
+0x00212788,StartSmvReader,movie,understood,"SMV reader state 2 (H: start): waits for chunk 0, sceMpegCreate (work 0x13B800), adds the chunk-0 video, queues chunk 1 (CD queue 0), starts the PCM feeder (0x4000-byte blocks, two IOP slots) unless video-only; then state 3"
+0x00212960,StreamSmvReader,movie,understood,"SMV reader state 3 (stream): with the end flag set starts the end fade (+0xA0/+0xA4/+0xA8, 0x00213EA0) and returns 5 after it; feeds the 0x4000-byte PCM blocks of the current chunk to the IOP (0x00213D10, two-slot ping-pong) while the CD has the data (GetCdDoneTicket against +0x8C, otherwise underrun handling: state 5 with the stop fade 0x0040FF88/0x0040FF8C); when libmpeg has consumed the bitstream (0x00270CA8) swaps the two 0x180000 chunk buffers, adds the next chunk's video (0x00270B58) and queues the following chunk read (QueueCdRead queue 0, size from the chunk header word 0; 0 = last chunk)"
+0x00212C78,DrainSmvReader,movie,understood,movie reader state 4: drain the last chunk and the audio blocks: SMV reader state 4: drains the last chunk: keeps feeding audio blocks (two-slot ping-pong) and counts down the end delay (+0xA4 += 0x0040FF90 until +0xA8); state 5 when libmpeg reports the bitstream consumed
+0x00212DF0,FadeOutSmvReader,movie,understood,"movie reader state 5: feed the remaining audio blocks, wait for the audio feeder to finish"
+0x00212EF0,FinishSmvReader,movie,understood,"movie reader state 6: audio fade-out over 2 s (0x0040FF98 per frame), stop the feeder"
+0x00212F88,StepSmvReader,movie,understood,"movie reader step: dispatch by state +0x90 (0x00212630, 0x002126C0, 0x00212788, 0x00212960, 0x00212C78, 0x00212DF0, 0x00212EF0)"
+0x00213048,DrawMoviePicture,movie,understood,"movie frame upload: decode the next picture (sceMpegGetPicture), build the image transfer packets (10 strip helpers) centred in 640x448, send on GIF channel 2: SMV frame upload: for states 3/4 decodes a picture (0x00270B90 into +0x5C, 0x460 bytes per macroblock row) and builds the DMA chain that uploads it to the display buffer as 16x16 macroblock columns (BITBLTBUF/TRXPOS/TRXREG/TRXDIR + IMAGE, IMAGE packets split at 0x7FFF qwords), centred in 640x448 plus the offset +0x98/+0x9C, alpha 0x80 (0 when fading out); sends it on PATH3 (DMA channel 2, sceGsSyncPath/sceGsResetPath around it); stores the frame state in +0x94"
+0x00213578,AddPacketTest2,movie,understood,"movie upload packet helper (one of 10 identical copies): close the pending tag, return the write pointer"
+0x00213610,AddPacketAlpha2,movie,understood,movie upload packet helper (copy 2 of 0x00213578)
+0x002136A8,AddPacketTex1_2,movie,understood,movie upload packet helper (copy 3 of 0x00213578)
+0x00213740,AddPacketBitBltBuf,movie,understood,movie upload packet helper (copy 4 of 0x00213578)
+0x002137D8,AddPacketTrxPos,movie,understood,movie upload packet helper (copy 5 of 0x00213578)
+0x00213870,AddPacketTrxReg,movie,understood,movie upload packet helper (copy 6 of 0x00213578)
+0x00213908,AddPacketTrxDir,movie,understood,movie upload packet helper (copy 7 of 0x00213578)
+0x002139A0,AddPacketTexFlush,movie,understood,movie upload packet helper (copy 8 of 0x00213578)
+0x00213A38,AddPacketTex0_1,movie,understood,"movie upload packet helper (copy 9 of 0x00213578): open an A+D GIF tag if none is open, reserve one A+D qword for TEX0_1 (register 6) and return it"
+0x00213AD0,AddPacketPrim,movie,understood,movie upload packet helper (copy 10 of 0x00213578)
+0x00213B68,FUN_00213b68,movie,partly,"movie upload packet: GIF tag for an image strip (BITBLTBUF/TRXPOS/TRXREG/TRXDIR + IMAGE, 0x5400000000008000)"
+0x00213C28,SendMoviePacket,movie,understood,"send a movie DMA chain on a channel (sceDmaSend, tag address with the SPR bit cleared): send a movie DMA chain (sceDmaSend with the scratchpad bit cleared)"
 0x00213C40,FUN_00213c40,movie,understood,"movie audio feeder object reset (+0x08, +0x14 = 0); used by the constructor 0x00214030"
 0x00213C50,FUN_00213c50,core,understood,"movie audio feeder reset: SetSoundDataInputVolume(0,0,0), clear state words"
-0x00213CA0,FUN_00213ca0,movie,understood,movie audio feeder: stop it when running (0x00213E30)
-0x00213CD8,FUN_00213cd8,movie,understood,movie audio feeder: is idle
-0x00213CE8,FUN_00213ce8,movie,understood,movie audio feeder: set or clear the remaining block count (+0x0C) and the IOP buffer address
-0x00213D10,FUN_00213d10,movie,understood,"movie audio feeder: send one 0x4000-byte PCM block to the IOP buffer (sceSifSetDma), alternate halves"
-0x00213D80,FUN_00213d80,movie,understood,movie audio feeder: DMA still running (sceSifDmaStat)
-0x00213DC8,FUN_00213dc8,movie,understood,movie audio feeder: start the VAG slot 0 stream of the IOP buffer (0x00217680)
-0x00213E30,FUN_00213e30,movie,understood,movie audio feeder: stop the stream (0x00217680 with 0)
-0x00213E78,FUN_00213e78,movie,understood,"movie audio feeder: current IOP half being played (0x00217848), -1 when stopped"
-0x00213EA0,FUN_00213ea0,movie,understood,movie audio feeder: start a volume fade to v (0..1) over n frames (SetSoundDataInputVolume)
-0x00213F60,FUN_00213f60,movie,understood,movie audio feeder: per-frame volume fade step (SetSoundDataInputVolume)
+0x00213CA0,StopMovieAudioIfRunning,movie,understood,movie audio feeder: stop it when running (0x00213E30)
+0x00213CD8,IsMovieAudioIdle,movie,understood,movie audio feeder: is idle
+0x00213CE8,SetMovieAudioBuffer,movie,understood,movie audio feeder: set or clear the remaining block count (+0x0C) and the IOP buffer address
+0x00213D10,SendMovieAudioBlock,movie,understood,"movie audio feeder: send one 0x4000-byte PCM block to the IOP buffer (sceSifSetDma), alternate halves"
+0x00213D80,IsMovieAudioDmaBusy,movie,understood,movie audio feeder: DMA still running (sceSifDmaStat)
+0x00213DC8,StartMovieAudio,movie,understood,movie audio feeder: start the VAG slot 0 stream of the IOP buffer (0x00217680)
+0x00213E30,StopMovieAudio,movie,understood,movie audio feeder: stop the stream (0x00217680 with 0)
+0x00213E78,GetMovieAudioHalf,movie,understood,"movie audio feeder: current IOP half being played (0x00217848), -1 when stopped"
+0x00213EA0,SetMovieAudioVolume,movie,understood,movie audio feeder: start a volume fade to v (0..1) over n frames (SetSoundDataInputVolume)
+0x00213F60,StepMovieAudioVolume,movie,understood,movie audio feeder: per-frame volume fade step (SetSoundDataInputVolume)
 0x00214030,FUN_00214030,movie,understood,static constructor (.ctors entry 0x0029F320): reset the two movie audio feeder objects 0x002BBCB8 / 0x002BBCE0
-0x00214058,FUN_00214058,movie,understood,movie allocator: allocate (argument swap wrapper of 0x002140D0): movie allocator wrapper (argument swap of 0x002140D0)
-0x00214080,FUN_00214080,movie,understood,movie allocator: allocate n bytes (argument swap wrapper of 0x002140D0)
+0x00214058,AllocMovieBlock,movie,understood,movie allocator: allocate (argument swap wrapper of 0x002140D0): movie allocator wrapper (argument swap of 0x002140D0)
+0x00214080,AllocMovieWork,movie,understood,movie allocator: allocate n bytes (argument swap wrapper of 0x002140D0)
 0x002140A8,FUN_002140a8,movie,understood,"init an aligned bump allocator (base, size, used 0, alignment)"
-0x002140C0,FUN_002140c0,movie,understood,"set a bump allocator base and size, used 0"
-0x002140D0,FUN_002140d0,movie,understood,"aligned bump allocation: round used+size up to the alignment, fail (0) when past the end"
-0x00214130,FUN_00214130,movie,understood,"create the SMV reader: allocator on the given buffer (0x002140A8/0x002140C0), reader object 0x40C0 bytes (0x00214058), init 0x00212508; stores it in 0x00410C60 and the window in 0x00410C64"
-0x002141E8,FUN_002141e8,movie,understood,"reader step: decode 0x00212F88 then upload 0x00213048; clears the reader pointer at the end or on error; returns -1 error, 1 end, 0 running"
+0x002140C0,InitMovieArena,movie,understood,"set a bump allocator base and size, used 0"
+0x002140D0,AllocFromMovieArena,movie,understood,"aligned bump allocation: round used+size up to the alignment, fail (0) when past the end"
+0x00214130,CreateSmvReader,movie,understood,"create the SMV reader: allocator on the given buffer (0x002140A8/0x002140C0), reader object 0x40C0 bytes (0x00214058), init 0x00212508; stores it in 0x00410C60 and the window in 0x00410C64"
+0x002141E8,UpdateSmvReader,movie,understood,"reader step: decode 0x00212F88 then upload 0x00213048; clears the reader pointer at the end or on error; returns -1 error, 1 end, 0 running"
 0x00214258,PushCdReadRequest,core,understood,
 0x00214350,UpdateCdQueue,core,understood,skeleton-readiness.md
 0x00214438,FlushCdQueue,core,understood,
@@ -1776,7 +1776,7 @@ address,name,subsystem,status,note
 0x00217818,FUN_00217818,sound,understood,sound client: set the last issued ticket (+0x28)
 0x00217828,FUN_00217828,sound,understood,sound client: get the last issued ticket
 0x00217838,FUN_00217838,core,understood,skeleton-readiness.md
-0x00217848,FUN_00217848,sound,understood,sound client: get +0x30
+0x00217848,GetSoundTransferStatus,sound,understood,sound client: get +0x30
 0x00217858,FUN_00217858,sound,understood,transfer done: ticket <= done ticket
 0x00217888,QueueSoundCmd8,core,understood,
 0x002178F0,QueueSoundCmd12,core,understood,
@@ -1834,7 +1834,7 @@ address,name,subsystem,status,note
 0x00219758,FUN_00219758,sound,dead,"play SE with volumes on a given voice; unreachable: no callers (raw call graph + data/code-address scan, 2026-10-11)"
 0x00219798,FUN_00219798,sound,understood,stop a voice
 0x002197C0,FUN_002197c0,sound,dead,"stop voice table entry n; unreachable: no callers (raw call graph + data/code-address scan, 2026-10-11)"
-0x002197E8,FUN_002197e8,sound,understood,"SOUND command 5 (0xFFFFFF, 0x3FFFF): stop all voices"
+0x002197E8,StopAllVoices,sound,understood,"SOUND command 5 (0xFFFFFF, 0x3FFFF): stop all voices"
 0x00219810,FUN_00219810,sound,understood,wrapper: register a bank
 0x00219830,FUN_00219830,sound,understood,get buffer 0x0034F600
 0x00219840,FUN_00219840,sound,understood,get buffer 0x00350E00
@@ -1855,7 +1855,7 @@ address,name,subsystem,status,note
 0x0021A328,FUN_0021a328,sound,understood,set category volume n and push it to the VAG slots (fades)
 0x0021A5C0,FUN_0021a5c0,sound,dead,"scale all category volumes; unreachable: no callers (raw call graph + data/code-address scan, 2026-10-11)"
 0x0021A680,FUN_0021a680,sound,understood,SOUND commands 6/7: channel 1 setup
-0x0021A6B0,FUN_0021a6b0,sound,understood,SOUND command 7: mute channels 0 and 1
+0x0021A6B0,ClearReverbDepths,sound,understood,SOUND command 7: mute channels 0 and 1
 0x0021A6E8,FUN_0021a6e8,sound,dead,"3D helper: distance and angles (unused result, no callers); unreachable: no callers (raw call graph + data/code-address scan, 2026-10-11)"
 0x0021A750,FUN_0021a750,sound,understood,copy 0x200 bytes of sound settings to 0x0042A4E8
 0x0021A800,FUN_0021a800,sound,understood,volume x pan: (vol * pan)/255 or the left/right split for signed pan
@@ -1972,7 +1972,7 @@ address,name,subsystem,status,note
 0x0021FB58,FUN_0021fb58,core,understood,skeleton-readiness.md
 0x0021FB70,FUN_0021fb70,sound,understood,fade out all streams over time t (command type 4 for all slots)
 0x0021FC20,FUN_0021fc20,core,understood,skeleton-readiness.md
-0x0021FC80,FUN_0021fc80,sound,understood,"stream request (slot, a, b): command type 0"
+0x0021FC80,RequestStreamPlayArg,sound,understood,"stream request (slot, a, b): command type 0"
 0x0021FD40,FUN_0021fd40,sound,understood,skeleton-readiness.md
 0x0021FDF8,FUN_0021fdf8,core,understood,skeleton-readiness.md
 0x0021FE60,UpdateVagStream,core,understood,skeleton-readiness.md
@@ -2086,248 +2086,248 @@ address,name,subsystem,status,note
 0x002261A8,SetMenuSubPage,frontend,understood,
 0x002261B8,MenuEnterPage,frontend,understood,"scene 4 sub 0: 0x40000 dbuf, SetMenuDisplayMode 640x448, fade reset, RequestSubState(page_to_sub[g_MenuPage] @0x003845F8, 35 pages), BGM reset if coming from another scene"
 0x00226248,MenuEnterSubPage,frontend,understood,"scene 4 sub 1: draw fade frame, RequestSubState(g_MenuSubPage) (<0x5A)"
-0x00226280,FUN_00226280,frontend,understood,draw menu fade frame into packet list
+0x00226280,DrawMenuFadeFrame,frontend,understood,draw menu fade frame into packet list
 0x002262D0,SceneMenu,frontend,understood,"scene 4 handler: table 0x00384640[sub](), then menu fade draw if active, UpdateMenuBgm"
-0x00226320,FUN_00226320,frontend,understood,"mission id -> campaign mission number (u8 table 0x003847A8, stride 2; >0x28 -> 1)"
+0x00226320,GetCampaignMissionNumber,frontend,understood,"mission id -> campaign mission number (u8 table 0x003847A8, stride 2; >0x28 -> 1)"
 0x00226348,FUN_00226348,frontend,dead,"mission id -> high byte of table 0x003847A8 (ids <= 0x28); no reference of any kind (code gap, created 2026-10-11)"
 0x00226378,GetMissionId,frontend,understood,"GetMissionId(kind, n): kind 0 campaign 18 entries from 0, 1 trial 5 from 0x12, 2 tutorial 5 from 0x17, 3 VS 8 from 0x1C, table 0x00384800 (u16)"
-0x00226400,FUN_00226400,frontend,understood,mission table lookup: u16 at 0x0039DA88 + (n-1)*0x3C (n 1..21)
-0x00226430,FUN_00226430,frontend,understood,u16 table 0x0039DA50[n] (n<=20)
+0x00226400,FUN_00226400,frontend,partly,mission table lookup: u16 at 0x0039DA88 + (n-1)*0x3C (n 1..21)
+0x00226430,GetAircraftAtListPosition,frontend,understood,u16 table 0x0039DA50[n] (n<=20)
 0x00226450,MenuGoTo,frontend,understood,
 0x00226500,AdvanceCampaignMission,frontend,understood,g_MissionNo + 1 (max 18); past 18 -> 0 + MarkCampaignCleared; mission id via GetMissionId
-0x00226580,FUN_00226580,frontend,understood,raise availability of aircraft (1..21) colour (0..2) to level (1..3) in 0x002A0320 (never lowers)
-0x002265F8,FUN_002265f8,frontend,understood,are all aircraft except n at level 2 or more for colour c
-0x00226668,FUN_00226668,frontend,understood,are all 18 missions ranked S (4) on difficulty d or higher
-0x00226710,FUN_00226710,frontend,understood,unlock the aircraft linked to mission n (table 0x0038484A) as buyable
-0x00226748,FUN_00226748,frontend,understood,unlock rules after a clear: colour 1 for missions ranked A or better on difficulty >= 2; aircraft 18 colours 1/2 when all others are buyable; aircraft 21 colours by S ranks on difficulties 2/3/4 (needs cleared-twice bit 8)
-0x002268B0,FUN_002268b0,frontend,understood,"unlock aircraft whose first mission (0x0039DA8A) <= n, then unlock rules"
-0x00226968,FUN_00226968,frontend,understood,unlock aircraft entries after campaign clear (0x00226580 per aircraft/colour)
-0x00226A00,FUN_00226a00,frontend,understood,validate selected aircraft/colour/weapon against availability bits 0x002A0320
+0x00226580,RaiseOwnership,frontend,understood,raise availability of aircraft (1..21) colour (0..2) to level (1..3) in 0x002A0320 (never lowers)
+0x002265F8,CheckOtherAircraftBuyable,frontend,understood,are all aircraft except n at level 2 or more for colour c
+0x00226668,CheckAllMissionsRankedS,frontend,understood,are all 18 missions ranked S (4) on difficulty d or higher
+0x00226710,UnlockMissionColor2,frontend,understood,unlock the aircraft linked to mission n (table 0x0038484A) as buyable
+0x00226748,ApplyRankUnlocks,frontend,understood,unlock rules after a clear: colour 1 for missions ranked A or better on difficulty >= 2; aircraft 18 colours 1/2 when all others are buyable; aircraft 21 colours by S ranks on difficulties 2/3/4 (needs cleared-twice bit 8)
+0x002268B0,UnlockAircraftUpToMission,frontend,understood,"unlock aircraft whose first mission (0x0039DA8A) <= n, then unlock rules"
+0x00226968,ApplyClearUnlocks,frontend,understood,unlock aircraft entries after campaign clear (0x00226580 per aircraft/colour)
+0x00226A00,ValidateCampaignSelection,frontend,understood,validate selected aircraft/colour/weapon against availability bits 0x002A0320
 0x00226A98,ApplyCampaignSelection,frontend,understood,"copies selected aircraft/colour/weapon (0x002A15BE/C0/C2) and difficulty into g_GameState, mission id = GetMissionId(0, g_MissionNo)"
 0x00226B20,MarkCampaignCleared,frontend,understood,"progress flags 0x002A0318 bits 1/2/4/8 by difficulty, unlocks 0x00226968/0x00226748"
 0x00226B78,EnterPostMissionMenu,results,understood,"EnterPostMissionMenu: story movie page 0x20 with return sub 1-11 for missions 1,2,5,7,8,12,14,15,17,18, else menu 0x0B"
-0x00226C78,FUN_00226c78,frontend,understood,menu fade overlay reset
-0x00226CD0,FUN_00226cd0,frontend,understood,menu fade overlay update
-0x00226D08,FUN_00226d08,frontend,understood,draw menu fade frame
-0x00226D70,FUN_00226d70,frontend,understood,draw full-screen fade (alpha (1-a)*255) via 0x001130B8
+0x00226C78,ResetMenuFade,frontend,understood,menu fade overlay reset
+0x00226CD0,UpdateMenuOverlay,frontend,understood,menu fade overlay update
+0x00226D08,DrawMenuFade,frontend,understood,draw menu fade frame
+0x00226D70,DrawBlackFade,frontend,understood,draw full-screen fade (alpha (1-a)*255) via 0x001130B8
 0x00226DE0,SetMenuDisplayMode,frontend,understood,"SetMenuDisplayMode(ctx,w,h): 640x448 draw, disp h 224, PSMZ 0x31, ztest 1, draw_mode 2, BuildDrawEnvPackets, TEST reg patch"
-0x00226E58,FUN_00226e58,frontend,understood,pulse value (sin of unpaused frame count) 0..1
-0x00226EE0,FUN_00226ee0,frontend,understood,menu hint bar reset
-0x00226F18,FUN_00226f18,frontend,understood,"ease towards target: b + (a-b)*k, snaps when |b-a| < eps"
+0x00226E58,GetMenuPulse,frontend,understood,pulse value (sin of unpaused frame count) 0..1
+0x00226EE0,ClearMenuTabLevels,frontend,understood,menu hint bar reset
+0x00226F18,ApproachValue,frontend,understood,"ease towards target: b + (a-b)*k, snaps when |b-a| < eps"
 0x00226F48,FUN_00226f48,unreached,dead,
-0x00226F98,FUN_00226f98,frontend,understood,menu hint bar update: ease bar alpha and 6 button-hint alphas from mask
-0x00227060,FUN_00227060,frontend,understood,"reset item fade (+0xC) of N items, stride 0x14"
-0x00227090,FUN_00227090,frontend,understood,"update item highlight: selected fades to 1.0, others decay (consts 0x00410074..80)"
-0x00227140,FUN_00227140,frontend,understood,"reset N list widgets (stride 0x18): state 0, scales 0"
-0x002271B8,FUN_002271b8,frontend,understood,"list widget command: 1 open (scales 1, selected 2), 2 hold, 3 close"
-0x00227298,FUN_00227298,frontend,understood,"update list widget: type-in effect by longest string (SE 9 every 3 frames), cursor up/down wrap on pad bits 1/2 (SE 1), scale anim, close fade"
-0x00227530,FUN_00227530,frontend,understood,"update N list widgets, only index 'active' takes input"
-0x002275C0,FUN_002275c0,frontend,understood,emit drawing-context GIF setup for a WxH target (FRAME/SCISSOR/XYOFFSET/TEST/ALPHA/PRMODECONT/DTHE/COLCLAMP...)
-0x002276E8,FUN_002276e8,frontend,understood,"emit drawing-context setup for the current draw buffer (ctx draw_w/h, FRAME from drawenv)"
-0x00227800,FUN_00227800,frontend,understood,emit two scrolling scanline sprites (positions from frame count)
-0x00227A10,FUN_00227a10,frontend,understood,emit 4-layer zoomed vignette/glow sprites
-0x00227C10,FUN_00227c10,frontend,understood,"menu background overlay: textured copy with alpha, scanlines (unless mode&2), vignette; 16:9 aware"
+0x00226F98,UpdateMenuTabLevels,frontend,understood,menu hint bar update: ease bar alpha and 6 button-hint alphas from mask
+0x00227060,ResetConnectorAlphas,frontend,understood,"reset item fade (+0xC) of N items, stride 0x14"
+0x00227090,UpdateConnectorAlphas,frontend,understood,"update item highlight: selected fades to 1.0, others decay (consts 0x00410074..80)"
+0x00227140,ResetListWidgets,frontend,understood,"reset N list widgets (stride 0x18): state 0, scales 0"
+0x002271B8,SetListWidgetState,frontend,understood,"list widget command: 1 open (scales 1, selected 2), 2 hold, 3 close"
+0x00227298,UpdateListWidget,frontend,understood,"update list widget: type-in effect by longest string (SE 9 every 3 frames), cursor up/down wrap on pad bits 1/2 (SE 1), scale anim, close fade"
+0x00227530,UpdateListWidgets,frontend,understood,"update N list widgets, only index 'active' takes input"
+0x002275C0,BuildMenuDrawEnv,frontend,understood,emit drawing-context GIF setup for a WxH target (FRAME/SCISSOR/XYOFFSET/TEST/ALPHA/PRMODECONT/DTHE/COLCLAMP...)
+0x002276E8,BuildFrameDrawEnv,frontend,understood,"emit drawing-context setup for the current draw buffer (ctx draw_w/h, FRAME from drawenv)"
+0x00227800,BuildScanlineBands,frontend,understood,emit two scrolling scanline sprites (positions from frame count)
+0x00227A10,BuildZoomBlur,frontend,understood,emit 4-layer zoomed vignette/glow sprites
+0x00227C10,DrawMenuFrameFilter,frontend,understood,"menu background overlay: textured copy with alpha, scanlines (unless mode&2), vignette; 16:9 aware"
 0x00227F28,FUN_00227f28,results,understood,"wrapper: menu draw helper 0x00227C10(x, y, 0)"
-0x00227F30,FUN_00227f30,frontend,understood,full-screen overlay pass (alpha 0..1): copies frame with scanline/noise pattern 0x00227800 using frame_count; sent via 0x00104198
-0x002281E0,FUN_002281e0,frontend,understood,full-screen overlay variant with alpha FIX = a*128 and extra textured pass
-0x002284C8,FUN_002284c8,frontend,understood,"emit glyph sprite (UV rect from glyph record, colour)"
-0x00228550,FUN_00228550,frontend,understood,emit glyph sprite with its own TEX0
-0x002285D8,FUN_002285d8,frontend,understood,menu hint bar: 6 button hint icons with pulse colours (glyph tables 0x0039BCE0/0x0039BCF0)
-0x00228750,FUN_00228750,frontend,understood,draw menu hint bar (alpha)
-0x00228870,FUN_00228870,frontend,understood,"draw large-font text with per-character pop-in (sin), outline + shadow layers (font 0x0039BE20, chars 0x1F..0x61)"
-0x00228BA8,FUN_00228ba8,frontend,understood,"draw list widget items (text sprites, scale from highlight, pulse from 0x00226E58)"
-0x00228D80,FUN_00228d80,frontend,understood,compute list frame segment positions + max scale per column
-0x00228EB8,FUN_00228eb8,frontend,understood,"frame colour from two scales: f = min(t, 2s); f < 1: per-byte lerp black -> 0x765834; else lerp 0x765834 -> 0xABABAB with f - 1 (f limited by 4s); MMI lerp 0x00104FC8"
-0x00228F60,FUN_00228f60,frontend,understood,emit bracket/frame line segment GIF primitives
-0x00229158,FUN_00229158,frontend,understood,build list frame (lines) GIF packet
-0x002294F8,FUN_002294f8,frontend,understood,draw frames of N list widgets
-0x002295F0,FUN_002295f0,frontend,understood,"emit animated box (grow 0..0.75, bounce 0.75..1)"
-0x002297B8,FUN_002297b8,frontend,understood,draw N animated boxes selected by mask
-0x002298E8,FUN_002298e8,frontend,understood,wrapper of 0x002297B8 (thunk-like)
-0x002298F8,FUN_002298f8,frontend,understood,init menu cursor (crosshair) with 10-entry trail
-0x00229948,FUN_00229948,frontend,understood,"cursor move-to(x,y,steps)"
-0x002299F0,FUN_002299f0,frontend,understood,cursor move-to with steps from distance/0x120 (min 4)
-0x00229A60,FUN_00229a60,frontend,understood,"cursor tick: shift trail, interpolate position"
-0x00229BC0,FUN_00229bc0,frontend,understood,draw cursor crosshair lines with fading trail
-0x00229DD0,FUN_00229dd0,frontend,understood,"typed-text batch begin: store packet target, screen origin offsets 0x8000-w*8 / 0x8000-h*8, context setup"
-0x00229E80,FUN_00229e80,frontend,understood,typed-text batch end
-0x00229E88,FUN_00229e88,frontend,understood,"draw typed text: font 0/1 large (pulse for 1), 2..11 small fonts (0x0022A1B8) with default colours"
-0x00229FE0,FUN_00229fe0,frontend,understood,draw typed text with explicit colours
+0x00227F30,DrawMenuAlphaFilter,frontend,understood,full-screen overlay pass (alpha 0..1): copies frame with scanline/noise pattern 0x00227800 using frame_count; sent via 0x00104198
+0x002281E0,DrawPageFadeBar,frontend,understood,full-screen overlay variant with alpha FIX = a*128 and extra textured pass
+0x002284C8,BuildCenteredSprite,frontend,understood,"emit glyph sprite (UV rect from glyph record, colour)"
+0x00228550,BuildCenteredTexSprite,frontend,understood,emit glyph sprite with its own TEX0
+0x002285D8,BuildMenuTabs,frontend,understood,menu hint bar: 6 button hint icons with pulse colours (glyph tables 0x0039BCE0/0x0039BCF0)
+0x00228750,DrawMenuTabs,frontend,understood,draw menu hint bar (alpha)
+0x00228870,BuildMenuString,frontend,understood,"draw large-font text with per-character pop-in (sin), outline + shadow layers (font 0x0039BE20, chars 0x1F..0x61)"
+0x00228BA8,DrawListWidgets,frontend,understood,"draw list widget items (text sprites, scale from highlight, pulse from 0x00226E58)"
+0x00228D80,LayoutConnector,frontend,understood,compute list frame segment positions + max scale per column
+0x00228EB8,GetConnectorColor,frontend,understood,"frame colour from two scales: f = min(t, 2s); f < 1: per-byte lerp black -> 0x765834; else lerp 0x765834 -> 0xABABAB with f - 1 (f limited by 4s); MMI lerp 0x00104FC8"
+0x00228F60,BuildConnectorCap,frontend,understood,emit bracket/frame line segment GIF primitives
+0x00229158,BuildConnector,frontend,understood,build list frame (lines) GIF packet
+0x002294F8,DrawConnectors,frontend,understood,draw frames of N list widgets
+0x002295F0,BuildFrameOutline,frontend,understood,"emit animated box (grow 0..0.75, bounce 0.75..1)"
+0x002297B8,DrawFrameOutlines,frontend,understood,draw N animated boxes selected by mask
+0x002298E8,DrawAllFrameOutlines,frontend,understood,wrapper of 0x002297B8 (thunk-like)
+0x002298F8,InitCrosshair,frontend,understood,init menu cursor (crosshair) with 10-entry trail
+0x00229948,MoveCrosshair,frontend,understood,"cursor move-to(x,y,steps)"
+0x002299F0,MoveCrosshairAuto,frontend,understood,cursor move-to with steps from distance/0x120 (min 4)
+0x00229A60,UpdateCrosshair,frontend,understood,"cursor tick: shift trail, interpolate position"
+0x00229BC0,DrawCrosshair,frontend,understood,draw cursor crosshair lines with fading trail
+0x00229DD0,BeginMenuTextLayer,frontend,understood,"typed-text batch begin: store packet target, screen origin offsets 0x8000-w*8 / 0x8000-h*8, context setup"
+0x00229E80,EndMenuTextLayer,frontend,understood,typed-text batch end
+0x00229E88,DrawMenuText,frontend,understood,"draw typed text: font 0/1 large (pulse for 1), 2..11 small fonts (0x0022A1B8) with default colours"
+0x00229FE0,DrawMenuTextColored,frontend,understood,draw typed text with explicit colours
 0x0022A130,FUN_0022a130,results,understood,text helper: set width 1024 when the text system is active
-0x0022A158,FUN_0022a158,frontend,understood,"glyph record lookup for small font n (12 fonts, ranges 0x0039D420)"
-0x0022A1B8,FUN_0022a1b8,frontend,understood,"draw small-font typed text: chars up to the typed count, newline handling, fade-in of the last 4 chars (cos)"
-0x0022A478,FUN_0022a478,frontend,understood,emit sprite GIF prim (7 regs) from a sprite descriptor
+0x0022A158,GetStyleGlyph,frontend,understood,"glyph record lookup for small font n (12 fonts, ranges 0x0039D420)"
+0x0022A1B8,BuildStyledString,frontend,understood,"draw small-font typed text: chars up to the typed count, newline handling, fade-in of the last 4 chars (cos)"
+0x0022A478,WriteDescriptorSprite,frontend,understood,emit sprite GIF prim (7 regs) from a sprite descriptor
 0x0022A4D0,FUN_0022a4d0,frontend,dead,"GIF sprite packet for a menu image (0x6400000000008001 tag); no reference of any kind (code gap, created 2026-10-11)"
-0x0022A558,FUN_0022a558,frontend,understood,draw top/bottom letterbox bars with alpha (a*128)
-0x0022A6C0,FUN_0022a6c0,frontend,understood,"draw pulsing rectangle (cos of frame) at x,y,w"
-0x0022A868,FUN_0022a868,frontend,understood,emit window box (filled + optional inner frame)
-0x0022A998,FUN_0022a998,frontend,understood,emit gauge box with fill fraction
-0x0022AB20,FUN_0022ab20,frontend,understood,emit single line primitive
-0x0022AB60,FUN_0022ab60,frontend,understood,"menu tree: reset (lists, connectors, open level 0)"
-0x0022ABC0,FUN_0022abc0,frontend,understood,"menu tree init: up to 8 columns of list widgets, hidden-item masks, connectors, default selections"
+0x0022A558,DrawLetterboxBars,frontend,understood,draw top/bottom letterbox bars with alpha (a*128)
+0x0022A6C0,DrawPulseBox,frontend,understood,"draw pulsing rectangle (cos of frame) at x,y,w"
+0x0022A868,BuildIconBox,frontend,understood,emit window box (filled + optional inner frame)
+0x0022A998,BuildGauge,frontend,understood,emit gauge box with fill fraction
+0x0022AB20,BuildFilledBox,frontend,understood,emit single line primitive
+0x0022AB60,ResetMenuTree,frontend,understood,"menu tree: reset (lists, connectors, open level 0)"
+0x0022ABC0,InitMenuTree,frontend,understood,"menu tree init: up to 8 columns of list widgets, hidden-item masks, connectors, default selections"
 0x0022AED0,FUN_0022aed0,unreached,dead,
-0x0022AF60,FUN_0022af60,frontend,understood,menu tree update (input on active column)
-0x0022AFB8,FUN_0022afb8,frontend,understood,menu tree: id of selected item in active column
-0x0022AFF0,FUN_0022aff0,frontend,understood,menu tree draw (items + frames)
-0x0022B050,FUN_0022b050,frontend,understood,menu tree: set default selection skipping hidden items
-0x0022B108,FUN_0022b108,frontend,understood,panel animation widget reset
-0x0022B1A8,FUN_0022b1a8,frontend,understood,panel animation widget init (<=16 parts)
-0x0022B1E0,FUN_0022b1e0,frontend,understood,"panel animation tick (open/close, SE 0xD at 75%, SE 9)"
-0x0022B4D0,FUN_0022b4d0,frontend,understood,panel animation command 0 reset / 1 close
-0x0022B510,FUN_0022b510,frontend,understood,panel animation draw
-0x0022B5A8,FUN_0022b5a8,frontend,understood,draw message lines (up to 3) via text renderer 0x00252540
-0x0022B650,FUN_0022b650,frontend,understood,draw message lines (up to 3) via text renderer 0x002528C0
-0x0022B6F8,FUN_0022b6f8,frontend,understood,"message box init (x 0x380, y 0x15D0)"
-0x0022B758,FUN_0022b758,frontend,understood,"message box: measure lines (char counts, widths)"
-0x0022B8B8,FUN_0022b8b8,frontend,understood,message box: set message id (consecutive lines until 0xFFFE)
-0x0022B9A0,FUN_0022b9a0,frontend,understood,message box typewriter progress (SE 9 every 3 frames)
-0x0022BA68,FUN_0022ba68,frontend,understood,draw typewriter message box (char colour codes 8..11)
-0x0022C1B0,FUN_0022c1b0,frontend,understood,"draw message text with outline (font sprites, 3 lines, layout from ctx flag 0x10000)"
-0x0022C5E8,FUN_0022c5e8,frontend,understood,menu data-load ring reset (32 entries)
+0x0022AF60,UpdateMenuTree,frontend,understood,menu tree update (input on active column)
+0x0022AFB8,GetMenuTreeSelection,frontend,understood,menu tree: id of selected item in active column
+0x0022AFF0,DrawMenuTree,frontend,understood,menu tree draw (items + frames)
+0x0022B050,StoreMenuTreeCursors,frontend,understood,menu tree: set default selection skipping hidden items
+0x0022B108,ResetPanel,frontend,understood,panel animation widget reset
+0x0022B1A8,InitPanel,frontend,understood,panel animation widget init (<=16 parts)
+0x0022B1E0,UpdatePanel,frontend,understood,"panel animation tick (open/close, SE 0xD at 75%, SE 9)"
+0x0022B4D0,SetPanelState,frontend,understood,panel animation command 0 reset / 1 close
+0x0022B510,DrawPanel,frontend,understood,panel animation draw
+0x0022B5A8,UploadMessageBoxGlyphs,frontend,understood,draw message lines (up to 3) via text renderer 0x00252540
+0x0022B650,UploadSubtitleGlyphs,frontend,understood,draw message lines (up to 3) via text renderer 0x002528C0
+0x0022B6F8,InitMessageBox,frontend,understood,"message box init (x 0x380, y 0x15D0)"
+0x0022B758,MeasureMessageBox,frontend,understood,"message box: measure lines (char counts, widths)"
+0x0022B8B8,SetMessageBoxText,frontend,understood,message box: set message id (consecutive lines until 0xFFFE)
+0x0022B9A0,UpdateMessageBox,frontend,understood,message box typewriter progress (SE 9 every 3 frames)
+0x0022BA68,DrawMessageBox,frontend,understood,draw typewriter message box (char colour codes 8..11)
+0x0022C1B0,DrawSubtitleText,frontend,understood,"draw message text with outline (font sprites, 3 lines, layout from ctx flag 0x10000)"
+0x0022C5E8,ResetMenuDataLoad,frontend,understood,menu data-load ring reset (32 entries)
 0x0022C618,QueueMenuDataLoad,frontend,understood,"push {DATA entry, sub-block count, pointer table} in a 32-entry ring"
 0x0022C6B0,UpdateMenuDataLoad,frontend,understood,"load the head entry (WorkHeapAlloc + LoadDataEntryAsync), split into sub-block pointers; 1 busy, 2 done, -1 empty, -2 count mismatch"
-0x0022C7E8,FUN_0022c7e8,frontend,understood,fade object reset (alpha 0 or 1)
+0x0022C7E8,InitFade,frontend,understood,fade object reset (alpha 0 or 1)
 0x0022C810,StartFade,frontend,understood,"fade object: duration, 1 = fade in, 2 = fade out"
 0x0022C848,UpdateFade,frontend,understood,"cosine ease; flags 4 = in done, 8 = out done"
-0x0022C920,FUN_0022c920,frontend,understood,menu BGM controller reset
+0x0022C920,ResetMenuBgm,frontend,understood,menu BGM controller reset
 0x0022C948,PlayMenuBgm,frontend,understood,menu BGM on stream slot 0/1 with crossfade (RequestStreamStop/slot fade 0x0021F190)
 0x0022CA18,FadeOutMenuBgm,frontend,understood,fade out slots 0 and 1 over param seconds
-0x0022CA78,FUN_0022ca78,frontend,understood,fade out stream slots 2..5
+0x0022CA78,FadeOutStreamSlots,frontend,understood,fade out stream slots 2..5
 0x0022CAF0,UpdateMenuBgm,frontend,understood,per frame: start requested BGM when slot idle (RequestStreamPlay)
-0x0022CBB8,FUN_0022cbb8,frontend,understood,"BGM/menu id for (kind 0..2, mission no): mission 18 special cases"
+0x0022CBB8,GetProgressBgmTrack,frontend,understood,"BGM/menu id for (kind 0..2, mission no): mission 18 special cases"
 0x0022CC50,FUN_0022cc50,startup,understood,"set D_00410E98 = 1 for the no-save intro path, 0 for the title path"
 0x0022CC68,StartTitleDemo,frontend,understood,"title idle 19 s: cycles 0x00410E98 through 6 demo flights (fixed mission/aircraft, game[0x29]=4), FadeOutMenuBgm, RequestScene(2)"
-0x0022CE70,FUN_0022ce70,frontend,understood,"main menu help text: message id per selected item (0x0039D6B8), typewriter tick"
-0x0022CF48,FUN_0022cf48,frontend,understood,"main menu: leave with fade-out to MenuGoTo(0, page)"
-0x0022CFC8,FUN_0022cfc8,frontend,understood,"main menu: leave with fade to MenuGoTo(1, sub-page)"
+0x0022CE70,UpdateMainMenuHelp,frontend,understood,"main menu help text: message id per selected item (0x0039D6B8), typewriter tick"
+0x0022CF48,MainMenuExitWithFade,frontend,understood,"main menu: leave with fade-out to MenuGoTo(0, page)"
+0x0022CFC8,MainMenuExit,frontend,understood,"main menu: leave with fade to MenuGoTo(1, sub-page)"
 0x0022D030,FUN_0022d030,frontend,dead,"set a fixed game state (2 players, aircraft 2/0 and 2/0): H debug/VS setup; no reference of any kind (code gap, created 2026-10-11)"
-0x0022D078,FUN_0022d078,frontend,understood,"main menu: back (close column or return to title), SE 3"
+0x0022D078,MainMenuBack,frontend,understood,"main menu: back (close column or return to title), SE 3"
 0x0022D100,MainMenuSelect,frontend,understood,"item id -> action: submenus, difficulty 0-5 (0x002A15BA) + new game (EnterMenu 0x20 story movie), free mission, options/records/extras sub-pages; SE 2"
 0x0022D3C0,MainMenuSetup,frontend,understood,"title (sub 2) or main menu tree (6 columns, tables 0x0039D5B0/0x0039D640/0x0039D6A8) with item masks from progress flags 0x002A0318 and ctx flag 0x80000"
 0x0022D560,CreateMainMenu,frontend,understood,WorkHeapAlloc(0x6A0) main menu object + MainMenuSetup(sub)
-0x0022D5A8,FUN_0022d5a8,frontend,understood,main menu: logo alpha and timer tick
+0x0022D5A8,UpdateTitleTimers,frontend,understood,main menu: logo alpha and timer tick
 0x0022D698,MainMenuUpdate,frontend,understood,"title/main menu state machine (+0x67C states 0..8), Start/X opens menu, idle -> StartTitleDemo, selection via MainMenuSelect, exit MenuGoTo(+0x680,+0x684)"
-0x0022D8F8,FUN_0022d8f8,frontend,understood,"piecewise linear curve evaluation {count, points}"
-0x0022D9A8,FUN_0022d9a8,frontend,understood,"draw title logo (6 sprites, alpha curves 0x0039D838)"
+0x0022D8F8,EvalCurve,frontend,understood,"piecewise linear curve evaluation {count, points}"
+0x0022D9A8,DrawTitleLogo,frontend,understood,"draw title logo (6 sprites, alpha curves 0x0039D838)"
 0x0022DC20,DrawMainMenu,frontend,understood,"menu tree, message box, logo, overlay, fade"
-0x0022DD50,FUN_0022dd50,frontend,understood,draw loading frame (overlay + fade) during menu data load
-0x0022DE00,FUN_0022de00,frontend,understood,"scene 4 sub 2-4 (page 0/1 init): CreateMainMenu, queue DATA 0xB0 (2 sub-blocks) -> sub 5"
-0x0022DEA0,FUN_0022dea0,frontend,understood,"scene 4 sub 5: wait for DATA 0xB0, register textures (0x00251D28) -> sub 6"
-0x0022DF00,FUN_0022df00,frontend,understood,"scene 4 sub 6: title/main menu frame (UpdateFade, MainMenuUpdate, DrawMainMenu)"
+0x0022DD50,DrawTitleBackground,frontend,understood,draw loading frame (overlay + fade) during menu data load
+0x0022DE00,EnterTitle,frontend,understood,"scene 4 sub 2-4 (page 0/1 init): CreateMainMenu, queue DATA 0xB0 (2 sub-blocks) -> sub 5"
+0x0022DEA0,LoadTitle,frontend,understood,"scene 4 sub 5: wait for DATA 0xB0, register textures (0x00251D28) -> sub 6"
+0x0022DF00,RunTitle,frontend,understood,"scene 4 sub 6: title/main menu frame (UpdateFade, MainMenuUpdate, DrawMainMenu)"
 0x0022DF38,FUN_0022df38,frontend,dead,"cubic ease value for distances above 32; no reference of any kind (code gap, created 2026-10-11)"
-0x0022DF70,FUN_0022df70,frontend,understood,"aircraft viewer: weapon list for aircraft (0x0011B900(aircraft) -> {count, ids})"
-0x0022DFA8,FUN_0022dfa8,frontend,understood,"aircraft viewer object init: camera (0x001026B8/0x00102810/0x001028D8), light, aircraft 1..21, colour 0..2"
-0x0022E1A8,FUN_0022e1a8,frontend,understood,aircraft viewer: queue DATA 0xCD (5 sub-blocks: hangar scene)
-0x0022E1F0,FUN_0022e1f0,frontend,understood,aircraft viewer: queue aircraft model DATA 0xCD+aircraft (2 sub-blocks)
-0x0022E218,FUN_0022e218,frontend,understood,aircraft viewer: queue weapon models DATA 0xE4+weapon id for each weapon
-0x0022E2B0,FUN_0022e2b0,frontend,understood,"aircraft viewer loader state machine (+0x980): load scene, models, build instances over 4 frames"
-0x0022E450,FUN_0022e450,frontend,understood,aircraft viewer: build hangar scene models + floor reflection matrix (Y scale -1)
-0x0022E580,FUN_0022e580,frontend,understood,aircraft viewer: allocate aircraft instance (0x5B0) and its part model
-0x0022E660,FUN_0022e660,frontend,understood,"aircraft viewer: build aircraft model for colour n (normal + mirrored), per-aircraft setup via jump table 0x00407070"
-0x0022E800,FUN_0022e800,frontend,understood,"aircraft viewer: allocate weapon instances, positions from 0x0039D870"
-0x0022E978,FUN_0022e978,frontend,understood,"per-aircraft-type model pose for the viewer: switch (table 0x00407070) sets model nodes 0x1F/0x13 via 0x0014B0A0 (type 0: node 0x1F=1, 0x13=0; 1-2: both 0; 5-6: node 0x1F = clamp(t*k+b); 7: node 0x13 = clamp(t,0,1); 3-4: none)"
-0x0022EBD0,FUN_0022ebd0,frontend,understood,aircraft viewer: finalize model instances (0x0014B168 x3)
-0x0022EC28,FUN_0022ec28,frontend,understood,"emit GS state packet (TEST/ALPHA/FRAME masks, 3 modes) for viewer passes"
-0x0022ED70,FUN_0022ed70,frontend,understood,"draw hangar scene model A (model render API 0x0014B280/3F8/2A8/5A0, light 0x001370D8)"
-0x0022EE30,FUN_0022ee30,frontend,understood,draw hangar scene model B
-0x0022EEF0,FUN_0022eef0,frontend,understood,"draw aircraft (normal, current colour) with reflection light"
-0x0022F048,FUN_0022f048,frontend,understood,draw aircraft reflection (mirrored model)
-0x0022F130,FUN_0022f130,frontend,understood,draw aircraft shadow/part model (+0x4E0)
-0x0022F200,FUN_0022f200,frontend,understood,draw weapon models selected by bitmask
-0x0022F3D8,FUN_0022f3d8,frontend,understood,draw weapon model reflections by bitmask
-0x0022F5B0,FUN_0022f5b0,frontend,understood,draw weapon shadow/part models by bitmask
-0x0022F750,FUN_0022f750,frontend,understood,aircraft viewer camera update + scale 10 into view matrices
-0x0022F7B8,FUN_0022f7b8,frontend,dead,"copy two colour pairs from 0x0039D890/0x0039D8A0 (0x001051F0); no reference of any kind (code gap, created 2026-10-11)"
-0x0022F810,FUN_0022f810,frontend,understood,"draw hangar light spots: project grid of points (VU0), sprites sized by depth, alpha param"
-0x0022FCD0,FUN_0022fcd0,frontend,understood,clear 640x448 with FBMSK/alpha setup pass
-0x0022FDA0,FUN_0022fda0,frontend,understood,"aircraft viewer draw: background passes, hangar models, lights, aircraft (+reflection/shadow), weapons by mask"
+0x0022DF70,SetViewerSpecialList,frontend,understood,"aircraft viewer: weapon list for aircraft (0x0011B900(aircraft) -> {count, ids})"
+0x0022DFA8,InitAircraftViewer,frontend,understood,"aircraft viewer object init: camera (0x001026B8/0x00102810/0x001028D8), light, aircraft 1..21, colour 0..2"
+0x0022E1A8,QueueViewerData,frontend,understood,aircraft viewer: queue DATA 0xCD (5 sub-blocks: hangar scene)
+0x0022E1F0,QueueViewerAircraft,frontend,understood,aircraft viewer: queue aircraft model DATA 0xCD+aircraft (2 sub-blocks)
+0x0022E218,QueueViewerSpecials,frontend,understood,aircraft viewer: queue weapon models DATA 0xE4+weapon id for each weapon
+0x0022E2B0,UpdateViewerLoad,frontend,understood,"aircraft viewer loader state machine (+0x980): load scene, models, build instances over 4 frames"
+0x0022E450,CreateHangarObjects,frontend,understood,aircraft viewer: build hangar scene models + floor reflection matrix (Y scale -1)
+0x0022E580,CreateAircraftRecord,frontend,understood,aircraft viewer: allocate aircraft instance (0x5B0) and its part model
+0x0022E660,CreateAircraftColour,frontend,understood,"aircraft viewer: build aircraft model for colour n (normal + mirrored), per-aircraft setup via jump table 0x00407070"
+0x0022E800,CreateSpecialRecords,frontend,understood,"aircraft viewer: allocate weapon instances, positions from 0x0039D870"
+0x0022E978,SetAircraftParts,frontend,understood,"per-aircraft-type model pose for the viewer: switch (table 0x00407070) sets model nodes 0x1F/0x13 via 0x0014B0A0 (type 0: node 0x1F=1, 0x13=0; 1-2: both 0; 5-6: node 0x1F = clamp(t*k+b); 7: node 0x13 = clamp(t,0,1); 3-4: none)"
+0x0022EBD0,FinishAircraftObjects,frontend,understood,aircraft viewer: finalize model instances (0x0014B168 x3)
+0x0022EC28,WriteViewerPassState,frontend,understood,"emit GS state packet (TEST/ALPHA/FRAME masks, 3 modes) for viewer passes"
+0x0022ED70,DrawHangarRoom,frontend,understood,"draw hangar scene model A (model render API 0x0014B280/3F8/2A8/5A0, light 0x001370D8)"
+0x0022EE30,DrawHangarRoomGlass,frontend,understood,draw hangar scene model B
+0x0022EEF0,DrawAircraft,frontend,understood,"draw aircraft (normal, current colour) with reflection light"
+0x0022F048,DrawAircraftReflection,frontend,understood,draw aircraft reflection (mirrored model)
+0x0022F130,DrawAircraftShadow,frontend,understood,draw aircraft shadow/part model (+0x4E0)
+0x0022F200,DrawSpecials,frontend,understood,draw weapon models selected by bitmask
+0x0022F3D8,DrawSpecialReflections,frontend,understood,draw weapon model reflections by bitmask
+0x0022F5B0,DrawSpecialShadows,frontend,understood,draw weapon shadow/part models by bitmask
+0x0022F750,UpdateViewerCamera3D,frontend,understood,aircraft viewer camera update + scale 10 into view matrices
+0x0022F7B8,ClampViewerLookAt,frontend,understood,"copy two colour pairs from 0x0039D890/0x0039D8A0 (0x001051F0); no reference of any kind (code gap, created 2026-10-11)"
+0x0022F810,DrawCeilingLights,frontend,understood,"draw hangar light spots: project grid of points (VU0), sprites sized by depth, alpha param"
+0x0022FCD0,ClearViewerBackground,frontend,understood,clear 640x448 with FBMSK/alpha setup pass
+0x0022FDA0,DrawViewerScene,frontend,understood,"aircraft viewer draw: background passes, hangar models, lights, aircraft (+reflection/shadow), weapons by mask"
 0x0022FF78,UpdateAircraftViewer,frontend,understood,"aircraft viewer update: fade, loader, camera when active"
 0x00230048,DrawAircraftViewer,frontend,understood,aircraft viewer draw by loader state (full when ready)
 0x00230080,SetAircraftViewerAircraft,frontend,understood,"aircraft viewer: request another aircraft/colour (reload, state 4)"
-0x002300A8,FUN_002300a8,frontend,understood,aircraft viewer camera parameters default
+0x002300A8,ResetViewerLookAt,frontend,understood,aircraft viewer camera parameters default
 0x002300F8,CreateAircraftViewer,frontend,understood,"create aircraft viewer (0x9D0 bytes, clear colour 0x10,0x10,0x10)"
-0x002301C8,FUN_002301c8,frontend,dead,"clamp aircraft (1..21, else 2) and colour (0..2) for a menu record; no reference of any kind (code gap, created 2026-10-11)"
-0x002301F0,FUN_002301f0,frontend,understood,mission title object init (mission index from g_MissionNo)
-0x00230258,FUN_00230258,frontend,understood,"mission title create: alloc 0x260, queue DATA 0xBB+mission-1 (title image)"
+0x002301C8,SetAircraftViewerSelection,frontend,understood,"clamp aircraft (1..21, else 2) and colour (0..2) for a menu record; no reference of any kind (code gap, created 2026-10-11)"
+0x002301F0,InitMissionTitle,frontend,understood,mission title object init (mission index from g_MissionNo)
+0x00230258,CreateMissionTitle,frontend,understood,"mission title create: alloc 0x260, queue DATA 0xBB+mission-1 (title image)"
 0x00230308,MissionTitleUpdate,frontend,understood,"mission title page: zoom-in, Start/X or 5 s -> fade; then game[0x27]=GetMissionId(0,g_MissionNo), EnterMenu(0x1F) for mission 1 else EnterMenu(3)"
-0x00230548,FUN_00230548,frontend,understood,draw mission title image sprite (0x0039D8B0) with alpha
-0x00230668,FUN_00230668,frontend,understood,"mission title draw (image, overlay, letterbox, fade)"
-0x00230708,FUN_00230708,frontend,understood,scene 4 sub 14 (page 2 mission title): create -> sub 15
-0x00230728,FUN_00230728,frontend,understood,"scene 4 sub 15: wait load, fade in, fade out BGM -> sub 16"
+0x00230548,DrawMissionTitleImage,frontend,understood,draw mission title image sprite (0x0039D8B0) with alpha
+0x00230668,DrawMissionTitlePage,frontend,understood,"mission title draw (image, overlay, letterbox, fade)"
+0x00230708,EnterMissionTitle,frontend,understood,scene 4 sub 14 (page 2 mission title): create -> sub 15
+0x00230728,LoadMissionTitle,frontend,understood,"scene 4 sub 15: wait load, fade in, fade out BGM -> sub 16"
 0x00230790,MissionTitleRun,frontend,understood,scene 4 sub 16: MissionTitleUpdate + draw
-0x002307C0,FUN_002307c0,frontend,understood,"menu help text per selected item (0x0039DA28), typewriter tick"
-0x00230858,FUN_00230858,frontend,understood,"campaign menu create (0x680): BGM 0x0022CBB8(1,mission), 6-column menu tree 0x0039D920/0x0039D9B0/0x0039DA18"
-0x00230940,FUN_00230940,frontend,understood,"campaign menu: leave to MenuGoTo(0, page) with fade"
-0x002309C0,FUN_002309c0,frontend,understood,"campaign menu: start leaving: state +0x66C = 2, StartFade(0.5), store the target sub-page (+0x674 = a1, +0x670 = 1) and recompute the default selection of the 6 items (0x0022B050, table 0x0039D920); H: the MenuGoTo(1, sub-page) follows when state 2 ends"
-0x00230A78,FUN_00230a78,frontend,understood,"campaign menu select: 0 -> page 6, 1 -> page 3 (briefing, mission id set), submenus, 7-10 -> pages 0xD-0x10, 0xE -> page 0 (quit), sub-pages 0x2E/0x2A/0x3B/0x51/0x4A/0x57/0x50"
+0x002307C0,UpdateCampaignMenuHelp,frontend,understood,"menu help text per selected item (0x0039DA28), typewriter tick"
+0x00230858,CreateCampaignMenu,frontend,understood,"campaign menu create (0x680): BGM 0x0022CBB8(1,mission), 6-column menu tree 0x0039D920/0x0039D9B0/0x0039DA18"
+0x00230940,LeaveCampaignMenu,frontend,understood,"campaign menu: leave to MenuGoTo(0, page) with fade"
+0x002309C0,LeaveCampaignMenuToSubPage,frontend,understood,"campaign menu: start leaving: state +0x66C = 2, StartFade(0.5), store the target sub-page (+0x674 = a1, +0x670 = 1) and recompute the default selection of the 6 items (0x0022B050, table 0x0039D920); H: the MenuGoTo(1, sub-page) follows when state 2 ends"
+0x00230A78,CampaignMenuSelect,frontend,understood,"campaign menu select: 0 -> page 6, 1 -> page 3 (briefing, mission id set), submenus, 7-10 -> pages 0xD-0x10, 0xE -> page 0 (quit), sub-pages 0x2E/0x2A/0x3B/0x51/0x4A/0x57/0x50"
 0x00230CA0,CampaignMenuUpdate,frontend,understood,"page 5 menu between missions (was HYPOTHESIS BriefingUpdate): menu tree states 0..3, select 0x00230A78, exit MenuGoTo(+0x670,+0x674)"
-0x00230E20,FUN_00230e20,frontend,understood,campaign menu draw
-0x00230EB0,FUN_00230eb0,frontend,understood,"scene 4 sub 23/24 (page 5): clamp g_MissionNo 1..18, create campaign menu, queue DATA 0xB1 -> sub 25"
-0x00230F78,FUN_00230f78,frontend,understood,scene 4 sub 25: wait for DATA 0xB1 -> sub 26
+0x00230E20,DrawCampaignMenuPage,frontend,understood,campaign menu draw
+0x00230EB0,EnterCampaignMenu,frontend,understood,"scene 4 sub 23/24 (page 5): clamp g_MissionNo 1..18, create campaign menu, queue DATA 0xB1 -> sub 25"
+0x00230F78,LoadCampaignMenu,frontend,understood,scene 4 sub 25: wait for DATA 0xB1 -> sub 26
 0x00230FC8,CampaignMenuRun,frontend,understood,scene 4 sub 26: UpdateFade + CampaignMenuUpdate + draw
-0x00231000,FUN_00231000,frontend,understood,create model instance from a container item pair (geometry 0/1 or 0/n) via model API 0x0014AE60/0x0014AEF8/0x0014B078
-0x002310C8,FUN_002310c8,frontend,understood,"light set reset (3 directional lights, ambient colour)"
-0x00231100,FUN_00231100,frontend,understood,set directional light n: colour + direction from X/Y rotation
-0x002311B8,FUN_002311b8,frontend,understood,apply light set to model lighting (0x00136F48/0x00136DA0)
-0x00231238,FUN_00231238,frontend,understood,apply light set transformed by a matrix
-0x002312E0,FUN_002312e0,frontend,understood,matrix that turns lights towards the camera (viewer)
-0x002313B8,FUN_002313b8,frontend,understood,"build rotation+translation matrix (0x001096A8, 0x00108C68, sceVu0TransMatrix)"
-0x00231420,FUN_00231420,frontend,understood,"aircraft viewer manual camera: right stick/L/R axes (pad bytes), cubic response, clamp distance, smooth (sceVu0InterVector)"
-0x002316D0,FUN_002316d0,frontend,understood,clamp camera to box 0x0039DFC0/0x0039DFD0 (twice)
-0x00231728,FUN_00231728,frontend,understood,clamp camera inside hangar box + keep above floor near two obstacles
+0x00231000,CreateMenuObject,frontend,understood,create model instance from a container item pair (geometry 0/1 or 0/n) via model API 0x0014AE60/0x0014AEF8/0x0014B078
+0x002310C8,InitLights,frontend,understood,"light set reset (3 directional lights, ambient colour)"
+0x00231100,SetLightDirection,frontend,understood,set directional light n: colour + direction from X/Y rotation
+0x002311B8,ApplyLights,frontend,understood,apply light set to model lighting (0x00136F48/0x00136DA0)
+0x00231238,ApplyLightsTransformed,frontend,understood,apply light set transformed by a matrix
+0x002312E0,BuildShadowMatrix,frontend,understood,matrix that turns lights towards the camera (viewer)
+0x002313B8,BuildModelMatrices,frontend,understood,"build rotation+translation matrix (0x001096A8, 0x00108C68, sceVu0TransMatrix)"
+0x00231420,UpdateFreeCamera,frontend,understood,"aircraft viewer manual camera: right stick/L/R axes (pad bytes), cubic response, clamp distance, smooth (sceVu0InterVector)"
+0x002316D0,ClampFreeCamera,frontend,understood,clamp camera to box 0x0039DFC0/0x0039DFD0 (twice)
+0x00231728,ClampFreeCameraSpecial,frontend,understood,clamp camera inside hangar box + keep above floor near two obstacles
 0x002318F8,UpdateViewerCamera,frontend,understood,"aircraft viewer camera presets by mode (0 orbit, 3 select orbit per colour, 4-6 weapon close-ups, 7/8 manual), smooth or snap"
-0x00231CE0,FUN_00231ce0,frontend,understood,"hangar: pick viewer camera preset from selected menu column/item (0..9), reset timer"
-0x00231DE0,FUN_00231de0,frontend,understood,hangar: draw N window boxes (bitmask for inner frame)
-0x00231ED0,FUN_00231ed0,frontend,understood,hangar: draw N gauge boxes with fill fractions
-0x00231FB8,FUN_00231fb8,frontend,understood,"hangar panel 'WEAPON >': GUN/MSSL counts and special weapon name/count per colour (typed text, 0x0011B8B8 aircraft info, 0x0011B840 weapon name)"
-0x00232260,FUN_00232260,frontend,understood,hangar panel 'AIRCRAFT >': name and description from table 0x0039DA80 (stride 0x3C)
-0x00232408,FUN_00232408,frontend,understood,"hangar panel 'STATISTICS >' labels: SPEED, AIR TO AIR, AIR TO GROUND, MOBILITY, STABILITY, DEFENSE"
-0x002325A8,FUN_002325a8,frontend,understood,hangar panel special weapon name + description (0x0011B840/0x0011B868)
-0x002327A0,FUN_002327a0,frontend,understood,hangar panel 'STATISTICS >' values: 5 rows of strings 0x0039E000 masked by availability
-0x00232930,FUN_00232930,frontend,understood,"hangar: draw availability marks for aircraft colours (2-bit fields, glyph '/'+n)"
-0x00232AD0,FUN_00232ad0,frontend,understood,hangar: draw availability marks for the 3 special-weapon words
-0x00232BE8,FUN_00232be8,frontend,understood,"hangar panel 'BUY >'/'SELL >': price, credit difference (+/-), remaining credits"
-0x00232E70,FUN_00232e70,frontend,understood,hangar: draw price box outline (red when not affordable)
-0x00232F80,FUN_00232f80,frontend,understood,"hangar: draw info panels selected by flag bits (aircraft, statistics, weapon, values, loadout, buy/sell, availability marks); returns typing-done bits"
-0x00233138,FUN_00233138,frontend,understood,"hangar panel draw: cursor, price box, gauges, window boxes, panels, pulsing selection markers"
-0x00233450,FUN_00233450,frontend,understood,hangar: is another colour (or weapon) of this aircraft already owned
-0x002334F8,FUN_002334f8,frontend,understood,"hangar help text: message id by mode/state (tables 0x0039E038/68/98, per-weapon tables 0x0039E0C8/E8/0x0039E108), typewriter"
-0x00233720,FUN_00233720,frontend,understood,ownership bits: reorder 2-bit fields from aircraft-index order to menu order (table 0x0039DA80)
-0x00233790,FUN_00233790,frontend,understood,ownership bits: reorder from menu order back to aircraft index order (table 0x0039DA50)
-0x00233808,FUN_00233808,frontend,understood,"hangar mode from sub-state 0x1B..0x23: 0x1B aircraft select for mission (sets mission id, mode 1), buy/sell/colour/weapon modes"
-0x00233908,FUN_00233908,frontend,understood,bitmask of aircraft whose 2-bit field equals a value (21 aircraft)
-0x00233950,FUN_00233950,frontend,understood,"build selectable-aircraft masks per hangar mode (owned=3, buyable=2)"
-0x00233B48,FUN_00233b48,frontend,understood,list set bit indices of a mask (returns count)
-0x00233BA0,FUN_00233ba0,frontend,understood,"hangar: snap selection to a selectable aircraft/colour, returns change bits"
-0x00233D48,FUN_00233d48,frontend,understood,hangar: snap special-weapon selection to an available one
-0x00233DF0,FUN_00233df0,frontend,understood,hangar: move cursor to aircraft/colour or weapon slot position
-0x00233E58,FUN_00233e58,frontend,understood,zero N floats
-0x00233E88,FUN_00233e88,frontend,understood,ease N floats towards targets (0x00226F18)
-0x00233EF0,FUN_00233ef0,frontend,understood,number of special weapons of an aircraft (first word of 0x0011B900)
+0x00231CE0,UpdateHangarCamera,frontend,understood,"hangar: pick viewer camera preset from selected menu column/item (0..9), reset timer"
+0x00231DE0,DrawSpecialIcons,frontend,understood,hangar: draw N window boxes (bitmask for inner frame)
+0x00231ED0,DrawHangarGauges,frontend,understood,hangar: draw N gauge boxes with fill fractions
+0x00231FB8,DrawHangarSpecialText,frontend,understood,"hangar panel 'WEAPON >': GUN/MSSL counts and special weapon name/count per colour (typed text, 0x0011B8B8 aircraft info, 0x0011B840 weapon name)"
+0x00232260,DrawHangarNameText,frontend,understood,hangar panel 'AIRCRAFT >': name and description from table 0x0039DA80 (stride 0x3C)
+0x00232408,DrawHangarStatsText,frontend,understood,"hangar panel 'STATISTICS >' labels: SPEED, AIR TO AIR, AIR TO GROUND, MOBILITY, STABILITY, DEFENSE"
+0x002325A8,DrawHangarWeaponText,frontend,understood,hangar panel special weapon name + description (0x0011B840/0x0011B868)
+0x002327A0,DrawHangarColourText,frontend,understood,hangar panel 'STATISTICS >' values: 5 rows of strings 0x0039E000 masked by availability
+0x00232930,DrawHangarOwnedMarks,frontend,understood,"hangar: draw availability marks for aircraft colours (2-bit fields, glyph '/'+n)"
+0x00232AD0,DrawHangarSpecialMarks,frontend,understood,hangar: draw availability marks for the 3 special-weapon words
+0x00232BE8,DrawHangarPriceText,frontend,understood,"hangar panel 'BUY >'/'SELL >': price, credit difference (+/-), remaining credits"
+0x00232E70,DrawPriceBox,frontend,understood,hangar: draw price box outline (red when not affordable)
+0x00232F80,DrawHangarTexts,frontend,understood,"hangar: draw info panels selected by flag bits (aircraft, statistics, weapon, values, loadout, buy/sell, availability marks); returns typing-done bits"
+0x00233138,DrawHangarPanels,frontend,understood,"hangar panel draw: cursor, price box, gauges, window boxes, panels, pulsing selection markers"
+0x00233450,CheckHangarSaleHint,frontend,understood,hangar: is another colour (or weapon) of this aircraft already owned
+0x002334F8,UpdateHangarHelp,frontend,understood,"hangar help text: message id by mode/state (tables 0x0039E038/68/98, per-weapon tables 0x0039E0C8/E8/0x0039E108), typewriter"
+0x00233720,PurchaseStateToList,frontend,understood,ownership bits: reorder 2-bit fields from aircraft-index order to menu order (table 0x0039DA80)
+0x00233790,PurchaseStateToSave,frontend,understood,ownership bits: reorder from menu order back to aircraft index order (table 0x0039DA50)
+0x00233808,SetHangarPageForSub,frontend,understood,"hangar mode from sub-state 0x1B..0x23: 0x1B aircraft select for mission (sets mission id, mode 1), buy/sell/colour/weapon modes"
+0x00233908,GetStateMask,frontend,understood,bitmask of aircraft whose 2-bit field equals a value (21 aircraft)
+0x00233950,BuildAvailabilityMasks,frontend,understood,"build selectable-aircraft masks per hangar mode (owned=3, buyable=2)"
+0x00233B48,ListSetBits,frontend,understood,list set bit indices of a mask (returns count)
+0x00233BA0,SelectFirstAvailable,frontend,understood,"hangar: snap selection to a selectable aircraft/colour, returns change bits"
+0x00233D48,SelectAvailableSpecial,frontend,understood,hangar: snap special-weapon selection to an available one
+0x00233DF0,MoveHangarCrosshair,frontend,understood,hangar: move cursor to aircraft/colour or weapon slot position
+0x00233E58,ClearValues,frontend,understood,zero N floats
+0x00233E88,ApproachValues,frontend,understood,ease N floats towards targets (0x00226F18)
+0x00233EF0,GetSpecialWeaponCount,frontend,understood,number of special weapons of an aircraft (first word of 0x0011B900)
 0x00233F10,CommitHangarSelection,frontend,understood,"hangar commit: g_GameState slot (aircraft, colour, weapon); player slot 0 also into 0x002A15BE..C2; credits/ownership written only if credits == check ^ 0x5963 (tamper check), credits -> 0x002A0D30, ownership -> 0x002A0320..48"
-0x00234000,FUN_00234000,frontend,understood,build hangar panel animation parts from mask (table 0x0039E148)
-0x00234078,FUN_00234078,frontend,understood,"hangar panel open: parts per mode (0x0039E128), cursor reset"
-0x00234150,FUN_00234150,frontend,understood,hangar panel command 2 open / 4 close
-0x00234190,FUN_00234190,frontend,understood,"hangar panel animation tick (SE 0xD, typing SE 9), close -> next mode or exit to viewer states 4/5"
-0x00234588,FUN_00234588,frontend,understood,hangar: which directions are possible for aircraft/colour selection (pad hint bits)
-0x00234628,FUN_00234628,frontend,understood,hangar: which directions are possible for special weapon selection
-0x002346B0,FUN_002346b0,frontend,understood,"hangar: react to selection change (reload weapon count, restart typing)"
-0x00234740,FUN_00234740,frontend,understood,"hangar input: left/right aircraft, up/down colour, SE 4, viewer reload request"
-0x00234A08,FUN_00234a08,frontend,understood,"hangar input: special weapon left/right, SE 4"
-0x00234BC8,FUN_00234bc8,frontend,dead,"count set bit pairs in a 64-bit mask table (pop count of adjacent bits); no reference of any kind (code gap, created 2026-10-11)"
-0x00234C50,FUN_00234c50,frontend,understood,"hangar buy/sell price: modes 3/4 aircraft colour, 6/7 special weapon; negative mode = query; owned=3 buyable=2; selling the last colour also sells its weapons; prices table 0x0039DA80 (+9 colour, +0xC weapon); applies ownership change when commit"
-0x00234EB8,FUN_00234eb8,frontend,understood,"hangar confirm (X/O): buy/sell with confirmation step (SE 2/5/0xF/0x10), credits update with check value ^0x5963, or switch panel mode (0x0039E1C8)"
-0x002351B0,FUN_002351b0,frontend,understood,"hangar back (Triangle): cancel confirmation or previous mode (0x0039E1E8), SE 3"
+0x00234000,BuildPanelList,frontend,understood,build hangar panel animation parts from mask (table 0x0039E148)
+0x00234078,OpenHangarPage,frontend,understood,"hangar panel open: parts per mode (0x0039E128), cursor reset"
+0x00234150,SetHangarPhase,frontend,understood,hangar panel command 2 open / 4 close
+0x00234190,AnimateHangarPanels,frontend,understood,"hangar panel animation tick (SE 0xD, typing SE 9), close -> next mode or exit to viewer states 4/5"
+0x00234588,GetAircraftArrows,frontend,understood,hangar: which directions are possible for aircraft/colour selection (pad hint bits)
+0x00234628,GetSpecialArrows,frontend,understood,hangar: which directions are possible for special weapon selection
+0x002346B0,ApplyHangarChange,frontend,understood,"hangar: react to selection change (reload weapon count, restart typing)"
+0x00234740,HangarAircraftInput,frontend,understood,"hangar input: left/right aircraft, up/down colour, SE 4, viewer reload request"
+0x00234A08,HangarSpecialInput,frontend,understood,"hangar input: special weapon left/right, SE 4"
+0x00234BC8,CountOwnedFields,frontend,understood,"count set bit pairs in a 64-bit mask table (pop count of adjacent bits); no reference of any kind (code gap, created 2026-10-11)"
+0x00234C50,GetPurchasePrice,frontend,understood,"hangar buy/sell price: modes 3/4 aircraft colour, 6/7 special weapon; negative mode = query; owned=3 buyable=2; selling the last colour also sells its weapons; prices table 0x0039DA80 (+9 colour, +0xC weapon); applies ownership change when commit"
+0x00234EB8,HangarAccept,frontend,understood,"hangar confirm (X/O): buy/sell with confirmation step (SE 2/5/0xF/0x10), credits update with check value ^0x5963, or switch panel mode (0x0039E1C8)"
+0x002351B0,HangarCancel,frontend,understood,"hangar back (Triangle): cancel confirmation or previous mode (0x0039E1E8), SE 3"
 0x00235238,HangarInput,frontend,understood,"hangar input dispatch: confirm, back, Select = viewer-only mode, aircraft/colour and weapon selection"
-0x002353E8,FUN_002353e8,frontend,understood,hangar viewer-only mode: Select returns to previous panel
+0x002353E8,HangarConfirmInput,frontend,understood,hangar viewer-only mode: Select returns to previous panel
 0x00235438,HangarUpdate,frontend,understood,"hangar per frame: panel animation, viewer-only mode, gauges ease to aircraft stats (0x0039DA8C), input"
-0x00235540,FUN_00235540,frontend,understood,"hangar BGM: briefing aircraft select uses 0x0022CBB8(2,mission), else track 9"
-0x00235580,FUN_00235580,frontend,understood,hangar panel open (wrapper of 0x00234078)
+0x00235540,PlayHangarBgm,frontend,understood,"hangar BGM: briefing aircraft select uses 0x0022CBB8(2,mission), else track 9"
+0x00235580,InitHangarPanels,frontend,understood,hangar panel open (wrapper of 0x00234078)
 0x00235588,InitHangarState,frontend,understood,"hangar state from g_GameState slot, credits 0x002A0D30 (+check ^0x5963), ownership 0x002A0320.. reordered to menu order, selectable masks"
 0x002356D8,HangarEnter,frontend,understood,"scene 4 subs 27-35 (pages 6-10, 13-16): alloc hangar state (0x170) + CreateAircraftViewer, mode from sub-state, BGM, -> sub 36"
-0x00235828,FUN_00235828,frontend,understood,"hangar -> viewer sync: request aircraft/colour reload, owned-colour mask for weapon display"
-0x00235988,FUN_00235988,frontend,understood,"hangar frame update: help text, HangarUpdate, viewer sync, camera, UpdateAircraftViewer"
-0x002359F0,FUN_002359f0,frontend,understood,"hangar draw: viewer, overlay, panels, message box, fade"
+0x00235828,SyncHangarViewer,frontend,understood,"hangar -> viewer sync: request aircraft/colour reload, owned-colour mask for weapon display"
+0x00235988,UpdateHangar,frontend,understood,"hangar frame update: help text, HangarUpdate, viewer sync, camera, UpdateAircraftViewer"
+0x002359F0,DrawHangar,frontend,understood,"hangar draw: viewer, overlay, panels, message box, fade"
 0x00235AB8,AircraftSelectRun,frontend,understood,"scene 4 sub 36 (hangar pages): update/draw; on exit CommitHangarSelection + MenuGoTo(+0xA8,+0xAA); mission 1 with default aircraft -> game[0x27]=0x25, aircraft 0x17; mission 18 -> game[0x27]=0x24"
 0x00235C68,FUN_00235c68,frontend,understood,"post-mission menu help text (0x0039E268), typewriter"
 0x00235D20,FUN_00235d20,frontend,understood,"post-mission menu create (0x680): fade out BGM, 2-column menu tree 0x0039E220/0x0039E250 (sub 0x26 variant)"
@@ -2340,195 +2340,195 @@ address,name,subsystem,status,note
 0x002362A0,FUN_002362a0,frontend,understood,"scene 4 sub 37/38 (pages 11/12): create post-mission menu, queue DATA 0xB2 -> sub 39"
 0x00236340,FUN_00236340,frontend,understood,scene 4 sub 39: wait DATA 0xB2 -> sub 40
 0x00236390,FUN_00236390,frontend,understood,scene 4 sub 40: post-mission menu frame
-0x002363C8,FUN_002363c8,frontend,understood,"briefing: set message box line from {id, time} entry"
-0x002363D0,FUN_002363d0,frontend,understood,"briefing subtitle timing: advance line when movie time passes entry time, typing (SE 9)"
-0x002364D8,FUN_002364d8,frontend,understood,briefing subtitle draw
-0x00236568,FUN_00236568,frontend,understood,"briefing: open header panel (5 parts 0x003A51E0), start briefing movie 0x00238778(mission+0xD)"
+0x002363C8,SetBriefingSubtitle,frontend,understood,"briefing: set message box line from {id, time} entry"
+0x002363D0,UpdateBriefingSubtitles,frontend,understood,"briefing subtitle timing: advance line when movie time passes entry time, typing (SE 9)"
+0x002364D8,DrawBriefingSubtitle,frontend,understood,briefing subtitle draw
+0x00236568,StartBriefingMovie,frontend,understood,"briefing: open header panel (5 parts 0x003A51E0), start briefing movie 0x00238778(mission+0xD)"
 0x002365C0,CreateBriefing,frontend,understood,"briefing create (0x5D0): mission index from GetMissionIdIndex(game[0x27]) (0x00226320), timings 0x003AF8B8/0x003AF900/0x003AF948, subtitle list 0x0039E528, BGM 0x0022CBB8(0,n)"
-0x002366F8,FUN_002366f8,frontend,understood,"briefing input: Circle next line / skip typing (SE 0xB/0xD), Start ends: stop movie 0x002124C8, fade streams, fade out"
+0x002366F8,BriefingInput,frontend,understood,"briefing input: Circle next line / skip typing (SE 0xB/0xD), Start ends: stop movie 0x002124C8, fade streams, fade out"
 0x00236880,BriefingUpdate,frontend,understood,"briefing update: time = movie frame (game+0x20 -> +0x18) * const, header panel open/close, subtitles, input after 30 frames"
-0x002369A8,FUN_002369a8,frontend,understood,"briefing header text: DATE/AREA, PARALLEL, OPERATION, COORDINATES, CONDITION (table 0x003A5330, 5 strings per mission)"
-0x00236C50,FUN_00236c50,frontend,understood,"briefing frame draw: subtitles, header panel, header text, overlay, fade, movie frame (0x00238920); flush + SendDmaPacketList + swap buffers + sceGsSyncPath"
-0x00236D28,FUN_00236d28,frontend,understood,"briefing map: select point n (camera target x/y/zoom/angles from point table, stride 0x18), move cursor"
-0x00236DA8,FUN_00236da8,frontend,understood,"briefing map view init: fades, 7-part panel 0x003A5230, message, terrain map 0x0023EBA8"
-0x00236E30,FUN_00236e30,frontend,understood,"briefing map view setup: 640x448, per-mission map coords 0x003A52A0, point list (PTR 0x00411078), select point 0"
-0x00236F28,FUN_00236f28,frontend,understood,"briefing map camera: slow orbit, ease zoom/pan to selected point"
-0x00237038,FUN_00237038,frontend,understood,"briefing map update: states 0..5, terrain update 0x0023F320, L/R/up/down cycle points (SE 4), Start or X on last point -> fade out, MenuGoTo(+0x558,+0x55C)"
-0x002372A0,FUN_002372a0,frontend,understood,"briefing map text: area, COORDINATES X/Y, legend, enemy counts AIR/GROUND/SEA per mission (0x003A54B8, -1 = NO DATA), TARGET, TOTAL"
-0x00237808,FUN_00237808,frontend,understood,"emit map unit icon sprite (type 0..4, faction colour 0x003A55C0, extra marker for faction 0)"
-0x00237998,FUN_00237998,frontend,understood,emit map unit altitude line/marker
-0x00237A98,FUN_00237a98,frontend,understood,"draw briefing map units: per-mission unit list (PTR 0x0041107C, 0x14-byte entries), VU0 projection, clip"
-0x00237EF8,FUN_00237ef8,frontend,understood,briefing map: draw zoom window frame around the camera view on the overview map
-0x00238148,FUN_00238148,frontend,understood,"briefing map draw: terrain 0x0023F260, units (state>=4), panels, map text, zoom frame, message, fades"
-0x00238278,FUN_00238278,frontend,understood,"scene 4 sub 17/18 (pages 3/4 briefing): BGM reset, CreateBriefing, map tables 0x0039EB88/0x003A5150, queue DATA 0x111+mission (3 sub-blocks), movie display mode -> sub 19"
-0x00238310,FUN_00238310,frontend,understood,"scene 4 sub 19: wait load, first subtitle, start briefing movie -> sub 20"
-0x00238380,FUN_00238380,frontend,understood,"scene 4 sub 20: briefing movie frame (reset T0, BriefingUpdate, movie update; end -> sub 21 + fade streams), draw, MovieFrameSync"
-0x002383E8,FUN_002383e8,frontend,understood,"scene 4 sub 21: wait movie end, display mode back, map view init -> sub 22"
-0x00238440,FUN_00238440,frontend,understood,scene 4 sub 22: briefing map frame
-0x00238480,FUN_00238480,frontend,understood,"movie display mode B body: 640x448 display/draw, black clear, PSMCT32 frame, Z PSM 0x31, BuildDrawEnvPackets (called by 0x00238770)"
-0x00238560,FUN_00238560,frontend,understood,"movie display mode A: 640x448 frame mode, disp_flags 0xC000, draw_mode 0"
-0x00238660,FUN_00238660,frontend,understood,"movie display mode C body: display flags 0x8200 (field mode), BuildDrawEnvPackets, frame register fix-ups (called by 0x00238918)"
-0x002386D8,FUN_002386d8,frontend,understood,"debug check: stream slots 0 and 2 ready, else printf 'CH0:%08x CH2:%08x'"
-0x00238728,FUN_00238728,frontend,understood,is menu movie finished (0x002122D0 on movie object game+0x20)
-0x00238770,thunk_FUN_00238480,frontend,understood,"movie display mode B: 640x448, disp_flags 0x8100, draw_mode 2"
+0x002369A8,DrawBriefingHeader,frontend,understood,"briefing header text: DATE/AREA, PARALLEL, OPERATION, COORDINATES, CONDITION (table 0x003A5330, 5 strings per mission)"
+0x00236C50,DrawBriefingMoviePage,frontend,understood,"briefing frame draw: subtitles, header panel, header text, overlay, fade, movie frame (0x00238920); flush + SendDmaPacketList + swap buffers + sceGsSyncPath"
+0x00236D28,SelectBriefingCameraPreset,frontend,understood,"briefing map: select point n (camera target x/y/zoom/angles from point table, stride 0x18), move cursor"
+0x00236DA8,InitBriefingMap,frontend,understood,"briefing map view init: fades, 7-part panel 0x003A5230, message, terrain map 0x0023EBA8"
+0x00236E30,EnterBriefingMap,frontend,understood,"briefing map view setup: 640x448, per-mission map coords 0x003A52A0, point list (PTR 0x00411078), select point 0"
+0x00236F28,UpdateBriefingMapCamera,frontend,understood,"briefing map camera: slow orbit, ease zoom/pan to selected point"
+0x00237038,BriefingMapUpdate,frontend,understood,"briefing map update: states 0..5, terrain update 0x0023F320, L/R/up/down cycle points (SE 4), Start or X on last point -> fade out, MenuGoTo(+0x558,+0x55C)"
+0x002372A0,DrawBriefingMapTexts,frontend,understood,"briefing map text: area, COORDINATES X/Y, legend, enemy counts AIR/GROUND/SEA per mission (0x003A54B8, -1 = NO DATA), TARGET, TOTAL"
+0x00237808,WriteBriefingUnitIcon,frontend,understood,"emit map unit icon sprite (type 0..4, faction colour 0x003A55C0, extra marker for faction 0)"
+0x00237998,WriteBriefingUnitLink,frontend,understood,emit map unit altitude line/marker
+0x00237A98,DrawBriefingUnits,frontend,understood,"draw briefing map units: per-mission unit list (PTR 0x0041107C, 0x14-byte entries), VU0 projection, clip"
+0x00237EF8,DrawBriefingMapFrame,frontend,understood,briefing map: draw zoom window frame around the camera view on the overview map
+0x00238148,DrawBriefingMapPage,frontend,understood,"briefing map draw: terrain 0x0023F260, units (state>=4), panels, map text, zoom frame, message, fades"
+0x00238278,EnterBriefing,frontend,understood,"scene 4 sub 17/18 (pages 3/4 briefing): BGM reset, CreateBriefing, map tables 0x0039EB88/0x003A5150, queue DATA 0x111+mission (3 sub-blocks), movie display mode -> sub 19"
+0x00238310,LoadBriefing,frontend,understood,"scene 4 sub 19: wait load, first subtitle, start briefing movie -> sub 20"
+0x00238380,RunBriefingMovie,frontend,understood,"scene 4 sub 20: briefing movie frame (reset T0, BriefingUpdate, movie update; end -> sub 21 + fade streams), draw, MovieFrameSync"
+0x002383E8,EndBriefingMovie,frontend,understood,"scene 4 sub 21: wait movie end, display mode back, map view init -> sub 22"
+0x00238440,RunBriefingMap,frontend,understood,scene 4 sub 22: briefing map frame
+0x00238480,SetMoviePageDisplay,frontend,understood,"movie display mode B body: 640x448 display/draw, black clear, PSMCT32 frame, Z PSM 0x31, BuildDrawEnvPackets (called by 0x00238770)"
+0x00238560,SetMoviePlayDisplay,frontend,understood,"movie display mode A: 640x448 frame mode, disp_flags 0xC000, draw_mode 0"
+0x00238660,SetMenuDisplayAfterMovie,frontend,understood,"movie display mode C body: display flags 0x8200 (field mode), BuildDrawEnvPackets, frame register fix-ups (called by 0x00238918)"
+0x002386D8,AreMovieStreamSlotsIdle,frontend,understood,"debug check: stream slots 0 and 2 ready, else printf 'CH0:%08x CH2:%08x'"
+0x00238728,StepMovieToEnd,frontend,understood,is menu movie finished (0x002122D0 on movie object game+0x20)
+0x00238770,SetMoviePageDisplayThunk,frontend,understood,"movie display mode B: 640x448, disp_flags 0x8100, draw_mode 2"
 0x00238778,StartMenuMovie,frontend,understood,"alloc 0x600000-byte movie work buffer, movie display mode, RCNT0_MODE = 0x83 (H-blank count), start player 0x00212150(obj), wait sceGsSyncV parity 0"
-0x00238808,thunk_FUN_002122c0,frontend,understood,reset T0 counter (REG_RCNT0_COUNT = 0) at frame start
+0x00238808,ResetMovieTimerThunk,frontend,understood,reset T0 counter (REG_RCNT0_COUNT = 0) at frame start
 0x00238810,UpdateMenuMovie,frontend,understood,"movie player step (0x002122D0); returns non-zero when finished, then 0x002124A8 cleanup, else 0x00212498"
 0x00238870,MovieFrameSync,frontend,understood,"toggle display/draw buffer (DISPFB/FRAME 0x8C), busy-wait until RCNT0 >= 0x118 H-blanks since frame start, frame_count++"
-0x00238918,thunk_FUN_00238660,frontend,understood,movie display mode C: disp_flags 0x8200
-0x00238920,FUN_00238920,frontend,understood,draw decoded movie frame as a textured sprite from the movie buffer (alpha param)
-0x00238AA8,FUN_00238aa8,frontend,understood,movie subtitle: set message line
-0x00238AB0,FUN_00238ab0,frontend,understood,"movie subtitle timing: show line while time in [start, start+duration] (12-byte entries)"
+0x00238918,SetMenuDisplayAfterMovieThunk,frontend,understood,movie display mode C: disp_flags 0x8200
+0x00238920,DrawMovieLineBlend,frontend,understood,draw decoded movie frame as a textured sprite from the movie buffer (alpha param)
+0x00238AA8,SetSubtitleLine,frontend,understood,movie subtitle: set message line
+0x00238AB0,UpdateSubtitles,frontend,understood,"movie subtitle timing: show line while time in [start, start+duration] (12-byte entries)"
 0x00238B80,CreateMenuMoviePage,frontend,understood,"movie page object (0x2B0): movie index by sub-state 7-10 and ctx->ret_sub, duration 0x003AF880, subtitle list 0x003A6038"
-0x00238D10,FUN_00238d10,frontend,understood,"movie page: start movie (index 0x284: 0xC -> movie 0, 0xD -> 0x1F, else n+1; letterbox offset 0x38 when mode 2)"
-0x00238D80,FUN_00238d80,frontend,understood,"movie page update: time from movie frame, subtitles, Start (after 30 frames) skips: stop movie, fade"
-0x00238E88,FUN_00238e88,frontend,understood,draw letterbox-cropped movie frame copy
-0x00238FE0,FUN_00238fe0,frontend,understood,movie page draw + flush/send/swap/sceGsSyncPath
+0x00238D10,StartPageMovie,frontend,understood,"movie page: start movie (index 0x284: 0xC -> movie 0, 0xD -> 0x1F, else n+1; letterbox offset 0x38 when mode 2)"
+0x00238D80,HandleMenuMovieInput,frontend,understood,"movie page update: time from movie frame, subtitles, Start (after 30 frames) skips: stop movie, fade"
+0x00238E88,DrawMovieWidescreen,frontend,understood,draw letterbox-cropped movie frame copy
+0x00238FE0,DrawMenuMoviePage,frontend,understood,movie page draw + flush/send/swap/sceGsSyncPath
 0x002390C8,MenuMovieEnter,frontend,understood,scene 4 subs 7-10 (pages 31-34): CreateMenuMoviePage; sub 9 with option bit 0x002A15CC&8 skips the movie; queue subtitle DATA 0x103+n -> sub 0xB
-0x00239188,FUN_00239188,frontend,understood,"scene 4 sub 0xB: wait subtitle data + stream slots ready, start movie -> 0xC"
-0x00239248,FUN_00239248,frontend,understood,"scene 4 sub 0xC: movie frame (T0 reset, update, end -> 0xD), MovieFrameSync"
+0x00239188,MenuMovieWait,frontend,understood,"scene 4 sub 0xB: wait subtitle data + stream slots ready, start movie -> 0xC"
+0x00239248,MenuMoviePlay,frontend,understood,"scene 4 sub 0xC: movie frame (T0 reset, update, end -> 0xD), MovieFrameSync"
 0x002392A8,MenuMovieEnd,frontend,understood,"scene 4 sub 0xD: when the movie is finished restore display, reset BGM, MenuGoTo(+0x278, +0x27C)"
 0x00239310,FUN_00239310,mission,understood,"loading screen: draw the progress graphic with fade (cosf, floorf), packet via 0x002276E8: loading screen progress graphic: textured sprite with fade (param 1 is the alpha), colour by progress (0x00104FC8), and after 8 seconds a pulsing second sprite (cosf of the fractional time)"
 0x00239640,FUN_00239640,mission,understood,"loading screen: mission number to show (game state +0x27: 0x24 -> 18, 0x25 -> 1, campaign ids -> 0x00226320)"
 0x002396B0,FUN_002396b0,mission,understood,"loading screen: mission objective text (""DESTROY ALL INDICATED TARGETS"" tables 0x003AEE28 / 0x003AEDE0 by difficulty) typed out with a menu SE: loading screen objective text: mission number and title (title table 0x003844A0), objective text by difficulty (tables 0x003AEE28 / 0x003AEDE0) typed out with time, a blinking prompt, menu SE 9 every third frame while typing"
 0x002399E0,FUN_002399e0,mission,understood,loading screen: background rectangle packet (GIF sprite over the draw buffer)
 0x00239B60,FUN_00239b60,mission,understood,"loading screen draw: text 0x002396B0 and background 0x002399E0, menu SE 0xD once, fade by frame count"
-0x00239C58,FUN_00239c58,frontend,understood,"mission-select page help text by state (0x003AEEB8 per mode, 0x003AEEC8 per menu item)"
-0x00239D50,FUN_00239d50,frontend,understood,mission-select page: entry count per mode (0x00410E80); Trial count from bits 0x002A031C; VS Stage locked to 5 until campaign cleared; default index 0x00411198
-0x00239E10,FUN_00239e10,frontend,understood,mission-select page: set cursor column n (x = base + n*0x140)
-0x00239E58,FUN_00239e58,frontend,understood,"mission-select page init for list modes 0-3 (Free/Trial/Tutorial/VS), card list 0x003AF150, 5-part panel 0x003AF070"
-0x00239F58,FUN_00239f58,frontend,understood,"mission-select action menu init (sub-pages 0x45-0x47): 4-column menu tree 0x003AEFD0/0x003AF030; VS mode: 3 stage strings into 0x0042D1E0, game[0x2E] stage variant"
+0x00239C58,UpdateMissionSelectHelp,frontend,understood,"mission-select page help text by state (0x003AEEB8 per mode, 0x003AEEC8 per menu item)"
+0x00239D50,GetMissionCounts,frontend,understood,mission-select page: entry count per mode (0x00410E80); Trial count from bits 0x002A031C; VS Stage locked to 5 until campaign cleared; default index 0x00411198
+0x00239E10,SelectMissionRow,frontend,understood,mission-select page: set cursor column n (x = base + n*0x140)
+0x00239E58,InitMissionList,frontend,understood,"mission-select page init for list modes 0-3 (Free/Trial/Tutorial/VS), card list 0x003AF150, 5-part panel 0x003AF070"
+0x00239F58,InitMissionSettings,frontend,understood,"mission-select action menu init (sub-pages 0x45-0x47): 4-column menu tree 0x003AEFD0/0x003AF030; VS mode: 3 stage strings into 0x0042D1E0, game[0x2E] stage variant"
 0x0023A118,CreateMissionSelectPage,frontend,understood,mission-select page create (0x770) by sub-page 0x41..0x47
-0x0023A208,FUN_0023a208,frontend,understood,"lerp a sprite rect between two keyframes: the four s16 values linearly by t, the two floats (+8/+0xC) by the eased value 0x001051A8(t, -0.2, 3.2)"
-0x0023A360,FUN_0023a360,frontend,understood,sprite keyframe reset (0x003AF190)
-0x0023A380,FUN_0023a380,frontend,understood,keyframed sprite animation (7 time keys 0x003AF1D0) for a selected entry
-0x0023A550,FUN_0023a550,frontend,understood,"mission-select confirm: fade out, start the briefing (mission id via GetMissionId), SE: mission-select confirm: in two-player mode the first confirm sets state 2 (SE 2); otherwise fade out and set the game state for the mission (players 1, mode 2, mission id GetMissionId(2, n+1), aircraft 2 colour 0); SE 2, close the card widget"
-0x0023A668,FUN_0023a668,frontend,understood,"mission-select page input: pad buttons (two-player mode merges pads 5/6), card selection, confirm via 0x0023A550: mission-select input: confirm (0x50) calls 0x0023A550; left/right (0xC) cycles the card index modulo the count with SE 4 (two-player mode merges pad 2 buttons)"
-0x0023A770,FUN_0023a770,frontend,understood,"mission-select card zoom-in when cursor rests (after keyframes), SE 5 when locked"
-0x0023A8B8,FUN_0023a8b8,frontend,understood,"mission-select page tick: card keyframes (SE 0xE), panel animation, state handler via jump table 0x00409150 (6 states)"
-0x0023AB48,FUN_0023ab48,frontend,understood,mission-select: leave to sub-page with fade (state 8)
-0x0023ABA0,FUN_0023aba0,frontend,understood,"mission-select: leave to MenuGoTo(kind,arg) with fade (state 9)"
-0x0023AC00,FUN_0023ac00,frontend,understood,"mission-select action menu back (state 10 -> list), SE 3"
+0x0023A208,LerpFrame,frontend,understood,"lerp a sprite rect between two keyframes: the four s16 values linearly by t, the two floats (+8/+0xC) by the eased value 0x001051A8(t, -0.2, 3.2)"
+0x0023A360,ResetMissionFrame,frontend,understood,sprite keyframe reset (0x003AF190)
+0x0023A380,AnimateMissionFrame,frontend,understood,keyframed sprite animation (7 time keys 0x003AF1D0) for a selected entry
+0x0023A550,AcceptMission,frontend,understood,"mission-select confirm: fade out, start the briefing (mission id via GetMissionId), SE: mission-select confirm: in two-player mode the first confirm sets state 2 (SE 2); otherwise fade out and set the game state for the mission (players 1, mode 2, mission id GetMissionId(2, n+1), aircraft 2 colour 0); SE 2, close the card widget"
+0x0023A668,MissionListInput,frontend,understood,"mission-select page input: pad buttons (two-player mode merges pads 5/6), card selection, confirm via 0x0023A550: mission-select input: confirm (0x50) calls 0x0023A550; left/right (0xC) cycles the card index modulo the count with SE 4 (two-player mode merges pad 2 buttons)"
+0x0023A770,UpdateMissionPreview,frontend,understood,"mission-select card zoom-in when cursor rests (after keyframes), SE 5 when locked"
+0x0023A8B8,UpdateMissionList,frontend,understood,"mission-select page tick: card keyframes (SE 0xE), panel animation, state handler via jump table 0x00409150 (6 states)"
+0x0023AB48,LeaveMissionSelect,frontend,understood,mission-select: leave to sub-page with fade (state 8)
+0x0023ABA0,LeaveMissionSelectMenu,frontend,understood,"mission-select: leave to MenuGoTo(kind,arg) with fade (state 9)"
+0x0023AC00,MissionSettingsCancel,frontend,understood,"mission-select action menu back (state 10 -> list), SE 3"
 0x0023AC70,MissionSelectAction,frontend,understood,"action menu: start free mission (game[0x29]=2), trial (0x29=3), VS (0x25=2), aircraft select sub-pages, records; GetMissionId(kind, n+1) per mode"
 0x0023AF78,MissionSelectUpdate,frontend,understood,mission-select action states 6-10 (pad 2 also read in VS mode)
 0x0023B108,DrawMissionRecords,frontend,understood,"record panel: mode name + number, difficulty, rank (---/C/B/A/S), top-3 times and points from records 0x002A045C[difficulty*0x168 + mission*0x14] (free) or 0x002A0CCC[n*0x14] (trial)"
-0x0023B930,FUN_0023b930,frontend,understood,draw mission card thumbnail (texture page by mode/index) with flip animation (sin)
-0x0023BBA0,FUN_0023bba0,frontend,understood,draw zoomed card sprite with keyframed rect
-0x0023BD78,FUN_0023bd78,frontend,understood,"mission-select list draw: zoom card, fade, panel, card, records, message, fade"
-0x0023BE88,FUN_0023be88,frontend,understood,mission-select action panel text: PLAYER 1/2 aircraft name + special weapon (0x0011B890/0x0011B8D8/0x0011B840); VS stage number game[0x2E]
-0x0023C230,FUN_0023c230,frontend,understood,draw expanding highlight bar with pulse
-0x0023C4C0,FUN_0023c4c0,frontend,understood,mission-select action menu draw
-0x0023C600,FUN_0023c600,frontend,understood,"scene 4 subs 65-71 (pages 24-30, sub-pages 0x41-0x47): CreateMissionSelectPage, queue DATA 0x110 (2 sub-blocks), BGM 4 -> sub 0x48"
-0x0023C6A8,FUN_0023c6a8,frontend,understood,scene 4 sub 0x48: wait load -> 0x49
-0x0023C708,FUN_0023c708,frontend,understood,"scene 4 sub 0x49: mission-select frame (list states <6, action menu states 6-10)"
-0x0023C7B0,FUN_0023c7b0,startup,understood,required free memory-card space for a new save: 75 (KB / clusters)
-0x0023C7B8,FUN_0023c7b8,frontend,understood,save data checksum: byte sum of 0x4B00 bytes from +0x10
-0x0023C7F0,FUN_0023c7f0,frontend,understood,save data valid: checksum == header +0xC
+0x0023B930,DrawMissionThumbnail,frontend,understood,draw mission card thumbnail (texture page by mode/index) with flip animation (sin)
+0x0023BBA0,DrawMissionFrame,frontend,understood,draw zoomed card sprite with keyframed rect
+0x0023BD78,DrawMissionList,frontend,understood,"mission-select list draw: zoom card, fade, panel, card, records, message, fade"
+0x0023BE88,DrawMissionSettingsTexts,frontend,understood,mission-select action panel text: PLAYER 1/2 aircraft name + special weapon (0x0011B890/0x0011B8D8/0x0011B840); VS stage number game[0x2E]
+0x0023C230,DrawTitleBar,frontend,understood,draw expanding highlight bar with pulse
+0x0023C4C0,DrawMissionSettings,frontend,understood,mission-select action menu draw
+0x0023C600,EnterMissionSelect,frontend,understood,"scene 4 subs 65-71 (pages 24-30, sub-pages 0x41-0x47): CreateMissionSelectPage, queue DATA 0x110 (2 sub-blocks), BGM 4 -> sub 0x48"
+0x0023C6A8,LoadMissionSelect,frontend,understood,scene 4 sub 0x48: wait load -> 0x49
+0x0023C708,MissionSelectRun,frontend,understood,"scene 4 sub 0x49: mission-select frame (list states <6, action menu states 6-10)"
+0x0023C7B0,GetSaveSizeKb,startup,understood,required free memory-card space for a new save: 75 (KB / clusters)
+0x0023C7B8,ComputeSaveChecksum,frontend,understood,save data checksum: byte sum of 0x4B00 bytes from +0x10
+0x0023C7F0,CheckSaveChecksum,frontend,understood,save data valid: checksum == header +0xC
 0x0023C820,InitSaveFileImage,frontend,understood,"save data header init: magic 'AC04' (0x34304341), size 0x4B10, 4 x 0x12C0 sub-blocks default-initialised by 0x001053C8"
-0x0023C880,FUN_0023c880,frontend,understood,save page: store memory-card result code unless a sticky one is set
-0x0023C8B8,FUN_0023c8b8,frontend,understood,save page (save mode): message id by state and libmc result (0x0025F298/0x0025F420 card status)
-0x0023CA18,FUN_0023ca18,frontend,understood,save page (load mode): message id by state and card result
-0x0023CB20,FUN_0023cb20,frontend,understood,save page help/status message update (typewriter at double speed)
-0x0023CC28,FUN_0023cc28,frontend,understood,"save page: select slot 0-3, move cursor"
-0x0023CC60,FUN_0023cc60,frontend,understood,"save page: slot summaries from the 4 save blocks (mission no, difficulty, play time, cleared flag) for slots present in mask +0x258"
+0x0023C880,SetSavePageStatus,frontend,understood,save page: store memory-card result code unless a sticky one is set
+0x0023C8B8,GetSaveHelpMessage,frontend,understood,save page (save mode): message id by state and libmc result (0x0025F298/0x0025F420 card status)
+0x0023CA18,GetLoadHelpMessage,frontend,understood,save page (load mode): message id by state and card result
+0x0023CB20,UpdateSavePageHelp,frontend,understood,save page help/status message update (typewriter at double speed)
+0x0023CC28,SelectSaveSlot,frontend,understood,"save page: select slot 0-3, move cursor"
+0x0023CC60,UpdateSaveSlotSummaries,frontend,understood,"save page: slot summaries from the 4 save blocks (mission no, difficulty, play time, cleared flag) for slots present in mask +0x258"
 0x0023CD00,CreateSavePage,frontend,understood,"save/load page (0x6150): mode by sub-page 0x4A-0x57 (0 MC save, 1 MC load, 2 HDD save, 3 HDD load), slot summaries, return targets"
-0x0023CEF0,FUN_0023cef0,frontend,understood,save page: leave with fade (to +0x6130/+0x6132 target or close)
-0x0023CF80,FUN_0023cf80,frontend,understood,"save page: store campaign block 0x002A0318..0x002A15D7 (0x12C0) into slot; first time also records results (0x00247210), saves options, AdvanceCampaignMission (mission 12 -> story movie); recompute checksum"
-0x0023D0E0,FUN_0023d0e0,frontend,understood,"save page: load slot block into 0x002A0318, ApplyOptionSettings, validate aircraft selection, ApplyCampaignSelection (or campaign start if mission 0)"
+0x0023CEF0,LeaveSavePage,frontend,understood,save page: leave with fade (to +0x6130/+0x6132 target or close)
+0x0023CF80,PrepareSaveImage,frontend,understood,"save page: store campaign block 0x002A0318..0x002A15D7 (0x12C0) into slot; first time also records results (0x00247210), saves options, AdvanceCampaignMission (mission 12 -> story movie); recompute checksum"
+0x0023D0E0,ApplyLoadedSave,frontend,understood,"save page: load slot block into 0x002A0318, ApplyOptionSettings, validate aircraft selection, ApplyCampaignSelection (or campaign start if mission 0)"
 0x0023D198,SavePageUpdate,frontend,understood,"save/load state machine (states 0-0x18): card check, read save file (checksum), slot select, confirm, write, create/format, error messages; memory-card calls 0x0025F420/0x0025FAF0/0x0025FC20/0x0025F438/0x0025F900/0x0025FD50/0x0025F6B8/0x0025F528, HDD calls 0x0025xxxx when mode >= 2"
-0x0023E0E8,FUN_0023e0e8,frontend,understood,"save page slot list text: FILE n, MISSION nn / title (+<CLEAR>), TIME hhhh:mm'ss"", CREDITS ~ nn,nnn,nnn, LEVEL difficulty; empty slot placeholders"
-0x0023E6A8,FUN_0023e6a8,frontend,understood,save page slot frames + selection highlight
-0x0023E940,FUN_0023e940,frontend,understood,save page draw
-0x0023E9F0,FUN_0023e9f0,frontend,understood,"scene 4 subs 74-87 (sub-pages 0x4A-0x57): CreateSavePage, queue DATA 0xB3 (3 sub-blocks: icon.sys, icon1.ico, textures), fade out BGM -> sub 0x58"
-0x0023EAA0,FUN_0023eaa0,frontend,understood,"save page: build the save image, register icon.sys (0x3C4), icon1.ico (0xCB98) and the main file (0x4B10), mask 0x23, go to sub-page 0x59"
-0x0023EB68,FUN_0023eb68,frontend,understood,scene 4 sub 0x59: save page frame
-0x0023EBA8,FUN_0023eba8,frontend,understood,"briefing terrain map init: camera, heightmap pointers (+0x70 colour table, +0x100D0 heights)"
+0x0023E0E8,DrawSaveSlotTexts,frontend,understood,"save page slot list text: FILE n, MISSION nn / title (+<CLEAR>), TIME hhhh:mm'ss"", CREDITS ~ nn,nnn,nnn, LEVEL difficulty; empty slot placeholders"
+0x0023E6A8,DrawSaveSlotFrames,frontend,understood,save page slot frames + selection highlight
+0x0023E940,DrawSavePage,frontend,understood,save page draw
+0x0023E9F0,EnterSavePage,frontend,understood,"scene 4 subs 74-87 (sub-pages 0x4A-0x57): CreateSavePage, queue DATA 0xB3 (3 sub-blocks: icon.sys, icon1.ico, textures), fade out BGM -> sub 0x58"
+0x0023EAA0,LoadSavePage,frontend,understood,"save page: build the save image, register icon.sys (0x3C4), icon1.ico (0xCB98) and the main file (0x4B10), mask 0x23, go to sub-page 0x59"
+0x0023EB68,RunSavePage,frontend,understood,scene 4 sub 0x59: save page frame
+0x0023EBA8,InitTerrainMap,frontend,understood,"briefing terrain map init: camera, heightmap pointers (+0x70 colour table, +0x100D0 heights)"
 0x0023ECD8,FUN_0023ecd8,frontend,dead,"map projection helper (coordinates + 262144) for the menu map; no reference of any kind (code gap, created 2026-10-11)"
-0x0023EE20,FUN_0023ee20,frontend,understood,"briefing terrain map: 128x128 grid of height samples (bilinear, MMI), VU0 projection, coloured point sprites by height (palette 256)"
-0x0023F260,FUN_0023f260,frontend,understood,briefing terrain map draw packet
-0x0023F320,FUN_0023f320,frontend,understood,briefing terrain map camera update
-0x0023F350,FUN_0023f350,frontend,understood,options page help text (0x003AF440) depending on option bits 0x002A15CC
-0x0023F4D0,FUN_0023f4d0,frontend,understood,"options: toggle columns from option bits 0x002A15CC (bit0 SCREEN RATIO, bit1 CAPTIONS, bit2 HUD UNIT, bit3 INTERLUDE)"
-0x0023F538,FUN_0023f538,frontend,understood,"options sub-mode init: 0 main list (6 items, 0x003AF2D8), 1 screen position (dx/dy 0x002A15CE/CF, 16:9 frame variant), 2 brightness level 0x002A15CD"
-0x0023F740,FUN_0023f740,frontend,understood,"options page create (0x730): return target sub 4 (from page 17 via sub 0x29) or 0x18, BGM"
-0x0023F7D8,FUN_0023f7d8,frontend,understood,"options back: close column restoring value, or leave"
-0x0023F870,FUN_0023f870,frontend,understood,"options select: 0 screen position, 1 brightness, 2-5 open toggle column, 6-0xD choose value"
-0x0023FB48,FUN_0023fb48,frontend,understood,options main list update; writes bits 0x002A15CC live; SCREEN RATIO also sets ctx flags 0x10000 (16:9 layout)
-0x0023FD10,FUN_0023fd10,frontend,understood,"options sub-mode cancel: restore saved position/brightness, re-apply"
-0x0023FDB8,FUN_0023fdb8,frontend,understood,"options sub-mode accept: keep values, re-apply"
-0x0023FE60,FUN_0023fe60,frontend,understood,"screen position adjust: d-pad dx/dy clamp +-12, ApplyDisplayOffset live, Select (0x4000) resets to defaults 0x001056A8"
-0x00240088,FUN_00240088,frontend,understood,"brightness adjust: level 0..6, apply 0x00105988 live, Select resets 0x001056B8"
-0x002402E0,FUN_002402e0,frontend,understood,options page update dispatch by sub-mode
-0x00240368,FUN_00240368,frontend,understood,draw screen position frame (4:3 or 16:9 rectangle)
-0x00240540,FUN_00240540,frontend,understood,"brightness page text: BRIGHTNESS LEVEL nn, BRIGHTNESS SCALE, CHECKER, COLOR BAR, level marks"
-0x002408E0,FUN_002408e0,frontend,understood,emit 17-step grey scale bar
-0x002409D0,FUN_002409d0,frontend,understood,emit checker pattern (white/grey/black)
-0x00240A88,FUN_00240a88,frontend,understood,emit RGB colour bars (16 steps x 3)
-0x00240BB8,FUN_00240bb8,frontend,understood,draw brightness test patterns with alpha
-0x00240D28,FUN_00240d28,frontend,understood,options page draw
-0x00240E78,FUN_00240e78,frontend,understood,"scene 4 subs 41/42 (page 17 options): create options page, queue DATA 0xB4 -> sub 0x2B"
-0x00240F18,FUN_00240f18,frontend,understood,scene 4 sub 0x2B: wait load -> 0x2C
-0x00240F68,FUN_00240f68,frontend,understood,scene 4 sub 0x2C: options frame
-0x00240FA0,FUN_00240fa0,frontend,understood,"comb/shell sort of u64 keys descending (gap * 0.77, gaps 9/10 -> 11)"
-0x00241068,FUN_00241068,frontend,understood,"records: build per-aircraft usage list (owned colours from ownership bits, flights from stats 0x002A0350), sort, usage % = flights*10000/total"
-0x002412B8,FUN_002412b8,frontend,understood,"records: select page n of the usage list (5 rows), gauge targets"
-0x002413D0,FUN_002413d0,frontend,understood,records: page up/down input (SE 4)
-0x00241480,FUN_00241480,frontend,understood,records: ease usage gauges
-0x002414E0,FUN_002414e0,frontend,understood,"records page create: first WorkHeapAlloc((frame_count & 0xF)+1)*0x10 (heap offset depends on the frame count), then 0x540 object, 8-part panel 0x003AF460, list from 0x002A0320/0x002A0350"
-0x002415D0,FUN_002415d0,frontend,understood,"records page update: Triangle leaves (fade 0.25 s), page input"
-0x00241708,FUN_00241708,frontend,understood,"records text: TOTAL FLIGHT TIME, TARGETS DESTROYED AIR/GROUND, per-aircraft rows AIRCRAFT/FLIGHTS/USAGE %"
-0x00241E70,FUN_00241e70,frontend,understood,records: aircraft thumbnails and usage gauges
-0x00242198,FUN_00242198,frontend,understood,records page draw
-0x002422B8,FUN_002422b8,frontend,understood,"scene 4 subs 55/56 (page 21 records): create, queue DATA 0xB7, BGM 4 -> sub 0x38"
-0x00242360,FUN_00242360,frontend,understood,scene 4 sub 0x38: wait load -> 0x39
-0x002423A0,FUN_002423a0,frontend,understood,scene 4 sub 0x39: records frame
-0x002423D8,FUN_002423d8,frontend,understood,controller page help text per row (0x003AF540)
-0x00242468,FUN_00242468,frontend,understood,"controller page: cursor to row/column; load the 4 toggles of the selected player from 0x002A15D0 (u16 per player: bit0 CONTROL TYPE easy, bit1 REVERSE pitch, bit3 VIBRATION, bit2 PILOT VIEW)"
-0x00242528,FUN_00242528,frontend,understood,controller page: write toggles back into the player word; turning vibration on pulses the pad (StartPadVibration)
-0x002425F0,FUN_002425f0,frontend,understood,"controller page input (both pads): Triangle cancel, X/O accept (0x002A15D0, ApplyVibrationOptions), up/down row, left/right value (SE 4)"
-0x00242978,FUN_00242978,frontend,understood,controller page text animation timers
-0x002429C8,FUN_002429c8,frontend,understood,"controller page create (0x360): return target, BGM, 6-part panel 0x003AF4E0, current settings 0x002A15D0"
-0x00242AE8,FUN_00242ae8,frontend,understood,"controller page update states 0..4, exit MenuGoTo"
-0x00242BE8,FUN_00242be8,frontend,understood,"controller page text: PLAYER/CONTROL TYPE/REVERSE/VIBRATION/PILOT VIEW values, fixed button layout list (MISSILE, VULCAN, CHANGE TARGET, MAP, THROTTLE, YAW, CHANGE WEAPON, PAUSE, LEVEL AIRCRAFT, CHANGE VIEW, REAR VIEW; roll/pitch labels follow the reverse setting)"
-0x00243330,FUN_00243330,frontend,understood,controller page: draw pad image sprite
-0x002434A0,FUN_002434a0,frontend,understood,controller page: draw button label leader lines
-0x00243618,FUN_00243618,frontend,understood,controller page draw
-0x002436D8,FUN_002436d8,frontend,understood,"scene 4 subs 45/46 (page 18 controller settings): create, queue DATA 0xB5 (2 sub-blocks) -> 0x2F"
-0x00243778,FUN_00243778,frontend,understood,scene 4 sub 0x2F: wait load -> 0x30
-0x002437C8,FUN_002437c8,frontend,understood,scene 4 sub 0x30: controller page frame
-0x00243800,FUN_00243800,frontend,understood,sound options help text per row (0x003AF670)
-0x00243890,FUN_00243890,frontend,understood,"sound options page create (0x330): return target, BGM, 3-part panel 0x003AF640, copy of options 0x002A15C4 (byte 0 bit0 output mode, bytes 4-7 levels 0..15)"
-0x002439D8,FUN_002439d8,frontend,understood,"sound options update: Triangle cancel (re-apply saved), X/O accept (write 0x002A15C4, ApplySoundOptions), Select resets level to 15, up/down row, left/right value (live preview)"
-0x00243D18,FUN_00243d18,frontend,understood,"sound options: cursor position, write working copy, ApplySoundOptions (live)"
-0x00243DB8,FUN_00243db8,frontend,understood,"sound options text: row labels (0x003AF680), LEVEL nn x4, MONAURAL/STEREO"
-0x00244018,FUN_00244018,frontend,understood,sound options level marks and selection highlight
-0x00244248,FUN_00244248,frontend,understood,sound options draw
-0x00244320,FUN_00244320,frontend,understood,"scene 4 subs 58/59 (page 22 sound options): create, queue DATA 0xB6 -> 0x3C"
-0x002443C0,FUN_002443c0,frontend,understood,scene 4 sub 0x3C: wait load -> 0x3D
-0x00244410,FUN_00244410,frontend,understood,scene 4 sub 0x3D: sound options frame
-0x00244448,FUN_00244448,frontend,understood,BGM player help text
-0x002444B8,FUN_002444b8,frontend,understood,BGM player: cursor to track (18 x 2 grid)
-0x00244508,FUN_00244508,frontend,understood,BGM player create (0x330)
-0x002445B0,FUN_002445b0,frontend,understood,"BGM player: stop after the track length (frames), fade out"
-0x002445F8,FUN_002445f8,frontend,understood,"BGM player input: Circle plays track (table 0x003AF6A0: {title, length, bgm id}, 36 tracks), Select stops, Triangle leaves, d-pad moves"
-0x002447D0,FUN_002447d0,frontend,understood,BGM player update states
-0x00244930,FUN_00244930,frontend,understood,"BGM player text: BGM NUMBER #nn, BGM TITLE, 36 track marks"
-0x00244D08,FUN_00244d08,frontend,understood,BGM player draw
-0x00244DA8,FUN_00244da8,frontend,understood,"scene 4 sub 49 (page 19 BGM player): create, queue DATA 0xB8, fade BGM -> 0x32"
-0x00244E50,FUN_00244e50,frontend,understood,scene 4 sub 0x32: wait load -> 0x33
-0x00244EA0,FUN_00244ea0,frontend,understood,scene 4 sub 0x33: BGM player frame
-0x00244ED8,FUN_00244ed8,frontend,understood,interlude viewer help text
-0x00244F48,FUN_00244f48,frontend,understood,interlude viewer: thumbnail zoom when cursor rests
-0x00245038,FUN_00245038,frontend,understood,interlude viewer: cursor to entry n (12 entries)
-0x00245070,FUN_00245070,frontend,understood,"interlude viewer input: left/right select, X/O plays (fade BGM, fade out)"
-0x00245170,FUN_00245170,frontend,understood,"interlude viewer create (0x330), last selection 0x00411498"
-0x00245218,FUN_00245218,frontend,understood,"interlude viewer update; play -> ctx->ret_sub = entry, EnterMenu(0x21) (movie page)"
-0x00245390,FUN_00245390,frontend,understood,"interlude viewer text: INTERLUDE NUMBER #nn, TIME mm'ss (0x003AF880), entry marks"
-0x00245728,FUN_00245728,frontend,understood,interlude viewer thumbnail sprite with flip (16:9 aware)
-0x00245980,FUN_00245980,frontend,understood,interlude viewer draw
-0x00245A58,FUN_00245a58,frontend,understood,"scene 4 subs 52 (page 20 interlude viewer): create, queue DATA 0xB9 (2 sub-blocks), BGM 4 -> 0x35"
-0x00245B00,FUN_00245b00,frontend,understood,scene 4 sub 0x35: wait load -> 0x36
-0x00245B50,FUN_00245b50,frontend,understood,scene 4 sub 0x36: interlude viewer frame
+0x0023EE20,WriteTerrainPoints,frontend,understood,"briefing terrain map: 128x128 grid of height samples (bilinear, MMI), VU0 projection, coloured point sprites by height (palette 256)"
+0x0023F260,DrawTerrainMap,frontend,understood,briefing terrain map draw packet
+0x0023F320,UpdateTerrainMapCamera,frontend,understood,briefing terrain map camera update
+0x0023F350,UpdateOptionsHelp,frontend,understood,options page help text (0x003AF440) depending on option bits 0x002A15CC
+0x0023F4D0,SyncOptionToggles,frontend,understood,"options: toggle columns from option bits 0x002A15CC (bit0 SCREEN RATIO, bit1 CAPTIONS, bit2 HUD UNIT, bit3 INTERLUDE)"
+0x0023F538,SetOptionsView,frontend,understood,"options sub-mode init: 0 main list (6 items, 0x003AF2D8), 1 screen position (dx/dy 0x002A15CE/CF, 16:9 frame variant), 2 brightness level 0x002A15CD"
+0x0023F740,CreateOptionsPage,frontend,understood,"options page create (0x730): return target sub 4 (from page 17 via sub 0x29) or 0x18, BGM"
+0x0023F7D8,OptionsBack,frontend,understood,"options back: close column restoring value, or leave"
+0x0023F870,OptionsSelect,frontend,understood,"options select: 0 screen position, 1 brightness, 2-5 open toggle column, 6-0xD choose value"
+0x0023FB48,OptionsListUpdate,frontend,understood,options main list update; writes bits 0x002A15CC live; SCREEN RATIO also sets ctx flags 0x10000 (16:9 layout)
+0x0023FD10,OptionsAdjustCancel,frontend,understood,"options sub-mode cancel: restore saved position/brightness, re-apply"
+0x0023FDB8,OptionsAdjustAccept,frontend,understood,"options sub-mode accept: keep values, re-apply"
+0x0023FE60,ScreenPositionUpdate,frontend,understood,"screen position adjust: d-pad dx/dy clamp +-12, ApplyDisplayOffset live, Select (0x4000) resets to defaults 0x001056A8"
+0x00240088,BrightnessUpdate,frontend,understood,"brightness adjust: level 0..6, apply 0x00105988 live, Select resets 0x001056B8"
+0x002402E0,OptionsUpdate,frontend,understood,options page update dispatch by sub-mode
+0x00240368,DrawScreenFrame,frontend,understood,draw screen position frame (4:3 or 16:9 rectangle)
+0x00240540,DrawBrightnessTexts,frontend,understood,"brightness page text: BRIGHTNESS LEVEL nn, BRIGHTNESS SCALE, CHECKER, COLOR BAR, level marks"
+0x002408E0,BuildGreyRamp,frontend,understood,emit 17-step grey scale bar
+0x002409D0,BuildLevelSquares,frontend,understood,emit checker pattern (white/grey/black)
+0x00240A88,BuildColorRamps,frontend,understood,emit RGB colour bars (16 steps x 3)
+0x00240BB8,DrawBrightnessPatterns,frontend,understood,draw brightness test patterns with alpha
+0x00240D28,DrawOptionsPage,frontend,understood,options page draw
+0x00240E78,EnterOptionsPage,frontend,understood,"scene 4 subs 41/42 (page 17 options): create options page, queue DATA 0xB4 -> sub 0x2B"
+0x00240F18,LoadOptionsPage,frontend,understood,scene 4 sub 0x2B: wait load -> 0x2C
+0x00240F68,RunOptionsPage,frontend,understood,scene 4 sub 0x2C: options frame
+0x00240FA0,CombSortDescending,frontend,understood,"comb/shell sort of u64 keys descending (gap * 0.77, gaps 9/10 -> 11)"
+0x00241068,BuildUsageList,frontend,understood,"records: build per-aircraft usage list (owned colours from ownership bits, flights from stats 0x002A0350), sort, usage % = flights*10000/total"
+0x002412B8,SelectRecordsPage,frontend,understood,"records: select page n of the usage list (5 rows), gauge targets"
+0x002413D0,RecordsPageInput,frontend,understood,records: page up/down input (SE 4)
+0x00241480,AnimateRecordBars,frontend,understood,records: ease usage gauges
+0x002414E0,CreateRecordsPage,frontend,understood,"records page create: first WorkHeapAlloc((frame_count & 0xF)+1)*0x10 (heap offset depends on the frame count), then 0x540 object, 8-part panel 0x003AF460, list from 0x002A0320/0x002A0350"
+0x002415D0,RecordsUpdate,frontend,understood,"records page update: Triangle leaves (fade 0.25 s), page input"
+0x00241708,DrawRecordsTexts,frontend,understood,"records text: TOTAL FLIGHT TIME, TARGETS DESTROYED AIR/GROUND, per-aircraft rows AIRCRAFT/FLIGHTS/USAGE %"
+0x00241E70,DrawRecordIcons,frontend,understood,records: aircraft thumbnails and usage gauges
+0x00242198,DrawRecordsPage,frontend,understood,records page draw
+0x002422B8,EnterRecordsPage,frontend,understood,"scene 4 subs 55/56 (page 21 records): create, queue DATA 0xB7, BGM 4 -> sub 0x38"
+0x00242360,LoadRecordsPage,frontend,understood,scene 4 sub 0x38: wait load -> 0x39
+0x002423A0,RunRecordsPage,frontend,understood,scene 4 sub 0x39: records frame
+0x002423D8,UpdateControllerHelp,frontend,understood,controller page help text per row (0x003AF540)
+0x00242468,SetControllerCursor,frontend,understood,"controller page: cursor to row/column; load the 4 toggles of the selected player from 0x002A15D0 (u16 per player: bit0 CONTROL TYPE easy, bit1 REVERSE pitch, bit3 VIBRATION, bit2 PILOT VIEW)"
+0x00242528,StoreControllerSettings,frontend,understood,controller page: write toggles back into the player word; turning vibration on pulses the pad (StartPadVibration)
+0x002425F0,ControllerInput,frontend,understood,"controller page input (both pads): Triangle cancel, X/O accept (0x002A15D0, ApplyVibrationOptions), up/down row, left/right value (SE 4)"
+0x00242978,AnimateControllerRows,frontend,understood,controller page text animation timers
+0x002429C8,CreateControllerPage,frontend,understood,"controller page create (0x360): return target, BGM, 6-part panel 0x003AF4E0, current settings 0x002A15D0"
+0x00242AE8,ControllerUpdate,frontend,understood,"controller page update states 0..4, exit MenuGoTo"
+0x00242BE8,DrawControllerTexts,frontend,understood,"controller page text: PLAYER/CONTROL TYPE/REVERSE/VIBRATION/PILOT VIEW values, fixed button layout list (MISSILE, VULCAN, CHANGE TARGET, MAP, THROTTLE, YAW, CHANGE WEAPON, PAUSE, LEVEL AIRCRAFT, CHANGE VIEW, REAR VIEW; roll/pitch labels follow the reverse setting)"
+0x00243330,DrawControllerImage,frontend,understood,controller page: draw pad image sprite
+0x002434A0,DrawControllerGrid,frontend,understood,controller page: draw button label leader lines
+0x00243618,DrawControllerPage,frontend,understood,controller page draw
+0x002436D8,EnterControllerPage,frontend,understood,"scene 4 subs 45/46 (page 18 controller settings): create, queue DATA 0xB5 (2 sub-blocks) -> 0x2F"
+0x00243778,LoadControllerPage,frontend,understood,scene 4 sub 0x2F: wait load -> 0x30
+0x002437C8,RunControllerPage,frontend,understood,scene 4 sub 0x30: controller page frame
+0x00243800,UpdateSoundHelp,frontend,understood,sound options help text per row (0x003AF670)
+0x00243890,CreateSoundPage,frontend,understood,"sound options page create (0x330): return target, BGM, 3-part panel 0x003AF640, copy of options 0x002A15C4 (byte 0 bit0 output mode, bytes 4-7 levels 0..15)"
+0x002439D8,SoundUpdate,frontend,understood,"sound options update: Triangle cancel (re-apply saved), X/O accept (write 0x002A15C4, ApplySoundOptions), Select resets level to 15, up/down row, left/right value (live preview)"
+0x00243D18,ApplySoundPageValues,frontend,understood,"sound options: cursor position, write working copy, ApplySoundOptions (live)"
+0x00243DB8,DrawSoundTexts,frontend,understood,"sound options text: row labels (0x003AF680), LEVEL nn x4, MONAURAL/STEREO"
+0x00244018,DrawSoundMarks,frontend,understood,sound options level marks and selection highlight
+0x00244248,DrawSoundPage,frontend,understood,sound options draw
+0x00244320,EnterSoundPage,frontend,understood,"scene 4 subs 58/59 (page 22 sound options): create, queue DATA 0xB6 -> 0x3C"
+0x002443C0,LoadSoundPage,frontend,understood,scene 4 sub 0x3C: wait load -> 0x3D
+0x00244410,RunSoundPage,frontend,understood,scene 4 sub 0x3D: sound options frame
+0x00244448,UpdateBgmPlayerHelp,frontend,understood,BGM player help text
+0x002444B8,SetBgmPlayerCursor,frontend,understood,BGM player: cursor to track (18 x 2 grid)
+0x00244508,CreateBgmPlayer,frontend,understood,BGM player create (0x330)
+0x002445B0,UpdateBgmPlayerTimer,frontend,understood,"BGM player: stop after the track length (frames), fade out"
+0x002445F8,BgmPlayerInput,frontend,understood,"BGM player input: Circle plays track (table 0x003AF6A0: {title, length, bgm id}, 36 tracks), Select stops, Triangle leaves, d-pad moves"
+0x002447D0,BgmPlayerUpdate,frontend,understood,BGM player update states
+0x00244930,DrawBgmPlayerTexts,frontend,understood,"BGM player text: BGM NUMBER #nn, BGM TITLE, 36 track marks"
+0x00244D08,DrawBgmPlayer,frontend,understood,BGM player draw
+0x00244DA8,EnterBgmPlayer,frontend,understood,"scene 4 sub 49 (page 19 BGM player): create, queue DATA 0xB8, fade BGM -> 0x32"
+0x00244E50,LoadBgmPlayer,frontend,understood,scene 4 sub 0x32: wait load -> 0x33
+0x00244EA0,RunBgmPlayer,frontend,understood,scene 4 sub 0x33: BGM player frame
+0x00244ED8,UpdateInterludeHelp,frontend,understood,interlude viewer help text
+0x00244F48,UpdateInterludePreview,frontend,understood,interlude viewer: thumbnail zoom when cursor rests
+0x00245038,SetInterludeCursor,frontend,understood,interlude viewer: cursor to entry n (12 entries)
+0x00245070,HandleInterludeInput,frontend,understood,"interlude viewer input: left/right select, X/O plays (fade BGM, fade out)"
+0x00245170,CreateInterludePage,frontend,understood,"interlude viewer create (0x330), last selection 0x00411498"
+0x00245218,UpdateInterludePage,frontend,understood,"interlude viewer update; play -> ctx->ret_sub = entry, EnterMenu(0x21) (movie page)"
+0x00245390,DrawInterludeTexts,frontend,understood,"interlude viewer text: INTERLUDE NUMBER #nn, TIME mm'ss (0x003AF880), entry marks"
+0x00245728,DrawInterludePreview,frontend,understood,interlude viewer thumbnail sprite with flip (16:9 aware)
+0x00245980,DrawInterludePage,frontend,understood,interlude viewer draw
+0x00245A58,EnterInterludePage,frontend,understood,"scene 4 subs 52 (page 20 interlude viewer): create, queue DATA 0xB9 (2 sub-blocks), BGM 4 -> 0x35"
+0x00245B00,LoadInterludePage,frontend,understood,scene 4 sub 0x35: wait load -> 0x36
+0x00245B50,RunInterludePage,frontend,understood,scene 4 sub 0x36: interlude viewer frame
 0x00245B88,FUN_00245b88,frontend,understood,HDD install page help text by state (unsupported path)
 0x00245D40,FUN_00245d40,frontend,understood,HDD install page create: 0x6A0 object + 0xA00000-byte (10 MiB) transfer buffer (unsupported path: needs HDD)
 0x00245DF8,FUN_00245df8,frontend,understood,HDD install: wait for HDD job 0x00259F08 (unsupported path)
@@ -2584,22 +2584,22 @@ address,name,subsystem,status,note
 0x0024DA30,FUN_0024da30,unreached,dead,
 0x0024DD68,FUN_0024dd68,hdd,understood,message window widget: build GIF packets for the text glyphs and frame
 0x0024EC30,FUN_0024ec30,hdd,understood,"message window widget: draw (frame, then text via 0x0024DD68)"
-0x0024ED80,FUN_0024ed80,text,understood,"init a message window widget: position 0x2500/0x3000, size, colours 0xB1/0x99, state cleared (debriefing window, startup window)"
-0x0024EEB0,FUN_0024eeb0,text,understood,"load a message window: font + text block (0x00251D28), message count, GIM textures from a container"
+0x0024ED80,InitMessageWindow,text,understood,"init a message window widget: position 0x2500/0x3000, size, colours 0xB1/0x99, state cleared (debriefing window, startup window)"
+0x0024EEB0,LoadMessageWindow,text,understood,"load a message window: font + text block (0x00251D28), message count, GIM textures from a container"
 0x0024F0D8,FUN_0024f0d8,results,understood,debriefing window: start the voice clip (0x002572A8)
 0x0024F158,FUN_0024f158,results,understood,debriefing window: advance text by line
-0x0024F1B8,FUN_0024f1b8,text,understood,message window: start message n (type-out reset) unless locked: message window: start message n unless the window is locked (bit 4): resets the type-out state and sets the active flag
-0x0024F210,FUN_0024f210,text,understood,message window: reset the current message and timers
-0x0024F230,FUN_0024f230,text,understood,"message window per frame: type-out timer, end-of-message flag, page advance"
+0x0024F1B8,ShowMessagePage,text,understood,message window: start message n (type-out reset) unless locked: message window: start message n unless the window is locked (bit 4): resets the type-out state and sets the active flag
+0x0024F210,HideMessageWindow,text,understood,message window: reset the current message and timers
+0x0024F230,UpdateMessageWindow,text,understood,"message window per frame: type-out timer, end-of-message flag, page advance"
 0x0024F360,FUN_0024f360,unreached,dead,
-0x0024F698,FUN_0024f698,text,understood,"draw a message window: frame, typed-out text, page arrows, menu SE (4 KB): message window draw: per text line (from the message record: string offsets, 0x00251FD0 lengths) emits the type-out: the newest 4 glyphs fade in (alpha (n+1)/4 x 128 via ftoi) as textured sprites with glyph widths 0x00251DD8 at the window position (+0x34/+0x36) and line pitch 0x14; then the window frame, the cursor/prompt and the speaker name when the window is not locked (+0xC bit 4); uses the font texture of +0x40 (0x00105D18, 0x001065E8); draw-only, state in the window record"
-0x00250690,FUN_00250690,radio,understood,draw the radio message window (frame + text via 0x00252540)
+0x0024F698,DrawMessagePage,text,understood,"draw a message window: frame, typed-out text, page arrows, menu SE (4 KB): message window draw: per text line (from the message record: string offsets, 0x00251FD0 lengths) emits the type-out: the newest 4 glyphs fade in (alpha (n+1)/4 x 128 via ftoi) as textured sprites with glyph widths 0x00251DD8 at the window position (+0x34/+0x36) and line pitch 0x14; then the window frame, the cursor/prompt and the speaker name when the window is not locked (+0xC bit 4); uses the font texture of +0x40 (0x00105D18, 0x001065E8); draw-only, state in the window record"
+0x00250690,DrawMessageWindow,radio,understood,draw the radio message window (frame + text via 0x00252540)
 0x002507D8,thunk_FUN_00257270,results,understood,
 0x002507E0,FUN_002507e0,radio,understood,radio database header (0x004BA300)
 0x002507F0,FUN_002507f0,radio,understood,"message record by id (0xA80 entries at 0x004BA570), -1 when out of range"
 0x00250820,FUN_00250820,radio,dead,"store radio message record n (0x004BA570, n % 0xA80); no reference of any kind (code gap, created 2026-10-11)"
 0x00250850,FUN_00250850,radio,understood,string by id 0xA5F.. (0x004BCF70 table)
-0x00250870,FUN_00250870,text,understood,"string n of the loaded text table (0x004BCF70, count D_00411858)"
+0x00250870,GetMessage,text,understood,"string n of the loaded text table (0x004BCF70, count D_00411858)"
 0x002508A0,FUN_002508a0,radio,understood,portrait/speaker table (0x004BD788)
 0x002508B0,FUN_002508b0,radio,understood,pending message list (16 x 0x10 at 0x004BA470)
 0x002508C0,FUN_002508c0,radio,understood,set radio event flags D_00411860
@@ -2608,8 +2608,8 @@ address,name,subsystem,status,note
 0x00250900,FUN_00250900,radio,understood,radio draw state (D_00411868)
 0x00250910,FUN_00250910,radio,understood,radio database pointer
 0x00250920,FUN_00250920,radio,understood,current message slot (0x004BD770)
-0x00250930,FUN_00250930,text,understood,"load a text table: count, offsets -> string pointers"
-0x002509F0,FUN_002509f0,text,understood,string count
+0x00250930,IndexMessages,text,understood,"load a text table: count, offsets -> string pointers"
+0x002509F0,GetMessageCount,text,understood,string count
 0x002509F8,FUN_002509f8,radio,understood,"radio database init from mission data blocks (message records, speakers, fonts); calls 0x00259280: radio database init from the mission blocks: clears the 512-entry index 0x004BD76C, fonts (0x00251E48), message string pointers per record (strings end at codes >= 0xFFFE), the 77-entry name table 0x004BCF70, speaker data (0x00259280), the tutorial extra block pointer 0x00411868 (set only when the first word of the bank's first section is 0x13, used by the control hints 0x00258690), 0x002583C0"
 0x00250C30,FUN_00250c30,radio,understood,"radio system init for a mission: clear tables, load database, reset queues and slots (prints a debug line): radio bank setup from a mission radio block: clears the 0xA80-entry message pointer table 0x004BA570, stores the block header (section offsets and counts in 0x004BA300..0x004BA32A), fills the pointer table section by section (8-, 12- and 8-byte records, then the speaker range and the 40-entry common range, -1 outside the valid windows), loads the extra block (0x00254E48) when all three sections exist, then inits the database (0x002509F8), the played lists (0x002556A0, 0x00253038), clears the 20-entry candidate ring 0x004BA330 and the 16-entry ring 0x004BA470 (0x00254FB0), resets 0x0041186C/0x00411870; debug printf "" %x %x %x %x"" of the 4 header words"
 0x00251050,FUN_00251050,radio,understood,"radio per frame: run the 6 request queues through their matchers, then the scheduler 0x00256BC8: radio per frame: picks which of the 6 matchers run (mission kind 6 in sub 0xC plays message 0x17 after 540 frames; special rules in sub 0xC and with mission flags 8 / 0x40000000), runs them (0x00254B98, 0x00254930, 0x00253158, 0x00253F88, 0x00254340, 0x00254D40) into the 20-entry candidate ring 0x004BA330, then the scheduler 0x00255398/0x002554B8 and 0x00253038"
@@ -2618,23 +2618,23 @@ address,name,subsystem,status,note
 0x00251340,FUN_00251340,text,understood,build a GIF sprite packet for one glyph/portrait (14 parameters)
 0x002515B8,FUN_002515b8,radio,understood,"draw the subtitle text of the current message with portrait and speaker name: subtitle window text layout: lays out the message string (0x00252160 into a line table, max 0x3A80/0x3C80) for up to 3 lines centred around y 0x7500; colours from the radio parameters by speaker side (param 3: 0/2 +0x40/+0x60, 1/3 +0x60, 4 +0x40/+0x80, 5 +0x80, 6 +0xA0, other +0x40); per glyph (0x00251D90 width/height, width x 4/5) emits sprites through 0x00251340 with a drop shadow (+0x10/+0x20 offset) for the default colour; codes 8..11 select inline icon glyphs (0x3C81..0x3C84), code 12 a coloured highlight; line break every 16 glyphs"
 0x00251C40,FUN_00251c40,radio,understood,draw the subtitles unless the CAPTIONS option (0x002A15CC bit 1) hides them for messages with priority >= 2
-0x00251D28,FUN_00251d28,text,understood,load a font + text block: font header (0x00251E48) and the string table
-0x00251D70,FUN_00251d70,text,understood,glyph width of character n
+0x00251D28,LoadFontBlock,text,understood,load a font + text block: font header (0x00251E48) and the string table
+0x00251D70,GetGlyphWidth,text,understood,glyph width of character n
 0x00251D90,FUN_00251d90,text,understood,"glyph cell (x, y) of character n"
 0x00251DB8,FUN_00251db8,text,understood,font cell size
-0x00251DD8,FUN_00251dd8,text,understood,glyph width of character n of string s
-0x00251E48,FUN_00251e48,text,understood,"font header: ""go18"" (type 0), ""go28"" (type 1), other (2)"
-0x00251F08,FUN_00251f08,text,understood,string length (u16 chars until >= 0xFFFE)
+0x00251DD8,GetMessageCharWidth,text,understood,glyph width of character n of string s
+0x00251E48,SelectFont,text,understood,"font header: ""go18"" (type 0), ""go28"" (type 1), other (2)"
+0x00251F08,GetGlyphStringLength,text,understood,string length (u16 chars until >= 0xFFFE)
 0x00251F48,FUN_00251f48,text,understood,copy a u16 string
 0x00251F90,FUN_00251f90,text,understood,append a u16 string
-0x00251FD0,FUN_00251fd0,text,understood,length of string n
+0x00251FD0,GetMessageLength,text,understood,length of string n
 0x00251FF8,FUN_00251ff8,text,dead,"pixel width of string n; unreachable: called only by unreachable 0x0024DA30,0x0024F360,0x00252070 (raw call graph + data/code-address scan, 2026-10-11)"
 0x00252070,FUN_00252070,unreached,dead,
-0x00252090,FUN_00252090,text,understood,character code at position n of string s (negative = from the end)
+0x00252090,GetMessageChar,text,understood,character code at position n of string s (negative = from the end)
 0x00252100,FUN_00252100,text,understood,draw one glyph sprite through 0x002582B0
 0x00252160,FUN_00252160,text,understood,"lay out a u16 string into glyph sprites with line wrap (box 0x3A80 x 0x3C80): text layout into a GIF packet: walks a string of 16-bit codes until >= 0xFFFE: codes 8..11 are inline icons (0x00252100), 0xFFFD is a new line (y += line height 0x004BD7AA), other codes are glyphs uploaded from the font sheet (BITBLTBUF/TRXPOS/TRXREG/TRXDIR + IMAGE of glyph size 0x004BD7A8 x 0x004BD7AA at 0x004BD79C + code x 0x004BD7AC) into the text texture; wraps every 16 glyphs; records glyphs per line in the caller's line table, then appends the CLUT upload (0x004BD7A0) and a TEXFLUSH; returns the packet end"
-0x00252540,FUN_00252540,text,understood,"draw a string into the current packet buffer with colour and position: upload a message string into the text texture: same glyph upload as 0x00252160 for message n (0x00250870) into the current buffer (or, with n < 0, only the CLUT upload), then TEXFLUSH and sends the packet (0x00104198)"
-0x002528C0,FUN_002528c0,text,understood,tail call to 0x00252540 (masks the 4th argument)
+0x00252540,UploadMessageGlyphs,text,understood,"draw a string into the current packet buffer with colour and position: upload a message string into the text texture: same glyph upload as 0x00252160 for message n (0x00250870) into the current buffer (or, with n < 0, only the CLUT upload), then TEXFLUSH and sends the packet (0x00104198)"
+0x002528C0,UploadMessageGlyphs16,text,understood,tail call to 0x00252540 (masks the 4th argument)
 0x002528C8,QueueRadioChatter,radio,understood,queue an event chatter request (4-ring 0x004BD7C0): accepted with probability table 0x00409DA8[event] against rand(); speaker group from the unit radio id
 0x00252AF0,FUN_00252af0,radio,understood,queue a speaker-event request (4-ring 0x004BD820) for event kinds 2/4/8/12/20/30
 0x00252B88,FUN_00252b88,radio,understood,queue a 5-field request (4-ring 0x004BD850)
@@ -2734,7 +2734,7 @@ address,name,subsystem,status,note
 0x002596F8,FUN_002596f8,flight,understood,"static constructor (.ctors 0x0029F324): three rand() calls at boot (newlib default seed, before InitRandomTable reseeds) -> timers at 0x004BE0B0/B8: rand%180+900, rand%16+16, rand%120+180"
 0x002597B8,FUN_002597b8,core,understood,skeleton-readiness.md
 0x002597C8,FUN_002597c8,core,understood,skeleton-readiness.md
-0x002597E8,FUN_002597e8,hdd,understood,HDD context: set +0x4364 (current request id)
+0x002597E8,FUN_002597e8,hdd,partly,HDD context: set +0x4364 (current request id)
 0x00259810,FUN_00259810,hdd,dead,"HDD context: set byte +0x214; unreachable: no callers (HDD module: its init 0x00259910 has no caller) (raw call graph + data/code-address scan, 2026-10-11)"
 0x00259838,FUN_00259838,hdd,dead,"HDD context: get byte +0x214; unreachable: no callers (HDD module: its init 0x00259910 has no caller) (raw call graph + data/code-address scan, 2026-10-11)"
 0x00259858,FUN_00259858,hdd,dead,"HDD context: get byte +0x215 (HDD present / partition mounted); unreachable: no callers (HDD module: its init 0x00259910 has no caller) (raw call graph + data/code-address scan, 2026-10-11)"
@@ -2751,8 +2751,8 @@ address,name,subsystem,status,note
 0x00259C78,FUN_00259c78,hdd,understood,HDD context: remaining bytes (+0x437C - +0x4384)
 0x00259C88,FUN_00259c88,hdd,dead,"HDD context +0x4384; no callers (found by the .eh_frame FDE audit, created 2026-10-11)"
 0x00259C90,FUN_00259c90,hdd,understood,HDD context: get +0x4390 (last error)
-0x00259C98,FUN_00259c98,hdd,understood,"HDD context: get byte +0x4399 (HDD usable flag, read by startup)"
-0x00259CA0,FUN_00259ca0,hdd,understood,HDD context: get byte +0x4398 (HDD mode for saves)
+0x00259C98,GetHddState,hdd,understood,"HDD context: get byte +0x4399 (HDD usable flag, read by startup)"
+0x00259CA0,GetHddSaveMode,hdd,understood,HDD context: get byte +0x4398 (HDD mode for saves)
 0x00259CA8,FUN_00259ca8,hdd,dead,"step 1: request worker op 0xF (devctl 0x4807 / HDD status, see op table); unreachable: no callers (HDD module: its init 0x00259910 has no caller) (raw call graph + data/code-address scan, 2026-10-11)"
 0x00259D10,FUN_00259d10,hdd,understood,step 2: request worker op 0x11 (directory entry count)
 0x00259D78,FUN_00259d78,hdd,dead,"step 3: request worker op 7 (directory listing); clears +0x215 on error; unreachable: no callers (HDD module: its init 0x00259910 has no caller) (raw call graph + data/code-address scan, 2026-10-11)"
@@ -2768,15 +2768,15 @@ address,name,subsystem,status,note
 0x0025AB18,FUN_0025ab18,hdd,understood,install: mount (op 0x12) and follow-up ops
 0x0025ACD0,FUN_0025acd0,core,understood,skeleton-readiness.md
 0x0025ADF0,FUN_0025adf0,hdd,dead,"request op sequence step 0xC; unreachable: no callers (HDD module: its init 0x00259910 has no caller) (raw call graph + data/code-address scan, 2026-10-11)"
-0x0025AEE0,FUN_0025aee0,hdd,understood,"HDD save check: mount, getstat ""pfs%d:/Your Saves/BISLUS-20152AC04/BISLUS-20152AC04"" (op 0x16), umount"
+0x0025AEE0,FUN_0025aee0,hdd,partly,"HDD save check: mount, getstat ""pfs%d:/Your Saves/BISLUS-20152AC04/BISLUS-20152AC04"" (op 0x16), umount"
 0x0025B0B8,FUN_0025b0b8,unreached,dead,"skeleton-readiness.md; unreachable: called only by unreachable 0x00259938 (HDD module: its init 0x00259910 has no caller) (raw call graph + data/code-address scan, 2026-10-11)"
-0x0025B0D8,FUN_0025b0d8,hdd,understood,"HDD new save: mount, create ""/Your Saves"" tree (ops 0x25, 0x22), write each registered file (open 0x18, write 0x1C, close 0x19), umount"
-0x0025B6C8,FUN_0025b6c8,hdd,understood,"HDD delete save: remove each file (op 0x1D), rmdir (op 0x23), umount (prints ""unmount"")"
-0x0025B948,FUN_0025b948,hdd,understood,HDD overwrite file n
-0x0025BBD0,FUN_0025bbd0,hdd,understood,HDD load file n
+0x0025B0D8,FUN_0025b0d8,hdd,partly,"HDD new save: mount, create ""/Your Saves"" tree (ops 0x25, 0x22), write each registered file (open 0x18, write 0x1C, close 0x19), umount"
+0x0025B6C8,FUN_0025b6c8,hdd,partly,"HDD delete save: remove each file (op 0x1D), rmdir (op 0x23), umount (prints ""unmount"")"
+0x0025B948,FUN_0025b948,hdd,partly,HDD overwrite file n
+0x0025BBD0,FUN_0025bbd0,hdd,partly,HDD load file n
 0x0025BE48,FUN_0025be48,hdd,dead,"request worker op 2 (create partition file); unreachable: no callers (HDD module: its init 0x00259910 has no caller) (raw call graph + data/code-address scan, 2026-10-11)"
 0x0025BE90,FUN_0025be90,hdd,dead,"request worker op 0x25 (create the save directory tree); unreachable: no callers (HDD module: its init 0x00259910 has no caller) (raw call graph + data/code-address scan, 2026-10-11)"
-0x0025BED8,FUN_0025bed8,hdd,understood,request worker op 0x26 (Your Saves query)
+0x0025BED8,FUN_0025bed8,hdd,partly,request worker op 0x26 (Your Saves query)
 0x0025BF20,FUN_0025bf20,hdd,dead,"worker dispatch: op table 0x003F6A78 (39 entries); unreachable: called only by unreachable 0x0025BF70 (HDD module: its init 0x00259910 has no caller) (raw call graph + data/code-address scan, 2026-10-11)"
 0x0025BF70,FUN_0025bf70,unreached,dead,
 0x0025BFC0,FUN_0025bfc0,unreached,dead,"skeleton-readiness.md; unreachable: called only by unreachable 0x0025C090 (HDD module: its init 0x00259910 has no caller) (raw call graph + data/code-address scan, 2026-10-11)"
@@ -2836,48 +2836,48 @@ address,name,subsystem,status,note
 0x0025E248,FUN_0025e248,hdd,understood,"HDD worker: post a request (op, args) and SignalSema the worker thread; second call polls completion (0x0025E1F0)"
 0x0025E310,FUN_0025e310,save,understood,McInitSystem: sceMcInit
 0x0025E330,FUN_0025e330,save,understood,"init a card-port block (0x540): port, slot, error -11, type -1, directory name ""/"" + ""BASLUS-20152AC04"", clear 0x480-byte dir buffer"
-0x0025E3A8,FUN_0025e3a8,save,understood,"card info step machine: sceMcGetInfo, wait sceMcSync; the result must repeat 3 times in a row (type, free, format) before it is accepted; timeout 180 frames gives error -9999"
-0x0025E5E8,FUN_0025e5e8,save,understood,"sceMcGetDir step machine (max 18 entries into the port block buffer), entry count at +0x498; timeout 180 frames"
-0x0025E720,FUN_0025e720,save,understood,"read one file: sceMcOpen(mode 1), sceMcRead(size), check the byte count, sceMcClose; each step polled with sceMcSync, 180-frame timeouts"
-0x0025EA60,FUN_0025ea60,save,understood,sceMcFormat step machine (timeout 300 frames)
+0x0025E3A8,ProbeMcCardInfo,save,understood,"card info step machine: sceMcGetInfo, wait sceMcSync; the result must repeat 3 times in a row (type, free, format) before it is accepted; timeout 180 frames gives error -9999"
+0x0025E5E8,ReadMcDir,save,understood,"sceMcGetDir step machine (max 18 entries into the port block buffer), entry count at +0x498; timeout 180 frames"
+0x0025E720,ReadMcFile,save,understood,"read one file: sceMcOpen(mode 1), sceMcRead(size), check the byte count, sceMcClose; each step polled with sceMcSync, 180-frame timeouts"
+0x0025EA60,FormatMcCard,save,understood,sceMcFormat step machine (timeout 300 frames)
 0x0025EB58,FUN_0025eb58,save,dead,"sceMcUnformat step machine (timeout 1800 frames); unreachable: called only by unreachable 0x0025F820 (raw call graph + data/code-address scan, 2026-10-11)"
-0x0025EC58,FUN_0025ec58,save,understood,sceMcMkdir step machine (0x0026D7C0)
-0x0025ED78,FUN_0025ed78,save,understood,"write one file: sceMcOpen(mode 0x203 create+rdwr), sceMcWrite(size), check the byte count, sceMcFlush, sceMcClose"
-0x0025F050,FUN_0025f050,save,understood,sceMcDelete step machine
+0x0025EC58,MakeMcDir,save,understood,sceMcMkdir step machine (0x0026D7C0)
+0x0025ED78,WriteMcFile,save,understood,"write one file: sceMcOpen(mode 0x203 create+rdwr), sceMcWrite(size), check the byte count, sceMcFlush, sceMcClose"
+0x0025F050,DeleteMcFile,save,understood,sceMcDelete step machine
 0x0025F170,FUN_0025f170,save,dead,"sceMcChdir step machine; unreachable: no callers (raw call graph + data/code-address scan, 2026-10-11)"
 0x0025F298,FUN_0025f298,core,understood,skeleton-readiness.md
 0x0025F2A8,InitSaveSystem,core,understood,
 0x0025F320,FUN_0025f320,core,understood,skeleton-readiness.md
 0x0025F340,RegisterMcSaveFile,save,understood,"register save file n: name ""dir/name"" (or ""dir"" + ""dir"" for n = 5, the main file), buffer and size in the file table +0xAC8"
-0x0025F420,FUN_0025f420,save,understood,get the card-port status word (+0x4E4)
+0x0025F420,GetMcStatus,save,understood,get the card-port status word (+0x4E4)
 0x0025F438,CheckMcCard,save,understood,"card check: info step machine, then status: 7 = not a PS2 card (type 1/3), -11 no card, -2 unformatted, 1 ok"
-0x0025F528,FUN_0025f528,save,understood,"load check: GetDir for the save directory, then for the main file; returns found / not found"
-0x0025F6B8,FUN_0025f6b8,save,understood,"format the card (only when unformatted), then re-check"
+0x0025F528,CheckMcSaveDir,save,understood,"load check: GetDir for the save directory, then for the main file; returns found / not found"
+0x0025F6B8,FormatMcSaveCard,save,understood,"format the card (only when unformatted), then re-check"
 0x0025F820,FUN_0025f820,save,dead,"memory-card unformat operation (0x0025EB58 sceMcUnformat step machine, then 0x0025E3A8); no callers (found by the .eh_frame FDE audit, created 2026-10-11)"
 0x0025F900,CreateMcSave,save,understood,"create save: card must be a PS2 card, formatted; directory must not exist (else status 9); mkdir; then write every registered file in index order (mask +0xAC0: 0x23 = icon.sys, icon1.ico, main file)"
 0x0025FAF0,LoadMcSaveFile,save,understood,"load: check card, read the current file (index +0xAC4)"
 0x0025FC20,OverwriteMcSaveFile,save,understood,"overwrite: check card, write the current file"
 0x0025FD50,DeleteMcSave,save,understood,"delete save: delete each registered file, then the directory"
-0x0025FEF8,FUN_0025fef8,startup,understood,"request the sound bank load (flags 0xC00, buffer 0x004C35C0) unless already loaded (ctx flag 0x400000)"
-0x0025FF48,FUN_0025ff48,startup,understood,"sound bank load steps: DATA 0x165 header (0x00219B90), then BD banks (0x00219C80 10/1); sets ctx flag 0x400000"
+0x0025FEF8,RequestSoundBankLoad,startup,understood,"request the sound bank load (flags 0xC00, buffer 0x004C35C0) unless already loaded (ctx flag 0x400000)"
+0x0025FF48,UpdateSoundBankLoad,startup,understood,"sound bank load steps: DATA 0x165 header (0x00219B90), then BD banks (0x00219C80 10/1); sets ctx flag 0x400000"
 0x00260058,FUN_00260058,startup,dead,"clear startup warning flags (+0x1F0 bits 20-23) and +0x200; no reference of any kind (code gap, created 2026-10-11)"
-0x00260078,FUN_00260078,startup,understood,startup warning messages by flags 0x100000..0x800000
-0x00260288,FUN_00260288,startup,understood,"evaluate card state: type, error -11/-2, free space vs 75 (0x0023C7B0)"
+0x00260078,UpdateStartupWarnings,startup,understood,startup warning messages by flags 0x100000..0x800000
+0x00260288,EvaluateCardResult,startup,understood,"evaluate card state: type, error -11/-2, free space vs 75 (0x0023C7B0)"
 0x002603D8,FUN_002603d8,startup,understood,HDD branch of the card check: HDD usable -> message 7 (window page 8); otherwise finish (flag 4)
-0x00260488,FUN_00260488,startup,understood,"card/HDD result screen logic: messages 1-10 and 0x10, confirm/cancel, fades"
-0x00260900,FUN_00260900,startup,understood,draw the startup message window
+0x00260488,UpdateCardMessages,startup,understood,"card/HDD result screen logic: messages 1-10 and 0x10, confirm/cancel, fades"
+0x00260900,DrawCardMessages,startup,understood,draw the startup message window
 0x00260980,StartupSplashUpdate,startup,understood,"StartupSplashUpdate: splash images with fades; exits to the no-save intro (scene 2, mission 0x23; played when card slot 1 has no AC04 save directory) or the title menu"
-0x00260B90,FUN_00260b90,startup,understood,draw one splash sprite with fade
-0x00260E80,FUN_00260e80,startup,understood,"scene 6 sub 0: display setup, work state, message window, double buffer (scenes.md)"
-0x00260FC0,FUN_00260fc0,startup,understood,scene 6 sub 1: load DATA 333
-0x00260FE8,FUN_00260fe8,startup,understood,"scene 6 sub 2: split DATA 333 (splash textures, message window)"
-0x00261100,FUN_00261100,startup,understood,scene 6 sub 3: camera init
-0x00261128,FUN_00261128,startup,understood,scene 6 sub 4: startup warnings (messages 5/6/10/7) until a button
-0x002611A0,FUN_002611a0,startup,understood,scene 6 sub 5: reset probe state (120 frames)
-0x002611D8,FUN_002611d8,startup,understood,scene 6 sub 6: memory-card probe (slot 0) and HDD flags
-0x00261378,FUN_00261378,startup,understood,"scene 6 sub 7: evaluate card/HDD result, messages, confirm/cancel"
-0x00261398,FUN_00261398,startup,understood,"scene 6 sub 8: start splash fade, sound bank load request (0x0025FEF8)"
-0x002613D0,FUN_002613d0,startup,understood,scene 6 sub 9: splash update + draw
+0x00260B90,DrawSplashImage,startup,understood,draw one splash sprite with fade
+0x00260E80,InitStartupScene,startup,understood,"scene 6 sub 0: display setup, work state, message window, double buffer (scenes.md)"
+0x00260FC0,LoadStartupData,startup,understood,scene 6 sub 1: load DATA 333
+0x00260FE8,SetupStartupData,startup,understood,"scene 6 sub 2: split DATA 333 (splash textures, message window)"
+0x00261100,InitStartupCamera,startup,understood,scene 6 sub 3: camera init
+0x00261128,ShowStartupWarnings,startup,understood,scene 6 sub 4: startup warnings (messages 5/6/10/7) until a button
+0x002611A0,PrepareCardProbe,startup,understood,scene 6 sub 5: reset probe state (120 frames)
+0x002611D8,ProbeStartupCard,startup,understood,scene 6 sub 6: memory-card probe (slot 0) and HDD flags
+0x00261378,RunStartupCardMessages,startup,understood,"scene 6 sub 7: evaluate card/HDD result, messages, confirm/cancel"
+0x00261398,StartStartupSplash,startup,understood,"scene 6 sub 8: start splash fade, sound bank load request (0x0025FEF8)"
+0x002613D0,RunStartupSplash,startup,understood,scene 6 sub 9: splash update + draw
 0x002613F0,SceneStartup,startup,understood,"SceneStartup: sub-state table 0x003F8708 (10 entries), see scenes.md"
 0x00261428,FUN_00261428,hdd,understood,"scene 7 sub 0: stop audio, copy the message window resources embedded in the executable (0x003F8730, 0x2360 bytes; the disc may be unreadable), message window init, -> sub 1"
 0x00261530,FUN_00261530,hdd,understood,scene 7 sub 1: first frame display setup (640x224); then draw the window; pad 0x10 returns to the saved scene (scene 4 re-enters menu 1)

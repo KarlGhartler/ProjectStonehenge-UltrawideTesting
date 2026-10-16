@@ -198,6 +198,14 @@ bool VkContext::Init(SDL_Window* window, bool want_validation, std::string& erro
     dci.pQueueCreateInfos = &qci;
     dci.enabledExtensionCount = 1;
     dci.ppEnabledExtensionNames = device_exts;
+    // Dual-source blending: the GS blend equation needs the blend factor separate from the alpha
+    // written to the frame buffer (src/platform/render/gs/gs_vulkan.cpp).
+    VkPhysicalDeviceFeatures supported{};
+    vkGetPhysicalDeviceFeatures(physical_device, &supported);
+    VkPhysicalDeviceFeatures enabled{};
+    enabled.dualSrcBlend = supported.dualSrcBlend;
+    dual_src_blend = supported.dualSrcBlend == VK_TRUE;
+    dci.pEnabledFeatures = &enabled;
     r = vkCreateDevice(physical_device, &dci, nullptr, &device);
     if (r != VK_SUCCESS) {
         error = std::string("vkCreateDevice failed: ") + VkResultName(r);

@@ -1,0 +1,28 @@
+start,end,category,reason
+0x0033E558,0x0033E55C,timing,SOUND client batch: commands queued at the checkpoint (where in the frame the batch was last sent; S3 start)
+0x0033E56C,0x0033E570,timing,SOUND client batch write offset (same)
+0x00353C5C,0x00353C64,timing,VAG slot 0 fade mode and time: the all-slots-idle volume request (type 4; 0.05 s) runs some frames later in the port (IOP stop latency); PCSX2 shows the finished fade (time left at the float residue)
+0x00353CF0,0x00353CF8,timing,VAG slot 1 fade mode and time: the all-slots-idle volume request (type 4; 0.05 s) runs some frames later in the port (IOP stop latency); PCSX2 shows the finished fade (time left at the float residue)
+0x00353D84,0x00353D8C,timing,VAG slot 2 fade mode and time: the all-slots-idle volume request (type 4; 0.05 s) runs some frames later in the port (IOP stop latency); PCSX2 shows the finished fade (time left at the float residue)
+0x00353E18,0x00353E20,timing,VAG slot 3 fade mode and time: the all-slots-idle volume request (type 4; 0.05 s) runs some frames later in the port (IOP stop latency); PCSX2 shows the finished fade (time left at the float residue)
+0x00353EAC,0x00353EB4,timing,VAG slot 4 fade mode and time: the all-slots-idle volume request (type 4; 0.05 s) runs some frames later in the port (IOP stop latency); PCSX2 shows the finished fade (time left at the float residue)
+0x00353F40,0x00353F48,timing,VAG slot 5 fade mode and time: the all-slots-idle volume request (type 4; 0.05 s) runs some frames later in the port (IOP stop latency); PCSX2 shows the finished fade (time left at the float residue)
+0x00CCFFA8,0x00CCFFAC,timing,movie page data-load queue timer: seconds spent loading the subtitle font DATA 0x103+n (CD latency model)
+0x0029F420,0x0029F421,timing,g_MainContext dispenv DISPFB FBP byte: display buffer parity (frame count since boot)
+0x0029F450,0x0029F451,timing,g_MainContext drawenv FRAME FBP byte: draw buffer parity
+0x0029F4D0,0x0029F4D1,timing,g_MainContext second drawenv FRAME FBP byte: draw buffer parity
+0x002BBCC8,0x002BBCCC,sdk,movie audio feeder +0x10: SIF DMA id returned by sceSifSetDma (kernel-internal encoding; the game only tests it for 0 and passes it to sceSifDmaStat)
+0x003FCF5C,0x003FD900,sdk,libmpeg globals and IPU state (not reproduced: the port decodes with libmpeg2; src/sce/libmpeg.cpp)
+0x004CBB40,0x004CBB80,sdk,libmpeg IPU DMA tags (to-IPU chain into its work area)
+0x004CBD40,0x004CBD60,sdk,libmpeg IPU bitstream DMA tags (point into the SMV chunk buffer)
+0x004CC564,0x004CC568,sdk,libmpeg pointer into its work area
+0x00CD4A58,0x00CD4A5C,sdk,SMV reader +0x18 = sceMpeg frameCount: PCSX2 one lower (46 vs 47 pictures returned in the chunk); not read by the game (open-questions.md)
+0x00CD4A70,0x00CD4A78,sdk,SMV reader +0x30 = sceMpeg flags (PCSX2 0x19B; port 0): picture flags not modelled; not read by the game
+0x00CD4ACC,0x00CD4AD0,timing,SMV reader +0x8C CD read ticket: the queue's ticket counter depends on how many reads ran before (menu BGM streaming time differs from the owner's session)
+0x00FD8B00,0x01114300,sdk,libmpeg work area (0x13B800 bytes; IPU buffers and decoder state; not reproduced)
+0x01114300,0x0122C300,decode,movie image buffer (RGBA32 macroblocks): same picture; libmpeg2 IDCT vs IPU rounding (mean 0.5 level; max 10; alpha 0x80 identical); validation.md S3-3
+0x70000000,0x70002800,sdk,scratchpad used by libmpeg during movies: macroblock samples and DCT coefficient buffers of its IPU path (the port's libmpeg2 decodes in host memory); left behind after the movie until the game overwrites them
+0x70003000,0x70003900,sdk,scratchpad used by libmpeg (same)
+0x00CD4AB0,0x00CD4AB4,timing,SMV reader +0x70 audio half to fill next (end checkpoint only; equal mid-movie): the number of silence blocks written while draining depends on where the last sequence end falls relative to the SPU2 half switches
+0x003FD940,0x003FD944,sdk,libmpeg internal flag (read and written only inside libmpeg 0x00276E9C-0x00277100; no game reference): the port's libmpeg works at the call boundary and does not keep it
+0x004CC550,0x004CC55C,sdk,libmpeg internal state next to 0x004CC564 (count 0x61, pointer into the movie buffer, flag 2 in PCSX2 after the briefing movie; accessed only inside libmpeg 0x00276E9C-0x00277100)

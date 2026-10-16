@@ -4,22 +4,27 @@
 
 #include <vector>
 
+#include "platform/audio/spu_mixer.h"
+
 namespace ac04::platform {
 namespace {
 
 constexpr int kSampleRate = 48000;
 constexpr int kChannels = 2;
 
-// Pull callback: SDL asks for more data; the mixer does not exist yet, so it gets silence.
-void SDLCALL FillSilence(void* /*userdata*/, SDL_AudioStream* stream, int additional_amount,
-                         int /*total_amount*/) {
-    if (additional_amount <= 0) return;
-    static thread_local std::vector<unsigned char> zeros;
-    if (zeros.size() < static_cast<size_t>(additional_amount)) zeros.assign(additional_amount, 0);
-    SDL_PutAudioStreamData(stream, zeros.data(), additional_amount);
-}
-
 }  // namespace
+
+// Pull callback (audio device thread): SDL asks for more data; it comes from the mixer's ring,
+// filled per game step on the game thread (silence when there is no mixer or the ring is empty).
+void SDLCALL FillFromSource(void* userdata, SDL_AudioStream* stream, int additional_amount, int /*total_amount*/) {
+    if (additional_amount <= 0) return;
+    auto* self = static_cast<AudioOutput*>(userdata);
+    static thread_local std::vector<std::int16_t> buf;
+    const std::uint32_t frames = static_cast<std::uint32_t>(additional_amount) / (kChannels * 2);
+    buf.assign(static_cast<std::size_t>(frames) * kChannels, 0);
+    if (self->source_) self->source_->Drain(buf.data(), frames);
+    SDL_PutAudioStreamData(stream, buf.data(), static_cast<int>(frames * kChannels * 2));
+}
 
 AudioOutput::~AudioOutput() { Close(); }
 
@@ -28,7 +33,7 @@ bool AudioOutput::Open(std::string& error) {
     spec.format = SDL_AUDIO_S16;
     spec.channels = kChannels;
     spec.freq = kSampleRate;
-    stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, FillSilence, this);
+    stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, FillFromSource, this);
     if (!stream_) {
         error = std::string("cannot open the default audio device: ") + SDL_GetError();
         return false;

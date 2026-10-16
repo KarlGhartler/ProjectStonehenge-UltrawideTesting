@@ -48,29 +48,19 @@ s64 GuestMemory::RamOffset(u32 address) {
     return phys;
 }
 
-u8* GuestMemory::Translate(u32 address, u32 size) {
-    if (address < kRamSize && size <= kRamSize - address) return ram_.get() + address;  // fast path
-    if ((address & 0xFFFFC000u) == kScratchpadBase) {
-        const u32 off = address - kScratchpadBase;
-        return size <= kScratchpadSize - off ? spr_.get() + off : nullptr;
-    }
+u8* GuestMemory::TranslateSegment(u32 address, u32 size) {
     u32 phys = 0;
     if (ToPhysical(address, phys) && phys < kRamSize && size <= kRamSize - phys) return ram_.get() + phys;
     return nullptr;
 }
 
-u8* GuestMemory::TranslateOrDummy(u32 address, u32 size) {
-    if (u8* p = Translate(address, size)) return p;
+u8* GuestMemory::Dummy(u32 address, u32 size) {
     ReportInvalid(address, size, false);
     // Large enough for any single guest object dereferenced through ps2ptr (structs up to 64 KiB).
     static thread_local std::unique_ptr<u8[]> dummy(new u8[0x10000]());
     if (size > 0x10000) size = 0x10000;
     std::memset(dummy.get(), 0, size);
     return dummy.get();
-}
-
-const u8* GuestMemory::Translate(u32 address, u32 size) const {
-    return const_cast<GuestMemory*>(this)->Translate(address, size);
 }
 
 HardwareHandler* GuestMemory::FindHardware(u32 physical, u32 size) {
@@ -132,9 +122,8 @@ void GuestMemory::MapHardware(u32 base, u32 size, HardwareHandler* handler) {
     hardware_.push_back({base, size, handler});
 }
 
-GuestMemory& Mem() {
-    static GuestMemory memory;
-    return memory;
+namespace detail {
+GuestMemory g_memory;
 }
 
 }  // namespace ac04::guest

@@ -165,6 +165,24 @@ Superblock field values (§4 layout):
 
 Bytes 0x154–0x1FFF are not zero (rest of the original card's first block). Whether PCSX2 accepts a superblock file that holds only the 0x154-byte header plus zero padding is untested (H); until then the port writes a full 0x2000-byte file with the field values above and zeros elsewhere, and the round-trip test (open point 2) confirms it.
 
+## 10. As libmc sees it through PCSX2 2.8.2 (run 06, slice S1)
+
+Measured with the owner's cards (`../pcsx2/sessions-06.md`) and implemented read-only in `src/platform/memcard/folder_card.cpp` + `src/sce/libmc.cpp`:
+- **Card present** = the folder has `_pcsx2_superblock`. An **empty** superblock file is an unformatted card: `sceMcGetInfo` gives type 2, free 0, format 0, result -2. No card: type 0, result below -10 (the game clamps it to -11).
+- **Free space** (`sceMcGetInfo`, KB = clusters): 8001 minus the clusters of every file (`ceil(size / 1024)`) and of every directory's entries (`ceil(entries / 2)`, "." and ".." included; the root too). An empty formatted card gives 8000; the AC04 save (0x3C4 + 0xCB98 + 0x4B10 bytes) gives 7925, as on PCSX2.
+- **Times** in `sceMcGetDir` entries are the `_pcsx2_index` Unix times converted as **UTC** (no JST shift): `timeModified` 1791961353 reads as 2026-10-14 07:02:33.
+- `sceMcGetDir` of the directory name returns the directory's own entry (mode 0x8427, size = entry count); of the file path, the file entry (mode 0x8497, size in bytes, attribute words 0).
+- Request timing (as the game polls with `sceMcSync(1, …)` once per frame): GetInfo finishes one vblank after the request, GetDir is seen finished at the second poll (the first poll runs in the request frame). PCSX2 run 06's poll counters 0x004118A8 = 0 and 0x004118CC = 1 confirm it.
+- Not yet checked: writing against PCSX2 (round trip, slice S4), card port 2 (the port reports it empty), PCSX2's "filter by game" setting (assumed on).
+
+### 10.1 Write path in the port (slice S2b, 2026-10-14)
+
+Implemented in `src/platform/memcard/folder_card.cpp` (`MakeDir`, `WriteFile`, `Delete`, `Format`) and `src/sce/libmc.cpp` (`sceMcOpen/Close/Read/Write/Flush/Mkdir/Delete/Format`); test "folder card: writing a save as CreateMcSave does (S2b)".
+- `sceMcMkdir` creates the host folder and its `_pcsx2_index` with the `$ROOT` entry (created = modified = now). In the port's own `saves\` folder the first `MakeDir` also writes `_pcsx2_superblock` when it is missing (the folder is then a formatted card).
+- `sceMcOpen` with the create flag + `sceMcWrite` + `sceMcClose` write the file byte for byte at close. A new file gets the next `order` in `_pcsx2_index`; a replaced file keeps its order and gets new created and modified times (as in the owner's card, §9); `$ROOT`'s modified time becomes now. Times are Unix seconds, UTC.
+- `_pcsx2_index` is written as PCSX2 writes it: YAML flow style on one line, no trailing newline.
+- `sceMcDelete` removes a file and its index entry, or an empty directory (else −6).
+- Request timing: every file request (open, read, write, flush, close, mkdir, delete, format) finishes **1 vblank** after it is issued (HYPOTHESIS, to calibrate from the S2b PCSX2 batch: poll counters at 0x004118D0 ff. in `s2b_load_done`). The effects happen when the request finishes, not when it is issued.
 ## Open points
 
 1. Verify against tag `v2.8.2`: file names and YAML format are confirmed by the example card (§9); whether a zero-padded superblock is accepted is still open.

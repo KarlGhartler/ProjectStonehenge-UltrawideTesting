@@ -7,9 +7,11 @@ settings.local.json
 .vs/
 *.user
 *.suo
-x64/
-Debug/
-Release/
+# Anchored to the repo root: on Windows git matches ignore patterns case-insensitively, and an
+# unanchored Debug/ also ignored the source folder src/platform/debug/.
+/x64/
+/Debug/
+/Release/
 out/build/
 
 # Build output

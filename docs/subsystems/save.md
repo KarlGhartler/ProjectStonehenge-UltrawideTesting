@@ -45,6 +45,7 @@ A new save needs **75** free units (`func_0023C7B0`, checked by scene 6, `result
 
 Consequences for the port (ADR-005):
 - The save folder is `BASLUS-20152AC04` with three files. Byte-identical saves come from translating the save page (image build, checksum) and the write order above; `src/sce/` implements `sceMc*` on top of the PCSX2 folder layout.
+- Translated in slice S2b: the memory-card layer in `src/game/save_mc.cpp` (`ReadMcFile` … `DeleteMcSave`, globals 0x004118D0–0x004118F4), the save page in `src/game/save_page.cpp`; the libmc write path on the folder card is described in `../formats/folder-memcard.md` §10.1. Main-menu LOAD (sub-page 0x4F) works in the port; save mode is reached only from sub-pages 0x4A–0x4E (later slices), so the byte-identical save check is part of S4.
 - The 3-read debounce and the frame-based timeouts are game logic: with an always-ready backend they cost exactly 3 frames per check, as on real hardware with a stable card.
 
 ## HDD layer (unreachable in this build)

@@ -23,6 +23,7 @@ Reference documentation for the Ace Combat 04 (SLUS_201.52) PC port. Project rul
 | `game/file-loading.md` | file table, CD request queues, DATA/BD archive access |
 | `game/iop-interface.md` | EE side of the SOUND, VAG and USBJOY RPCs |
 | `game/random.md` | the five random sources and their users |
+| `game/math.md` | vector and Euler-angle helpers, the MMI colour lerp |
 
 ## `subsystems/`: game systems
 
@@ -39,8 +40,10 @@ Reference documentation for the Ace Combat 04 (SLUS_201.52) PC port. Project rul
 | `subsystems/sound.md` | EE-side sound, radio chatter, subtitles, text engine, rumble |
 | `subsystems/iop-sound.md` | SOUND.IRX and VAG.IRX internals and command tables |
 | `subsystems/rendering.md` | packet transport, flight frame structure, cameras, models, lighting, terrain, shadows, cutscene characters |
+| `subsystems/sky.md` | sky dome, stars, sun/moon and lens flare, clouds, weather, full-screen post effects (S5b) |
 | `subsystems/effects.md` | effect pools and special objects |
 | `subsystems/vu-programs.md` | VU1/VU0 microcode blocks and their upload |
+| `subsystems/vs-mode.md` | two-player VS mode: entry, split screen, rules, what the port needs |
 
 ## `formats/`: data formats
 
@@ -54,6 +57,7 @@ Reference documentation for the Ace Combat 04 (SLUS_201.52) PC port. Project rul
 | `formats/SMV.md` | movie container |
 | `formats/SAVE.md` | memory-card save image |
 | `formats/folder-memcard.md` | PCSX2 folder memory card layout used by the port |
+| `formats/p2m2.md` | PCSX2 input recording file (not a game format; used for replay validation) |
 
 ## `platform/`: executable and SDK
 
@@ -69,9 +73,9 @@ Reference documentation for the Ace Combat 04 (SLUS_201.52) PC port. Project rul
 
 | File | Contents |
 |---|---|
-| `decisions/ADR-001-memory-model.md` … `decisions/ADR-006-presentation-resolution.md` | architecture decisions (status in each file) |
+| `decisions/ADR-001-memory-model.md` … `decisions/ADR-008-vs-lan-play.md` | architecture decisions (status in each file); ADR-007 translation strategy (Accepted), ADR-008 VS LAN play (Accepted, option A) |
 | `decisions/port-baseline.md` | approved modern-port features and candidates |
-| `decisions/dependencies.md` | proposed third-party dependencies (none approved yet) |
+| `decisions/dependencies.md` | third-party dependencies: approved, added, options |
 | `decisions/naming-convention.md` | naming rules and the analysis behind them |
 
 ## `port/`: port planning
@@ -82,16 +86,21 @@ Reference documentation for the Ace Combat 04 (SLUS_201.52) PC port. Project rul
 | `port/skeleton-readiness.md` | functions and SDK calls the port skeleton needs |
 | `port/dead-code.md` | dead, debug and unreachable code |
 | `port/risks.md` | port risks per subsystem |
+| `port/pcsx2-pending.md` | functions whose translation waits for a PCSX2 answer (owner rule 2026-10-16) |
 | `port/command-line.md` | command-line parameters and `settings.json` keys of the executable |
 | `port/internal-resolution.md` | feasibility of a higher internal rendering resolution (study) |
 | `port/debug-overlay.md` | debug overlay proposal (features, dependency, rules) |
-| `port/validation.md` | integrity checks and blind re-review of the decompilation |
+| `port/validation.md` | record of validation runs: integrity checks, blind re-review, skeleton RAM checks |
+| `port/ramdiff-expected.csv`, `port/ramdiff-expected-s1.csv` | classified RAM differences against PCSX2 (all checkpoints / slice S1 checkpoints) |
+| `port/validation-strategy.md` | how slices are validated: RAM checkpoints, screenshots, input recordings, determinism checker, test vectors |
+| `port/slices.md` | translation slices: order, contents, features, validation points (ADR-007) |
+| `port/s5-plan.md` | slice 5 (scene 2, missions) plan: blocks P/A/B/C, prerequisites, PCSX2 batches (proposal 2026-10-16) |
 
 ## `pcsx2/`: reference runs
 
 | File | Contents |
 |---|---|
 | `pcsx2/procedures.md` | pending PCSX2 checks with exact steps |
-| `pcsx2/sessions-01.md` … `pcsx2/sessions-05.md` | results of past PCSX2 sessions (historical record) |
+| `pcsx2/sessions-01.md` … `pcsx2/sessions-10.md` | results of past PCSX2 sessions (historical record) |
 
 Research tools: `../tools/research/README.md`.

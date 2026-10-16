@@ -41,16 +41,24 @@ Strings referenced from 0x00231000–0x00246E00 include `AIRCRAFT >`, `WEAPON >`
 
 | Sub | Handler | Role |
 |---|---|---|
-| 2–4 | 0x0022DE00 | `CreateMainMenu` (0x6A0-byte object), queue DATA 0xB0 (2 sub-blocks: title textures) → 5 |
-| 5 | 0x0022DEA0 | wait for the load, register textures (0x00251D28), message box → 6 |
-| 6 | 0x0022DF00 | `UpdateFade`, `MainMenuUpdate` 0x0022D698, `DrawMainMenu` |
+| 2–4 | `EnterTitle` 0x0022DE00 | heap back to the page mark (`PopWorkHeapMark`/`PushWorkHeapMark`), `CreateMainMenu` (0x6A0-byte object), queue DATA 0xB0 (2 items: font block, logo packet with the texture uploads) → 5 |
+| 5 | `LoadTitle` 0x0022DEA0 | wait until the load queue is idle, `LoadFontBlock` 0x00251D28 (item 0), help box → 6 |
+| 6 | `RunTitle` 0x0022DF00 | `UpdateFade`, `MainMenuUpdate` 0x0022D698, `DrawMainMenu` |
 
-`MainMenuUpdate` state (+0x67C):
-- 0: wait for the fade-in.
-- 2: title idle. Start/X opens the menu. After **19 s** idle the game runs `StartTitleDemo`.
-- 3/4/5: transitions.
-- 6: menu tree active. Circle selects (`MainMenuSelect`), Triangle goes back (0x0022D078).
-- 7/8: fade out, then `MenuGoTo(+0x680, +0x684)`.
+Main menu object (0x6A0 bytes, work heap, `g_TitleMenu` 0x00411810; translated in slice S2a, `src/game/menu.cpp`): +0 bucket list (2 buckets), +0x10 data load queue, +0x220 DATA 0xB0 items {font block, logo packet called by `DrawTitleLogo`}, +0x240 fade object, +0x250 menu tree, +0x658 help message box, +0x67C state, +0x680/+0x684 `MenuGoTo` target, +0x688 idle time, +0x68C title time, +0x690 logo alpha (all f32 seconds / 0..1).
+
+`MainMenuUpdate` state (+0x67C), pad bits from the pad-1 edge word (ctx+0x2B4), tree movement from the repeat word (ctx+0x2B8):
+- 0: wait until the menu fade value exceeds `*0x00410150`, then 2.
+- 1: back from the menu: when the object fade is out (flag 8), idle time 0, title BGM (track 3), state 2.
+- 2: title idle. Pad 0x50 (Start or X) once the title time exceeds **2 s**: `MainMenuSetup(obj, 3)` (menu tree, menu BGM track 4), object fade in, SE (0, 2), state 4. After **19 s** idle: state 3, menu fade out.
+- 3: when the fade is out: `StartTitleDemo`.
+- 4: when the object fade-in is done (flag 4): 6. 5: when the menu fade value exceeds `*0x00410154`: 6 (mode 4 entry, reopening the save/load column).
+- 6: menu tree active (`UpdateMenuTree`, tab requests 0x33). Pad 0x20 (Triangle) `MainMenuBack`, else pad 0x50 `MainMenuSelect`.
+- 7: object fade out → `MenuGoTo(1, sub)`; 8: screen fade out → `MenuGoTo(0, page)`.
+
+Quirk: `MainMenuBack` from a sub-column sets the active column to **0** (not the parent) and closes the sub-column; the menu tree has only one level of sub-columns, so it is the same thing in practice.
+
+Help line (`UpdateMainMenuHelp`): message id per item from the s16 table 0x0039D6B8 (items with id 0 show 0x26 once a campaign is under way: mission > 1 or the cleared bit), typed out by the message box at `*0x00410130` characters per frame.
 
 `MainMenuSelect` item ids (selected id = `func_0022AFB8`):
 
@@ -65,7 +73,7 @@ Strings referenced from 0x00231000–0x00246E00 include `AIRCRAFT >`, `WEAPON >`
 | 0x15, 0x16, 0x1D–0x23 | sub-pages 0x56, 0x4F, 0x2D, 0x29, 0x3A, 0x37, 0x34, 0x31, 0x3E (options, records, extras, save/load) |
 | 0x17–0x1C | sub-page 0x41 with `game[0x28]` = 0–5 |
 
-Menu item visibility depends on the progress flags 0x002A0318 (bit 0 campaign cleared once; bits 1, 2 cleared on higher difficulties; bit 3 cleared twice). `MainMenuSetup` builds the item masks from them.
+Menu item visibility depends on the progress flags 0x002A0318 (bit 0 campaign cleared once; bits 1, 2 cleared on higher difficulties; bit 3 cleared twice). `MainMenuSetup` builds the hidden-item masks from them (column 0: 0x32 before the first clear, else 2, with 4 added while `g_MissionNo` is 0; columns 1/2/4: 0x30, 0x20 with bit 1, 0 with bit 2; column 5: 0x40 unless ctx flag 0x80000, plus 0x30 before the first clear) and passes them to `InitMenuTree` with the column definitions `kMainMenuColumns` 0x0039D5B0 (6 × 0x18), connectors 0x0039D640 and parent ids 0x0039D6A8. The cursor positions are written back into `kMainMenuColumns` when the menu is left (`StoreMenuTreeCursors`), so the menu reopens on the same item.
 
 **Attract demo** (`StartTitleDemo` 0x0022CC68) cycles `D_00410E98` through 6 entries. Four of them start a flight:
 
@@ -96,15 +104,15 @@ The whole campaign block 0x002A0318–0x002A15D7 is the save payload (`../format
 
 ## Shared menu widgets (0x00226D00–0x0022C600)
 
-- **List widget** (stride 0x18): open/close commands (0x002271B8), type-in effect while opening (SE 9), cursor with wrap (pad bits 1/2, SE 1), per-item highlight scale.
-- **Menu tree** (0x0022ABC0 init, 0x0022AF60 update, 0x0022AFF0 draw): up to 8 columns of list widgets, hidden-item masks, connector frames.
+- **List widget** (stride 0x18; `SetListWidgetState` 0x002271B8, `UpdateListWidget` 0x00227298, `DrawListWidgets`): open/close commands, type-in effect while opening (SE 9 every third frame), cursor with wrap (pad bits 1/2, SE 1), per-item highlight scale. Layouts: `src/game/menu_widgets.cpp`.
+- **Menu tree** (`InitMenuTree` 0x0022ABC0, `UpdateMenuTree` 0x0022AF60, `DrawMenuTree` 0x0022AFF0, `GetMenuTreeSelection` 0x0022AFB8): up to 8 columns of list widgets, hidden-item masks, connector lines with glow caps (`BuildConnector` 0x00229158).
 - **Crosshair cursor** with a 10-position trail (0x002298F8–0x00229BC0).
 - **Panel animation** (0x0022B1A8 family).
-- **Message box**: text ids from the text system (0x00251xxx–0x00252xxx), up to 3 lines (0x0022B8B8), typewriter effect (0x0022B9A0), coloured characters with codes 8–11 (0x0022BA68).
+- **Message box** (`SetMessageBoxText` 0x0022B8B8, `UpdateMessageBox` 0x0022B9A0, `DrawMessageBox` 0x0022BA68): text ids from the text system (0x00251xxx–0x00252xxx), up to 3 lines, typewriter effect, coloured characters with codes 8–11, frame lines brighter for started lines.
 - **Fade object**: `StartFade` / `UpdateFade`, cosine ease; flag 4 = fade-in done, flag 8 = fade-out done.
 - **Data load queue**: `QueueMenuDataLoad` 0x0022C618 / `UpdateMenuDataLoad` 0x0022C6B0, a 32-entry ring of `{DATA entry, sub-block count, pointer table}` (reset `func_0022C5E8`); loads into the work heap and splits the entry into its sub-blocks.
 - **Menu BGM**: `PlayMenuBgm` crossfades between stream slots 0 and 1; `UpdateMenuBgm` starts the track when the slot is idle; `FadeOutMenuBgm` fades the slots out.
-- Full-screen overlay passes: 0x00227F30 / 0x002281E0 scanline/noise copy of the frame (using `frame_count`); letterbox bars (0x0022A558).
+- Full-screen overlay passes: `DrawMenuFrameFilter` 0x00227C10 (tinted copy of the frame onto itself + `BuildScanlineBands` 0x00227800 + `BuildZoomBlur` 0x00227A10, blended with destination alpha), `DrawMenuAlphaFilter` 0x00227F30 (writes only the alpha channel that the bands and blur then use); letterbox bars (0x0022A558). The menu fade object `g_MenuFade` 0x0039D4E0 (pointer `g_pMenuFade` 0x00410E88) also holds 7 overlay levels drawn by `DrawMenuTabs` 0x00228750 (H: the six tabs along the bottom).
 
 ## Pages
 
@@ -144,6 +152,19 @@ Each page follows the same pattern: an **enter** sub-state allocates the page ob
   - a point list with camera presets (0x0039EB88);
   - enemy counts AIR/GROUND/SEA (0x003A54B8).
 
+Translation (S4, `src/game/briefing_page.cpp`; names in `../symbols.csv`):
+- Page object 0x5D0 bytes at `g_Briefing` 0x00411820; field list at the top of the source file.
+- Movie part (subs 19–21): `RunBriefingMovie` runs one movie iteration per frame; time = pictures shown × k; subtitle entries `{u32 message, f32 time}` type out 2 characters per frame. Start ends the movie; Circle completes or advances a line.
+- Map view (sub 22, `BriefingMapUpdate`, states 0–5 by the jump table 0x004089F0): camera presets per mission (`g_BriefingCameraPresets` → 0x0039EB88, 0x18-byte entries), left/right to browse, Start or Circle past the last preset leaves to `MenuGoTo(1, 0x17)` (the campaign menu) or `(1, 0x45)`.
+- Terrain (`WriteTerrainPoints` 0x0023EE20): DATA 0x111+mission item 1 holds 256×256 height bytes at +0x70 and 256 colours at +0x100D0. Per row, two height rows are interpolated with MMI into the scratchpad (0x570); per column, again; the point is projected with the map camera on VU0 and drawn as an 80×80 (1/16 px) sprite coloured by height. REGLIST tags of at most 0x7FFE sprites.
+- Units (`DrawBriefingUnits`): list `g_BriefingUnitLists` → 0x003A5150, `{count, units}` per mission, 20-byte entries `{f32 x, f32 y, f32 y2, f32 z, u8 type, u8 faction}`; icons by type (0x003A5550), colours by faction (0x003A55C0); type 4 units also get a height link to y2.
+- Checked in the port: MIS01 with subtitles and the header panels, then the map with terrain, icons and texts.
+
+### Campaign menu (page 5, subs 23–26)
+- `src/game/campaign_menu_page.cpp`: page object 0x680 bytes at `g_CampaignMenu` 0x00411818; a 6-column menu tree (0x0039D920) with a help line (messages 0x0039DA28).
+- `CampaignMenuSelect` (jump table 0x00407120, 19 items): page 6 (hangar), 3 (briefing; sets `game[0x27]`), 0xD–0x10, 0; sub-pages 0x2E, 0x2A, 0x3B, 0x51, 0x57, 0x4A/0x50 (save/load; their HDD columns 4/5 need ctx flag 0x80000); items 2–4 open columns 1–3.
+- Checked in the port: START MISSION, BRIEFING, BUY, SELL, OPTIONS, SAVE, LOAD with the help line.
+
 ### Hangar (pages 6–10, 13–16)
 - Mode by sub-state (0x00233808): 0x1B aircraft select for the next mission (sets the mission id and mode 1); 0x1C–0x23 buy/sell aircraft, colours, special weapons.
 - **Credits** at 0x002A0D30. The hangar keeps a check value `credits ^ 0x5963` and commits credits and ownership only if the check matches (`CommitHangarSelection`): a simple tamper check.
@@ -171,7 +192,19 @@ Each page follows the same pattern: an **enter** sub-state allocates the page ob
 
 **SCREEN RATIO is an original 16:9 mode.** It sets ctx flag 0x10000, and many layout functions branch on that flag: menu layouts, the viewer camera aspect, text boxes, the briefing map, and the flight HUD and cameras (anamorphic HUD, `camera-hud.md`). See ADR-006.
 
-Options handlers: `func_0023F350` help text (0x003AF440), `func_0023F7D8` back, `func_0023F870` select, `func_0023FB48` main list update (writes 0x002A15CC live; SCREEN RATIO also sets the ctx flag), `func_0023FD10`/`func_0023FDB8` cancel/accept, `func_0023FE60` screen position adjust, `func_00240088` brightness adjust, dispatched by `func_002402E0` by sub-mode.
+Options page "SCREEN SETTINGS" (subs 0x29–0x2C, `src/game/options_page.cpp`): `UpdateOptionsHelp` 0x0023F350 (help text, table 0x003AF440), `SetOptionsView` 0x0023F538 (0 list, 1 screen position, 2 brightness; CAPTIONS hidden before the first clear), `OptionsBack` 0x0023F7D8, `OptionsSelect` 0x0023F870, `OptionsListUpdate` 0x0023FB48 (writes 0x002A15CC live; SCREEN RATIO also sets the ctx flag), `OptionsAdjustCancel`/`OptionsAdjustAccept` 0x0023FD10/0x0023FDB8, `ScreenPositionUpdate` 0x0023FE60 (−12…12, pad 0x4000 resets), `BrightnessUpdate` 0x00240088 (0–6), dispatched by `OptionsUpdate` 0x002402E0 by view. Brightness test patterns: `BuildGreyRamp`, `BuildLevelSquares`, `BuildColorRamps` (0x002408E0–0x00240A88), drawn by `DrawBrightnessPatterns` 0x00240BB8 at strength level × 128.
+
+### Controller settings (page 18, subs 0x2D–0x30)
+`src/game/controller_page.cpp`. Rows: player (1/2; both pads are read), CONTROL TYPE, REVERSE, VIBRATION, PILOT VIEW (bits 1, 2, 8, 4 of the player's u16 at 0x002A15D0). Accept writes both words and calls `ApplyVibrationOptions`; switching vibration on vibrates that pad. The button-mapping table and the controller picture (DATA 0xB5) are drawn by `DrawControllerTexts`/`DrawControllerImage`/`DrawControllerGrid` 0x00242BE8–0x002434A0. From the main menu (sub 0x2D) back to page 4, otherwise to sub-page 0x18.
+
+### Records "PERSONAL DATA" (page 21, subs 0x37–0x39)
+`src/game/records_page.cpp`. Total flight time, sortie and kill totals, and the aircraft/colour usage list sorted by sorties (`BuildUsageList` 0x00241068 with `CombSortDescending` 0x00240FA0), five rows per page with usage bars (`AnimateRecordBars`) and aircraft icons (DATA 0xB7). Quirk: frame-count dependent pad before the object (below).
+
+### Sound settings (page 22, subs 0x3A–0x3D)
+`src/game/sound_page.cpp`. Rows: SOUND (MONO/STEREO, bit 0 of 0x002A15C4 set = mono) and the BGM, SE, VOICE, JET SE levels 0–15 (bytes 0x002A15C8–CB). Every change goes into a working copy and is applied at once (`ApplySoundPageValues` 0x00243D18 → `ApplySoundOptions`); accept stores the copy, cancel re-applies the stored options. Pad 0x4000 sets the level row to 15. From the main menu (sub 0x3A) back to page 4, otherwise to sub-page 0x18.
+
+### BGM player (page 19, subs 0x31–0x33)
+`src/game/sound_page.cpp`. Entering fades the menu BGM out (0.5 s). An 18 × 2 grid of the 36 tracks of table 0x003AF6A0 (`{name, length in frames, menu BGM track}`); pad 0x10 plays the cursor track with `PlayMenuBgm` (not when that track is already playing), pad 0x2000 stops it (2 s fade), and the track fades out (6 s) when its length has played (`UpdateBgmPlayerTimer`). Cancel returns to page 4 (`BgmPlayerUpdate`). `BgmPlayerInput` has its own cancel branch with a 1 s BGM fade, but it is unreachable: `BgmPlayerUpdate` checks cancel first and its `SetPanelState(…, 1)` clears panel flag 0x800, so `BgmPlayerInput` is not called in that frame (`../port/dead-code.md` §5). Reached from the EXTRAS column of the main menu (after the first campaign clear).
 
 ### Save / load (sub-pages 0x4A–0x57)
 - Files registered with the memory-card layer: `icon.sys`, `icon1.ico` and the save image (`save.md`). The image layout is in `../formats/SAVE.md`.
@@ -192,13 +225,21 @@ After a campaign clear:
 - aircraft 21 colours by S ranks on difficulties 2/3/4 (needs the cleared-twice bit 8).
 
 ### In-menu movie player (pages 31–34, subs 7–13)
-- Subs: 7–10 `MenuMovieEnter` 0x002390C8 (sub 9 with `0x002A15CC & 8` skips straight to `MenuGoTo`; otherwise starts the movie, descriptor `*0x00411824`, and queues subtitle DATA 0x103 + n) → 0xB 0x00239188 (wait for the stream) → 0xC 0x00239248 (play, `UpdateMenuMovie` 0x00238810) → 0xD `MenuMovieEnd` 0x002392A8 (tail call `MenuGoTo(desc+0x278, desc+0x27C)`). A movie's "next" target is stored in its descriptor.
-- `StartMenuMovie` 0x00238778 allocates a **6 MiB** work buffer from the work heap and sets **`RCNT0_MODE = 0x83`**: timer 0 counts H-blanks. Display modes for movies: 0x00238480 / 0x00238660 (called by 0x00238770 / 0x00238918).
+- Subs: 7–10 `MenuMovieEnter` 0x002390C8 (sub 9 with `0x002A15CC & 8` skips straight to `MenuGoTo`; otherwise starts the movie, descriptor `*0x00411824`, and queues subtitle DATA 0x103 + n) → 0xB `MenuMovieWait` 0x00239188 (subtitle font loaded and VAG slots 0/2 idle) → 0xC `MenuMoviePlay` 0x00239248 (play, `UpdateMenuMovie` 0x00238810) → 0xD `MenuMovieEnd` 0x002392A8 (tail call `MenuGoTo(desc+0x278, desc+0x27C)`). A movie's "next" target is stored in its descriptor.
+- `StartMenuMovie` 0x00238778 allocates a **6 MiB** work buffer from the work heap and sets **`RCNT0_MODE = 0x83`**: timer 0 counts H-blanks. Display modes for movies: `SetMoviePageDisplay` 0x00238480, `SetMoviePlayDisplay` 0x00238560 (draw into frame buffer 0x8C, display 0; `MovieFrameSync` swaps them), `SetMenuDisplayAfterMovie` 0x00238660 (thunks 0x00238770 / 0x00238918).
 - Each movie frame resets `RCNT0_COUNT` (0x00238808), runs the player, and at the end **`MovieFrameSync`** 0x00238870 flips the display buffer, **busy-waits until RCNT0 ≥ 0x118 (280 H-blanks)** and increments `ctx->frame_count` itself.
 - 280 H-blanks is longer than one field (262.5 lines), so each movie iteration spans **two fields**: `frame_count` +2 per iteration (main loop + `MovieFrameSync`), `scene_frame` +1 (measured in PCSX2, `../pcsx2/sessions-04.md`). The port can treat the wait as "until the next field" (two 59.94 Hz ticks per iteration) as long as decoding stays within one field.
+- Movie per page (`CreateMenuMoviePage` 0x00238B80, `StartPageMovie` 0x00238D10): sub 8 plays STAFF (n 0xD, movie 0x1F, no subtitles, then sub-page 0xC); subs 9/10 play story movie n = `ret_sub` (movie n + 1 = SS01–SS12; New Game is n 0 = **SS01**), then page 2 (n 0 and 6: mission title), 0x22 (n 0xB) or 0xB; sub 10 (from the interlude viewer) returns to page 0x14; any other sub plays the INTRO (n 0xC, movie 0, then page 3). With SCREEN RATIO 16:9 the picture is drawn 0x38 lines lower and `DrawMovieWidescreen` 0x00238E88 stretches rows 112–447 over the frame (anamorphic). Movie length per n: s32 frames at 0x003AF880.
+- Subtitles: table 0x003A6038 `{count, entries}` per n, entries `{message, f32 start, f32 length}` against the movie time (pictures × `K(0x004102D0)`); `UpdateSubtitles` 0x00238AB0 shows the message box while inside an entry, `UploadSubtitleGlyphs` 0x0022B650 / `DrawSubtitleText` 0x0022C1B0 draw up to 3 lines (glyph sprites in three layers). The INTRO's box is raised (+0 bit 4).
+- Skip (`HandleMenuMovieInput` 0x00238D80): after 30 iterations Start stops the movie (`RequestMovieStop(1.0)`: 1 s audio fade), the page fades out over 0.5 s, the menu BGM and stream slots 2–5 fade out.
+- Page draw (`DrawMenuMoviePage` 0x00238FE0): 16:9 stretch, subtitles, black fade, then `DrawMovieLineBlend` 0x00238920: the draw buffer copied onto itself one line up with ALPHA 0x64 and FIX 0x68 (flicker filter).
+- Port (S3): `src/game/movie_page.cpp`, `src/game/movie.cpp`; the decoder in `src/sce/libmpeg.cpp` (`../formats/SMV.md`). SS01 plays with sound and subtitles; Start skips.
+
+### Interlude viewer (page 20, subs 0x34–0x36)
+`src/game/interlude_page.cpp`. `EnterInterludePage` 0x00245A58 (DATA 0xB9, 2 entries, menu BGM 4), `LoadInterludePage` 0x00245B00, `RunInterludePage` 0x00245B50. A row of 12 boxes; left/right move the cursor (`SetInterludeCursor` 0x00245038, kept in 0x00411498); the preview of the resting cursor's interlude grows in over the box (`UpdateInterludePreview` 0x00244F48, `DrawInterludePreview` 0x00245728: still image at VRAM 0x2500 + n · 0x40, sin-shaped growth); texts: number, length mm'ss from 0x003AF880, the boxes (`DrawInterludeTexts` 0x00245390). X fades out and enters page 0x21 with `ret_sub` = the interlude (movie page sub 10); Triangle returns to page 4. Reachable only after a cleared campaign (not tested in the port yet).
 
 ### Loading screen (flight scene sub 0x1E)
-Drawn by the flight scene but built from front-end code: `func_00239B60` (text and background, menu SE 0xD once, fade by frame count), `func_002396B0` (mission objective text, tables 0x003AEE28 / 0x003AEDE0 by difficulty, typed out), `func_002399E0` (background rectangle), `func_00239310` (progress graphic), `func_00239640` (mission number to show).
+Drawn by the flight scene but built from front-end code: `func_00239B60` (text and background, menu SE 0xD once, fade by frame count), `func_002396B0` (mission objective text, tables 0x003AEE28 / 0x003AEDE0 by difficulty, typed out), `func_002399E0` (background rectangle), `func_00239310` (progress graphic), `func_00239640` (mission number to show). Full behaviour: `mission-load.md`, "Loading-screen drawing".
 
 ### Quirks to preserve
 - The records page allocates `((frame_count & 0xF) + 1) · 0x10` bytes before its object (0x002414E0). Work-heap offsets after it depend on the frame count at entry.
