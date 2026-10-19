@@ -55,6 +55,145 @@ u32 AudioBlock(u32 chunk, u32 extra) { return chunk + ((GRef<u32>(chunk + 8) + e
 
 }  // namespace
 
+// ---- Scenes 1 and 3 (dead: no scene request ever names them; docs/port/dead-code.md) ------------
+
+// EE: 0x00211C58
+// Scene 1 handler: stores mission id (kind 0, entry 1) in game state +0x27 and enters menu page 4.
+void SceneMenuEntry() {
+    const s16 id = GetMissionId(0, 1);
+    GRef<u8>(g_GameState().addr + 0x27) = static_cast<u8>(id);
+    EnterMenu(4);
+}
+
+// EE: 0x00211C88
+// Dead (no reference): InitMoviePlayback, returns 1.
+s32 func_00211C88() {
+    InitMoviePlayback();
+    return 1;
+}
+
+// EE: 0x00211D48
+// Scene 3 sub 0: 6 MiB movie work buffer from the work heap into the request (+0x1C, pictures shown
+// +0x18 = 0); 640x448 display, draw mode 2, display flags 0x8100, frame buffer 0 shown and drawn.
+void SceneMovieSetup() {
+    const u32 work = WorkHeapAlloc(0x600000, 0x40);
+    MainContext* ctx = Ctx();
+    const u32 desc = GRef<u32>(g_GameState().addr + 0x20);
+    ctx->disp_w = 0x280;
+    GRef<u32>(desc + 0x1C) = work;
+    GRef<u32>(desc + 0x18) = 0;
+    ctx->clear_rgba[0] = 0;
+    ctx->disp_h = 0x1C0;
+    ctx->draw_w = 0x280;
+    ctx->draw_h = 0x1C0;
+    Ctx()->clear_rgba[1] = 0;
+    Ctx()->clear_rgba[2] = 0;
+    Ctx()->clear_rgba[3] = 0;
+    Ctx()->frame_psm = 0;
+    Ctx()->zbuf_psm = 0x31;
+    Ctx()->ztest = 1;
+    Ctx()->draw_mode = 2;
+    Ctx()->disp_flags = 0x8100;
+    BuildDrawEnvPackets();
+    ctx = Ctx();
+    const u64 frame = static_cast<u64>(ctx->draw_w >> 6) << 16 | static_cast<u64>(ctx->frame_psm) << 24;
+    ctx->sub += 1;
+    ctx->dispenv[2] &= 0xFFFFFFFFFFFFFE00ull;
+    ctx->drawenv_pkt[2] = frame;
+    ctx->drawenv_pkt[18] = frame;
+    ctx->drawenv_pkt[4] |= 0x100000000ull;
+    ctx->drawenv_pkt[20] |= 0x100000000ull;
+}
+
+// EE: 0x00211E68
+// Scene 3 sub 1: work-heap mark, timer 0 counting H-blanks, the movie playback display (draw mode
+// 0, display flags 0xC000, pictures drawn into frame buffer 0x8C while 0 is shown), starts the
+// request's movie and waits for an odd field.
+s32 SceneMovieStart() {
+    PushWorkHeapMark();
+    sce::EeHwWrite(sce::EeReg::kT0Mode, 0x83);
+    MainContext* ctx = Ctx();
+    ctx->clear_rgba[0] = 0;
+    ctx->disp_h = 0x1C0;
+    ctx->draw_h = 0x1C0;
+    ctx->disp_w = 0x280;
+    ctx->draw_w = 0x280;
+    Ctx()->clear_rgba[1] = 0;
+    Ctx()->clear_rgba[2] = 0;
+    Ctx()->clear_rgba[3] = 0;
+    Ctx()->frame_psm = 0;
+    Ctx()->zbuf_psm = 0x31;
+    Ctx()->ztest = 1;
+    Ctx()->draw_mode = 0;
+    Ctx()->disp_flags = 0xC000;
+    BuildDrawEnvPackets();
+    ctx = Ctx();
+    const u64 frame = static_cast<u64>(ctx->draw_w >> 6) << 16 | static_cast<u64>(ctx->frame_psm) << 24 | 0x8C;
+    ctx->dispenv[2] &= 0xFFFFFFFFFFFFFE00ull;
+    ctx->drawenv_pkt[20] |= 0x100000000ull;
+    ctx->drawenv_pkt[2] = frame;
+    ctx->drawenv_pkt[18] = frame;
+    ctx->drawenv_pkt[4] |= 0x100000000ull;
+    StartMovie(GRef<u32>(g_GameState().addr + 0x20));
+    while (sceGsSyncV(0) != 0) {
+    }
+    Ctx()->sub += 1;
+    return 0;
+}
+
+// EE: 0x00211FB0
+// Scene 3 sub 2: one movie iteration (timer 0 reset, decode, PCM fade), waits until timer 0 has
+// counted 300 H-blanks, next sub at the end of the movie; swaps the displayed and the drawn frame
+// buffer (0 <-> 0x8C).
+s32 SceneMoviePlay() {
+    ResetMovieTimer();
+    const u32 desc = GRef<u32>(g_GameState().addr + 0x20);
+    const s32 done = DecodeMovieFrame(desc, (GRef<u32>(desc + 0xC) & 2) != 0 ? 1 : 0);
+    UpdateMovieAudioFade();
+    MainContext* ctx = Ctx();
+    while (sce::EeHwRead(sce::EeReg::kT0Count) < 300) sce::EeHwWaitTimer();
+    if (done != 0) ctx->sub += 1;
+    const u64 disp = ctx->dispenv[2];
+    const u16 w = ctx->draw_w;
+    u64 frame;
+    if ((disp & 0x1FF) == 0x8C) {
+        ctx->dispenv[2] = disp & 0xFFFFFFFFFFFFFE00ull;
+        frame = static_cast<u64>(w >> 6) << 16 | static_cast<u64>(ctx->frame_psm) << 24 | 0x8C;
+    } else {
+        ctx->dispenv[2] = (disp & 0xFFFFFFFFFFFFFE00ull) | 0x8C;
+        frame = static_cast<u64>(w >> 6) << 16 | static_cast<u64>(ctx->frame_psm) << 24;
+    }
+    ctx->drawenv_pkt[2] = frame;
+    ctx->drawenv_pkt[18] = frame;
+    return 0;
+}
+
+// EE: 0x002120D8
+// Scene 3 sub 3: clears the request, display flags 0x200, pops the work-heap mark and sets request
+// bit 0x40.
+void SceneMovieEnd() {
+    ClearMovieRequest(GRef<u32>(g_GameState().addr + 0x20));
+    Ctx()->disp_flags = 0x200;
+    PopWorkHeapMark();
+    SetRequestFlags(0x40);
+}
+
+// EE: 0x00211CA8
+// Scene 3 handler: pad 0 newly-pressed bit 0x800 requests the movie stop (fade 1.0); then sub 0-3.
+void SceneMovie() {
+    if ((GRef<u32>(g_pMainContext().addr + 0x218) & 0x800) != 0) RequestMovieStop(1.0f);
+    switch (Ctx()->sub) {
+        case 0: SceneMovieSetup(); break;
+        case 1: SceneMovieStart(); break;
+        case 2: SceneMoviePlay(); break;
+        case 3: SceneMovieEnd(); break;
+        default: break;
+    }
+}
+
+AC04_GUEST_FUNCTION(0x00211C58, SceneMenuEntry);
+AC04_GUEST_FUNCTION(0x00211CA8, SceneMovie);
+
 // EE: 0x00212150
 // Starts movie `desc`: the stream-audio tracks of its table entry (once per movie: separate audio
 // for the MIS briefing movies), the file's LSN and a reader over the 6 MiB work buffer with the
@@ -153,6 +292,14 @@ void RequestMovieStop(f32 time) {
     GRef<f32>(desc + 0x14) = time;
     GRef<u32>(desc + 0xC) |= 2;
 }
+
+// EE: 0x002124B8
+// Dead (no reference): sets the movie id of the request.
+void SetMovieRequestId(s32 id) { GRef<s32>(GRef<u32>(g_GameState().addr + 0x20)) = id; }
+
+// EE: 0x002124E8
+// Dead (no reference): pictures drawn by the reader (+0x94).
+u32 GetMoviePicturesDrawn() { return GRef<u32>(g_SmvReader() + 0x94); }
 
 // EE: 0x00212508
 // Carves the reader's buffers out of `arena` and initialises it for the file at `lsn`.

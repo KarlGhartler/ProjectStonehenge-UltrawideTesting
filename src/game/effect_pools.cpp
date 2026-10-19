@@ -605,6 +605,15 @@ void func_00184C20(u32 block) {
     for (u32 o = 0x14; o <= 0x3C; o += 4) GRef<u32>(kEffectTables + o - 4) = rel(o);
 }
 
+// EE: 0x001D8910
+// Dead (no reference): resets a one-record pool of 0x20-byte records: the record (func_001D4200),
+// the mask word +0x20 and the counter +0x24 (loops of one iteration in the original).
+void func_001D8910(u32 pool) {
+    func_001D4200(pool);
+    GRef<u32>(pool + 0x20) = 0;
+    GRef<u32>(pool + 0x24) = 0;
+}
+
 // EE: 0x001D8998
 // Takes the first free record of a one-record pool (mask word at +0x20, counter +0x24): returns
 // its index, or -1 when it is in use.

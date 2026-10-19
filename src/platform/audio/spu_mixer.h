@@ -69,6 +69,8 @@ public:
 
     // Audio thread: takes up to `frames` frames from the ring (silence when it runs empty).
     void Drain(std::int16_t* out, std::uint32_t frames);
+    // Empties the ring (after --fast-until, so the output does not keep its 250 ms backlog).
+    void DropQueued();
     std::uint64_t Underruns() const { return underruns_; }
     std::uint64_t Overruns() const { return overruns_; }
 

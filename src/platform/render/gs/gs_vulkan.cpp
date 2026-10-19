@@ -3,11 +3,13 @@
 #include <vk_mem_alloc.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <string>
 #include <unordered_map>
 
+#include "gs_conv_comp_spv.h"
 #include "gs_frag_spv.h"
 #include "gs_vert_spv.h"
 #include "platform/log.h"
@@ -23,8 +25,9 @@ struct Vertex {
     float x, y, z;  // z: GS Z / 2^bits of the Z buffer format (the depth image value)
     std::uint8_t r, g, b, a;
     float s, t, q;
+    float f;  // GS fog coefficient F (0-255): 255 keeps the colour, 0 gives FOGCOL
 };
-static_assert(sizeof(Vertex) == 28, "vertex layout");
+static_assert(sizeof(Vertex) == 32, "vertex layout");
 
 constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
 
@@ -65,8 +68,12 @@ struct Params {
     std::int32_t flags;
     std::int32_t aref;
     float fix;
+    std::int32_t fogcol;  // FOGCOL: R bits 0-7, G 8-15, B 16-23
+    // TEX1 for the filter choice: MMIN bits 0-2, decoded mip levels 3-5, LCM 6, L 7-8, K 9-20
+    // (signed, 1/16), MMAG 21.
+    std::int32_t tex1;
 };
-static_assert(sizeof(Params) == 76, "push constant layout");
+static_assert(sizeof(Params) == 84, "push constant layout");
 
 std::uint64_t Bits(std::uint64_t v, int lo, int n) { return (v >> lo) & ((1ull << n) - 1); }
 
@@ -122,6 +129,56 @@ BlendState MapBlend(std::uint64_t alpha) {
             break;
     }
     return s;
+}
+
+// Target layout class of a frame format: CT24 shares the CT32 layout; the 16-bit formats differ.
+std::uint32_t LayoutClass(std::uint32_t psm) { return psm == kPsmCt16 || psm == kPsmCt16S ? psm : 0; }
+
+std::uint64_t TargetKey(std::uint32_t fbp, std::uint32_t fbw, std::uint32_t psm) {
+    return static_cast<std::uint64_t>(fbp) << 16 | static_cast<std::uint64_t>(fbw) << 8 | LayoutClass(psm);
+}
+
+// Push constants of gs_conv.comp.
+struct ConvParams {
+    std::int32_t src_psm, src_fbp, src_fbw;
+    std::int32_t dst_psm, dst_tbp, dst_tbw;
+    std::int32_t origin[2], size[2], src_size[2];
+    std::int32_t texa;
+};
+static_assert(sizeof(ConvParams) == 52, "conversion push constants");
+
+// Page tables of gs_conv.comp (same order as its kFwd*/kInv* offsets), from GsMemory::PixelAddress
+// within one page at block 0.
+std::vector<std::uint32_t> BuildConvTables() {
+    std::vector<std::uint32_t> t;
+    auto fwd = [&](std::uint32_t psm, std::uint32_t pw, std::uint32_t ph, bool nibbles, std::uint32_t unit_shift) {
+        for (std::uint32_t y = 0; y < ph; ++y) {
+            for (std::uint32_t x = 0; x < pw; ++x) {
+                std::uint32_t nib = 0;
+                const std::uint32_t a = GsMemory::PixelAddress(psm, 0, pw / 64, x, y, &nib);
+                t.push_back(nibbles ? a * 2 + nib : a >> unit_shift);
+            }
+        }
+    };
+    fwd(kPsmCt32, 64, 32, false, 2);
+    fwd(kPsmCt16, 64, 64, false, 1);
+    fwd(kPsmCt16S, 64, 64, false, 1);
+    fwd(kPsmT8, 128, 64, false, 0);
+    fwd(kPsmT4, 128, 128, true, 0);
+    auto inv = [&](std::uint32_t psm, std::uint32_t ph, std::uint32_t unit_shift, std::uint32_t units) {
+        const std::size_t base = t.size();
+        t.resize(base + units, 0);
+        for (std::uint32_t y = 0; y < ph; ++y) {
+            for (std::uint32_t x = 0; x < 64; ++x) {
+                const std::uint32_t a = GsMemory::PixelAddress(psm, 0, 1, x, y) >> unit_shift;
+                t[base + a] = x | y << 8;
+            }
+        }
+    };
+    inv(kPsmCt32, 32, 2, 2048);
+    inv(kPsmCt16, 64, 1, 4096);
+    inv(kPsmCt16S, 64, 1, 4096);
+    return t;
 }
 
 std::uint64_t PipelineKey(const BlendState& b, std::uint32_t write_mask) {
@@ -243,15 +300,15 @@ bool GsBackend::Init(VkContext& ctx, std::string& error) {
     rpi.pSubpasses = &sub;
     vkCreateRenderPass(ctx.device, &rpi, nullptr, &pass_);
 
-    VkDescriptorSetLayoutBinding bindings[2]{};
-    for (int i = 0; i < 2; ++i) {
+    VkDescriptorSetLayoutBinding bindings[3]{};
+    for (int i = 0; i < 3; ++i) {
         bindings[i].binding = static_cast<uint32_t>(i);
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[i].descriptorCount = 1;
         bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     }
     VkDescriptorSetLayoutCreateInfo dli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    dli.bindingCount = 2;
+    dli.bindingCount = 3;
     dli.pBindings = bindings;
     vkCreateDescriptorSetLayout(ctx.device, &dli, nullptr, &set_layout_);
     VkPushConstantRange pcr{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Params)};
@@ -269,12 +326,13 @@ bool GsBackend::Init(VkContext& ctx, std::string& error) {
 
     const VkImageUsageFlags tex_usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     if (!CreateImage(atlas_, kAtlasSize, kAtlasSize, tex_usage) ||
-        !CreateImage(feedback_, kFeedbackWidth, kTargetHeight, tex_usage) ||
+        !CreateImage(feedback_, kFeedbackWidth, kTargetHeight, tex_usage | VK_IMAGE_USAGE_STORAGE_BIT) ||
+        !CreateImage(date_, kFeedbackWidth, kTargetHeight, tex_usage) ||
         !CreateImage(present_, kFeedbackWidth, kTargetHeight, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) {
         error = "cannot create the GS renderer images";
         return false;
     }
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2};
+    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3};
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     dpi.maxSets = 1;
     dpi.poolSizeCount = 1;
@@ -285,10 +343,11 @@ bool GsBackend::Init(VkContext& ctx, std::string& error) {
     dai.descriptorSetCount = 1;
     dai.pSetLayouts = &set_layout_;
     vkAllocateDescriptorSets(ctx.device, &dai, &set_);
-    VkDescriptorImageInfo infos[2] = {{sampler_, atlas_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-                                      {sampler_, feedback_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
-    VkWriteDescriptorSet w[2]{};
-    for (int i = 0; i < 2; ++i) {
+    VkDescriptorImageInfo infos[3] = {{sampler_, atlas_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                      {sampler_, feedback_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                      {sampler_, date_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+    VkWriteDescriptorSet w[3]{};
+    for (int i = 0; i < 3; ++i) {
         w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         w[i].dstSet = set_;
         w[i].dstBinding = static_cast<uint32_t>(i);
@@ -296,7 +355,7 @@ bool GsBackend::Init(VkContext& ctx, std::string& error) {
         w[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         w[i].pImageInfo = &infos[i];
     }
-    vkUpdateDescriptorSets(ctx.device, 2, w, 0, nullptr);
+    vkUpdateDescriptorSets(ctx.device, 3, w, 0, nullptr);
 
     VkShaderModuleCreateInfo smi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
     smi.codeSize = sizeof(gs_vert_spv);
@@ -322,12 +381,13 @@ bool GsBackend::Init(VkContext& ctx, std::string& error) {
     vkBeginCommandBuffer(cmd, &bi);
     VkClearColorValue zero{};
     VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    for (Image* img : {&atlas_, &feedback_, &present_}) {
+    for (Image* img : {&atlas_, &feedback_, &date_, &present_}) {
         Transition(cmd, *img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
         vkCmdClearColorImage(cmd, img->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
     }
     Transition(cmd, atlas_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     Transition(cmd, feedback_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    Transition(cmd, date_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     Transition(cmd, present_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     vkEndCommandBuffer(cmd);
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -336,7 +396,204 @@ bool GsBackend::Init(VkContext& ctx, std::string& error) {
     vkQueueSubmit(ctx.queue, 1, &si, VK_NULL_HANDLE);
     vkQueueWaitIdle(ctx.queue);
     vkDestroyCommandPool(ctx.device, pool, nullptr);
+    return InitConvert(error);
+}
+
+bool GsBackend::InitConvert(std::string& error) {
+    VkDescriptorSetLayoutBinding b[4]{};
+    const VkDescriptorType types[4] = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                       VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE};
+    for (int i = 0; i < 4; ++i) {
+        b[i].binding = static_cast<uint32_t>(i);
+        b[i].descriptorType = types[i];
+        b[i].descriptorCount = 1;
+        b[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    VkDescriptorSetLayoutCreateInfo dli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    dli.bindingCount = 4;
+    dli.pBindings = b;
+    vkCreateDescriptorSetLayout(ctx_->device, &dli, nullptr, &conv_set_layout_);
+    VkPushConstantRange pcr{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ConvParams)};
+    VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pli.setLayoutCount = 1;
+    pli.pSetLayouts = &conv_set_layout_;
+    pli.pushConstantRangeCount = 1;
+    pli.pPushConstantRanges = &pcr;
+    vkCreatePipelineLayout(ctx_->device, &pli, nullptr, &conv_layout_);
+    VkShaderModuleCreateInfo smi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    smi.codeSize = sizeof(gs_conv_comp_spv);
+    smi.pCode = gs_conv_comp_spv;
+    VkShaderModule cs = VK_NULL_HANDLE;
+    vkCreateShaderModule(ctx_->device, &smi, nullptr, &cs);
+    VkComputePipelineCreateInfo cpi{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    cpi.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, cs, "main", nullptr};
+    cpi.layout = conv_layout_;
+    const VkResult r = vkCreateComputePipelines(ctx_->device, VK_NULL_HANDLE, 1, &cpi, nullptr, &conv_pipeline_);
+    vkDestroyShaderModule(ctx_->device, cs, nullptr);
+    if (r != VK_SUCCESS) {
+        error = "cannot create the GS format conversion pipeline";
+        return false;
+    }
+    const VkDescriptorPoolSize ps[3] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxConversions},
+                                        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * kMaxConversions},
+                                        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kMaxConversions}};
+    VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    dpi.maxSets = kMaxConversions;
+    dpi.poolSizeCount = 3;
+    dpi.pPoolSizes = ps;
+    for (int f = 0; f < kFrames; ++f) {
+        vkCreateDescriptorPool(ctx_->device, &dpi, nullptr, &conv_pool_[f]);
+        if (!EnsureBuffer(conv_clut_[f], kMaxConversions * 1024, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) {
+            error = "cannot create the GS conversion buffers";
+            return false;
+        }
+    }
+    const std::vector<std::uint32_t> tables = BuildConvTables();
+    if (!EnsureBuffer(conv_tables_, tables.size() * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)) {
+        error = "cannot create the GS conversion buffers";
+        return false;
+    }
+    std::memcpy(conv_tables_.mapped, tables.data(), tables.size() * 4);
+    vmaFlushAllocation(ctx_->allocator, conv_tables_.alloc, 0, VK_WHOLE_SIZE);
     return true;
+}
+
+bool GsBackend::ConvertCore(VkCommandBuffer cmd, int frame, Target& src, const ConvRequest& r) {
+    if (r.u1 <= r.u0 || r.v1 <= r.v0) return false;
+    if (conv_count_ >= kMaxConversions) {
+        LogOnce("conv-full", "too many frame-buffer format conversions in one frame (skipped)");
+        return false;
+    }
+    const std::uint32_t slot = conv_count_++;
+    std::uint32_t clut[256]{};
+    if (r.clut) std::memcpy(clut, r.clut->data(), sizeof(clut));
+    std::memcpy(static_cast<std::uint8_t*>(conv_clut_[frame].mapped) + slot * 1024, clut, sizeof(clut));
+    vmaFlushAllocation(ctx_->allocator, conv_clut_[frame].alloc, slot * 1024, 1024);
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    VkDescriptorSetAllocateInfo dai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    dai.descriptorPool = conv_pool_[frame];
+    dai.descriptorSetCount = 1;
+    dai.pSetLayouts = &conv_set_layout_;
+    if (vkAllocateDescriptorSets(ctx_->device, &dai, &set) != VK_SUCCESS) return false;
+    VkDescriptorImageInfo src_info{sampler_, src.img.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkDescriptorBufferInfo tab_info{conv_tables_.buffer, 0, VK_WHOLE_SIZE};
+    VkDescriptorBufferInfo clut_info{conv_clut_[frame].buffer, slot * 1024, 1024};
+    VkDescriptorImageInfo dst_info{VK_NULL_HANDLE, feedback_.view, VK_IMAGE_LAYOUT_GENERAL};
+    VkWriteDescriptorSet w[4]{};
+    for (int i = 0; i < 4; ++i) {
+        w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w[i].dstSet = set;
+        w[i].dstBinding = static_cast<uint32_t>(i);
+        w[i].descriptorCount = 1;
+    }
+    w[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    w[0].pImageInfo = &src_info;
+    w[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    w[1].pBufferInfo = &tab_info;
+    w[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    w[2].pBufferInfo = &clut_info;
+    w[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    w[3].pImageInfo = &dst_info;
+    vkUpdateDescriptorSets(ctx_->device, 4, w, 0, nullptr);
+
+    ConvParams cp{};
+    cp.src_psm = static_cast<std::int32_t>(src.psm);
+    cp.src_fbp = static_cast<std::int32_t>(src.fbp);
+    cp.src_fbw = static_cast<std::int32_t>(src.fbw);
+    cp.dst_psm = static_cast<std::int32_t>(r.psm);
+    cp.dst_tbp = static_cast<std::int32_t>(r.tbp);
+    cp.dst_tbw = static_cast<std::int32_t>(r.tbw);
+    cp.origin[0] = r.u0;
+    cp.origin[1] = r.v0;
+    cp.size[0] = r.u1 - r.u0;
+    cp.size[1] = r.v1 - r.v0;
+    cp.src_size[0] = src.img.width;
+    cp.src_size[1] = kTargetHeight;
+    cp.texa = static_cast<std::int32_t>(r.texa);
+
+    Transition(cmd, src.img, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    Transition(cmd, feedback_, VK_IMAGE_LAYOUT_GENERAL);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, conv_pipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, conv_layout_, 0, 1, &set, 0, nullptr);
+    vkCmdPushConstants(cmd, conv_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(cp), &cp);
+    vkCmdDispatch(cmd, static_cast<uint32_t>((cp.size[0] + 7) / 8), static_cast<uint32_t>((cp.size[1] + 7) / 8), 1);
+    Transition(cmd, feedback_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    Transition(cmd, src.img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    return true;
+}
+
+void GsBackend::Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawCommand& d) {
+    // Texels to convert: the whole texture (at most the feedback image), or for sprites with texel
+    // coordinates (FST) and no repeat wrap the rectangle their vertices reach, with margin for bilinear.
+    const std::int32_t tw = 1 << std::min<int>(static_cast<int>(Bits(d.tex0, 26, 4)), 10);
+    const std::int32_t th = 1 << std::min<int>(static_cast<int>(Bits(d.tex0, 30, 4)), 10);
+    ConvRequest r;
+    r.u1 = std::min(tw, kFeedbackWidth);
+    r.v1 = std::min(th, kTargetHeight);
+    const std::uint64_t wms = Bits(d.clamp, 0, 2), wmt = Bits(d.clamp, 2, 2);
+    const bool repeat = wms == 0 || wms == 3 || wmt == 0 || wmt == 3;
+    if (d.fst && !repeat && !d.vertices.empty()) {
+        float a = 1e9f, b = 1e9f, c = -1e9f, e = -1e9f;
+        for (const GsVertex& v : d.vertices) {
+            a = std::min(a, v.u);
+            b = std::min(b, v.v);
+            c = std::max(c, v.u);
+            e = std::max(e, v.v);
+        }
+        const std::int32_t umax = r.u1, vmax = r.v1;
+        r.u0 = std::clamp(static_cast<std::int32_t>(std::floor(a)) - 1, 0, umax);
+        r.v0 = std::clamp(static_cast<std::int32_t>(std::floor(b)) - 1, 0, vmax);
+        r.u1 = std::clamp(static_cast<std::int32_t>(std::ceil(c)) + 2, r.u0, umax);
+        r.v1 = std::clamp(static_cast<std::int32_t>(std::ceil(e)) + 2, r.v0, vmax);
+    }
+    r.psm = static_cast<std::uint32_t>(Bits(d.tex0, 20, 6));
+    r.tbp = static_cast<std::uint32_t>(Bits(d.tex0, 0, 14));
+    r.tbw = static_cast<std::uint32_t>(Bits(d.tex0, 14, 6));
+    r.texa = static_cast<std::uint32_t>(Bits(d.texa, 0, 8) | Bits(d.texa, 15, 1) << 15 | Bits(d.texa, 32, 8) << 16);
+    r.clut = d.frame_clut.get();
+    ConvertCore(cmd, frame, src, r);
+}
+
+GsBackend::Target* GsBackend::NewerView(const Target& t) {
+    // The GS has one local memory: targets that share a base page (the same frame buffer drawn
+    // with another format or width) are views of the same bytes. The newest of them, when newer
+    // than `t`, holds what `t` must show.
+    Target* newest = nullptr;
+    for (auto& [key, u] : targets_) {
+        if (&u == &t || u.fbp != t.fbp || u.last_write <= t.last_write) continue;
+        if (!newest || u.last_write > newest->last_write) newest = &u;
+    }
+    return newest;
+}
+
+void GsBackend::Sync(VkCommandBuffer cmd, int frame, Target& t, Target& newer) {
+    // `newer` converted into `t`'s format over the rows of `t` that it covers.
+    Target* newest = &newer;
+    // Bytes the newer view has drawn, as rows of `t`.
+    const std::int64_t src_bpp = newest->psm == 0 ? 4 : 2, dst_bpp = t.psm == 0 ? 4 : 2;
+    const std::int64_t bytes = static_cast<std::int64_t>(std::max<std::uint32_t>(newest->fbw, 1)) * 64 *
+                               std::max(newest->used_height, 1) * src_bpp;
+    const std::int64_t row = static_cast<std::int64_t>(std::max<std::uint32_t>(t.fbw, 1)) * 64 * dst_bpp;
+    ConvRequest r;
+    r.u1 = std::min(t.img.width, kFeedbackWidth);
+    r.v1 = static_cast<std::int32_t>(std::min<std::int64_t>((bytes + row - 1) / row, kTargetHeight));
+    r.psm = t.psm == 0 ? kPsmCt32 : t.psm;
+    r.tbp = t.fbp * 32;
+    r.tbw = t.fbw;
+    r.texa = 0x80u << 16;  // 16-bit views: alpha bit -> 0x80, as gs.frag stores it (flag 24)
+    if (!ConvertCore(cmd, frame, *newest, r)) return;
+    VkImageCopy c{};
+    c.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    c.dstSubresource = c.srcSubresource;
+    c.extent = {static_cast<uint32_t>(r.u1), static_cast<uint32_t>(r.v1), 1};
+    Transition(cmd, feedback_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    Transition(cmd, t.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    vkCmdCopyImage(cmd, feedback_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, t.img.image,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+    Transition(cmd, feedback_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    Transition(cmd, t.img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    // used_height stays the drawn height: it sizes the presented image (ADR-006 §4: 448 lines).
+    t.last_write = newest->last_write;
 }
 
 void GsBackend::Shutdown() {
@@ -350,8 +607,21 @@ void GsBackend::Shutdown() {
         DestroyImage(t.depth);
     }
     targets_.clear();
+    for (int f = 0; f < kFrames; ++f) {
+        if (conv_pool_[f]) vkDestroyDescriptorPool(ctx_->device, conv_pool_[f], nullptr);
+        conv_pool_[f] = VK_NULL_HANDLE;
+        DestroyBuffer(conv_clut_[f]);
+    }
+    DestroyBuffer(conv_tables_);
+    if (conv_pipeline_) vkDestroyPipeline(ctx_->device, conv_pipeline_, nullptr);
+    if (conv_layout_) vkDestroyPipelineLayout(ctx_->device, conv_layout_, nullptr);
+    if (conv_set_layout_) vkDestroyDescriptorSetLayout(ctx_->device, conv_set_layout_, nullptr);
+    conv_pipeline_ = VK_NULL_HANDLE;
+    conv_layout_ = VK_NULL_HANDLE;
+    conv_set_layout_ = VK_NULL_HANDLE;
     DestroyImage(atlas_);
     DestroyImage(feedback_);
+    DestroyImage(date_);
     DestroyImage(present_);
     for (int i = 0; i < kFrames; ++i) {
         DestroyBuffer(staging_[i]);
@@ -380,13 +650,14 @@ bool GsBackend::IsFrameBuffer(std::uint32_t tbp) const {
     return false;
 }
 
-GsBackend::Target* GsBackend::GetTarget(VkCommandBuffer cmd, std::uint32_t fbp, std::uint32_t fbw) {
-    const std::uint64_t key = static_cast<std::uint64_t>(fbp) << 8 | fbw;
+GsBackend::Target* GsBackend::GetTarget(VkCommandBuffer cmd, std::uint32_t fbp, std::uint32_t fbw, std::uint32_t psm) {
+    const std::uint64_t key = TargetKey(fbp, fbw, psm);
     auto it = targets_.find(key);
     if (it != targets_.end()) return &it->second;
     Target t;
     t.fbp = fbp;
     t.fbw = fbw;
+    t.psm = LayoutClass(psm);
     const int w = std::max<int>(64, static_cast<int>(fbw) * 64);
     if (!CreateImage(t.img, w, kTargetHeight,
                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
@@ -428,13 +699,14 @@ VkPipeline GsBackend::GetPipeline(std::uint64_t key) {
     stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs_, "main", nullptr};
     stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs_, "main", nullptr};
     VkVertexInputBindingDescription vb{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
-    VkVertexInputAttributeDescription va[3] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
+    VkVertexInputAttributeDescription va[4] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
                                                {1, 0, VK_FORMAT_R8G8B8A8_UINT, 12},
-                                               {2, 0, VK_FORMAT_R32G32B32_SFLOAT, 16}};
+                                               {2, 0, VK_FORMAT_R32G32B32_SFLOAT, 16},
+                                               {3, 0, VK_FORMAT_R32_SFLOAT, 28}};
     VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     vi.vertexBindingDescriptionCount = 1;
     vi.pVertexBindingDescriptions = &vb;
-    vi.vertexAttributeDescriptionCount = 3;
+    vi.vertexAttributeDescriptionCount = 4;
     vi.pVertexAttributeDescriptions = va;
     VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -538,11 +810,12 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
     // 2. Vertices (sprites, lines and points become two triangles).
     std::vector<Vertex> verts;
     std::vector<std::pair<std::size_t, std::size_t>> ranges;  // first, count per draw
+    std::vector<std::array<float, 4>> boxes;                   // x0, y0, x1, y1 of each draw's vertices
     for (const DrawCommand& d : draws) {
         const std::size_t first = verts.size();
         // Sprites, lines and points take the Z of the vertex that gives their colour (`g`).
         auto vtx = [&](const GsVertex& g, float x, float y, float s, float t, float q) {
-            verts.push_back(Vertex{x, y, DepthValue(g.z, d.zbuf), g.r, g.g, g.b, g.a, s, t, q});
+            verts.push_back(Vertex{x, y, DepthValue(g.z, d.zbuf), g.r, g.g, g.b, g.a, s, t, q, static_cast<float>(g.fog)});
         };
         auto tex = [&](const GsVertex& g, float& s, float& t, float& q) {
             if (d.fst) s = g.u, t = g.v, q = 1.0f;
@@ -602,6 +875,14 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             }
         }
         ranges.emplace_back(first, verts.size() - first);
+        std::array<float, 4> box{1e9f, 1e9f, -1e9f, -1e9f};
+        for (std::size_t v = first; v < verts.size(); ++v) {
+            box[0] = std::min(box[0], verts[v].x);
+            box[1] = std::min(box[1], verts[v].y);
+            box[2] = std::max(box[2], verts[v].x);
+            box[3] = std::max(box[3], verts[v].y);
+        }
+        boxes.push_back(box);
     }
     if (verts.empty()) return;
     if (!EnsureBuffer(vertices_[frame], verts.size() * sizeof(Vertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) return;
@@ -614,7 +895,7 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
         return d.kind == PrimKind::kSprite && !d.textured && zbuf_owner_.count(d.Fbp()) != 0;
     };
     for (const DrawCommand& d : draws) {
-        if (!depth_fill(d)) GetTarget(cmd, d.Fbp(), d.Fbw());
+        if (!depth_fill(d)) GetTarget(cmd, d.Fbp(), d.Fbw(), d.Fpsm());
     }
     Target* open = nullptr;
     // Dynamic state already set in this render pass: draws that repeat it skip the call (the hangar
@@ -647,6 +928,8 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 0, 1, &set_, 0, nullptr);
     };
     present_valid_ = false;
+    conv_count_ = 0;
+    vkResetDescriptorPool(ctx_->device, conv_pool_[frame], 0);
     for (std::size_t i = 0; i < draws.size(); ++i) {
         const DrawCommand& d = draws[i];
         if (ranges[i].second == 0) continue;
@@ -676,22 +959,36 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             }
             continue;
         }
-        if (d.Fpsm() != kPsmCt32 && d.Fpsm() != kPsmCt24) LogOnce("fpsm", "frame buffer format other than CT32/CT24 drawn as RGBA8");
-        if (Bits(d.test, 14, 1)) LogOnce("date", "destination alpha test not implemented yet");
-        Target* target = nullptr;
+        Target* target = GetTarget(cmd, d.Fbp(), d.Fbw(), d.Fpsm());
+        if (!target) continue;
+        // Bring the target up to date with a newer view of the same memory (another format or
+        // width) before anything reads feedback_ for this draw.
+        if (Target* newer = NewerView(*target)) {
+            end_pass();
+            Sync(cmd, frame, *target, *newer);
+        }
         if (d.texture_from_frame >= 0) {
             // Frame buffer read as a texture (field copy, heat haze): copy it first. The first copy of
             // the draw buffer in a frame is also the image to present (ADR-006 §4).
             end_pass();
             // Several targets can share a block pointer (the menus' 640-wide and the flight's 512-wide
-            // buffers both sit at FBP 0): prefer the one whose width matches TEX0.TBW.
+            // buffers both sit at FBP 0; the sky's work pages are drawn as CT32 and as CT16S): the one
+            // drawn last holds the memory. Read in its own layout and width, it is copied as it is;
+            // otherwise the texture is rebuilt from it through the GS memory layout (Convert).
             Target* src = nullptr;
             const std::uint32_t tbw = static_cast<std::uint32_t>(Bits(d.tex0, 14, 6));
+            const std::uint32_t tpsm = static_cast<std::uint32_t>(Bits(d.tex0, 20, 6));
             for (auto& [key, t] : targets_) {
                 if (t.fbp * 32 != static_cast<std::uint32_t>(d.texture_from_frame)) continue;
-                if (src == nullptr || t.fbw == tbw) src = &t;
+                if (src == nullptr || t.last_write > src->last_write ||
+                    (t.last_write == src->last_write && t.fbw == tbw)) {
+                    src = &t;
+                }
             }
-            if (src) {
+            const bool direct = src && src->psm == 0 && (tpsm == kPsmCt32 || tpsm == kPsmCt24) && src->fbw == tbw;
+            if (src && !direct) {
+                Convert(cmd, frame, *src, d);
+            } else if (src) {
                 VkImageCopy c{};
                 c.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
                 c.dstSubresource = c.srcSubresource;
@@ -721,13 +1018,12 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
                 Transition(cmd, src->img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
             }
         }
-        target = GetTarget(cmd, d.Fbp(), d.Fbw());
-        if (!target) continue;
         begin_pass(target);
+        target->last_write = ++write_clock_;
         // Only Z buffers that are really tested (GEQUAL/GREATER) are owned: menus keep ZTE with
         // ZTST ALWAYS and their ZBP can alias other buffers.
         if (Bits(d.test, 16, 1) && Bits(d.test, 18, 1))
-            zbuf_owner_[static_cast<std::uint32_t>(Bits(d.zbuf, 0, 9))] = {static_cast<std::uint64_t>(d.Fbp()) << 8 | d.Fbw(), d.zbuf};
+            zbuf_owner_[static_cast<std::uint32_t>(Bits(d.zbuf, 0, 9))] = {TargetKey(d.Fbp(), d.Fbw(), d.Fpsm()), d.zbuf};
         // Scissor (inclusive) and the height of the target that has been drawn.
         const int x0 = static_cast<int>(Bits(d.scissor, 0, 11)), x1 = static_cast<int>(Bits(d.scissor, 16, 11));
         const int y0 = static_cast<int>(Bits(d.scissor, 32, 11)), y1 = static_cast<int>(Bits(d.scissor, 48, 11));
@@ -735,6 +1031,31 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
         const int sy0 = std::clamp(y0, 0, kTargetHeight), sy1 = std::clamp(y1 + 1, 0, kTargetHeight);
         if (sx1 <= sx0 || sy1 <= sy0) continue;
         target->used_height = std::max(target->used_height, sy1);
+        // Destination alpha test (TEST.DATE): the pixels whose stored alpha bit 7 differs from DATM
+        // are not drawn. The shader reads the target's alpha from a copy of the region this draw
+        // covers, taken before the draw (the GS tests each pixel before the draw writes it; within
+        // one draw, later primitives see the copy, not earlier primitives of the same draw).
+        const bool date = Bits(d.test, 14, 1) != 0;
+        if (date) {
+            const int bx0 = std::clamp(static_cast<int>(std::floor(boxes[i][0])) - 1, sx0, sx1);
+            const int by0 = std::clamp(static_cast<int>(std::floor(boxes[i][1])) - 1, sy0, sy1);
+            const int bx1 = std::clamp(static_cast<int>(std::ceil(boxes[i][2])) + 2, sx0, std::min(sx1, kFeedbackWidth));
+            const int by1 = std::clamp(static_cast<int>(std::ceil(boxes[i][3])) + 2, sy0, sy1);
+            if (bx1 <= bx0 || by1 <= by0) continue;
+            end_pass();
+            VkImageCopy c{};
+            c.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            c.dstSubresource = c.srcSubresource;
+            c.srcOffset = {bx0, by0, 0};
+            c.dstOffset = {bx0, by0, 0};
+            c.extent = {static_cast<uint32_t>(bx1 - bx0), static_cast<uint32_t>(by1 - by0), 1};
+            Transition(cmd, target->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+            Transition(cmd, date_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            vkCmdCopyImage(cmd, target->img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, date_.image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+            Transition(cmd, date_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            begin_pass(target);
+        }
         VkRect2D sc{{sx0, sy0}, {static_cast<uint32_t>(sx1 - sx0), static_cast<uint32_t>(sy1 - sy0)}};
         if (std::memcmp(&sc, &bound_scissor, sizeof(sc)) != 0) {
             vkCmdSetScissor(cmd, 0, 1, &sc);
@@ -743,7 +1064,11 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
 
         // Blend and write mask.
         BlendState blend;
-        if (d.blend) {
+        // PRIM.AA1 blends with the ALPHA register too, with the pixel's coverage as As: the inside
+        // of a primitive has full coverage (0x80). The partial coverage of edge pixels is not
+        // modelled (HUD lines: Cs + Cd).
+        const bool blending = d.blend || d.aa1;
+        if (blending) {
             blend = MapBlend(d.alpha);
             if (!blend.supported) LogOnce("blend", "GS blend equation not mapped (normal alpha blend used)");
             if (d.pabe) LogOnce("pabe", "PABE not implemented");
@@ -774,6 +1099,10 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             p.region[1] = static_cast<std::int32_t>(Bits(d.clamp, 14, 10));
             p.region[2] = static_cast<std::int32_t>(Bits(d.clamp, 24, 10));
             p.region[3] = static_cast<std::int32_t>(Bits(d.clamp, 34, 10));
+            const std::uint32_t levels = d.texture ? d.texture->levels : 0;
+            p.tex1 = static_cast<std::int32_t>(Bits(d.tex1, 6, 3) | std::min<std::uint32_t>(levels, 7) << 3 |
+                                               Bits(d.tex1, 0, 1) << 6 | Bits(d.tex1, 19, 2) << 7 |
+                                               Bits(d.tex1, 32, 12) << 9 | Bits(d.tex1, 5, 1) << 21);
             if (d.texture_from_frame >= 0) {
                 flags |= 1 << 16;
             } else if (d.texture) {
@@ -781,8 +1110,8 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
                 if (it == placed.end()) continue;
                 p.rect[0] = it->second.first;
                 p.rect[1] = it->second.second;
-                p.rect[2] = static_cast<std::int32_t>(d.texture->width);
-                p.rect[3] = static_cast<std::int32_t>(d.texture->height);
+                p.rect[2] = static_cast<std::int32_t>(d.texture->base_width);
+                p.rect[3] = static_cast<std::int32_t>(d.texture->base_height);
                 p.origin[0] = static_cast<std::int32_t>(d.texture->origin_u);
                 p.origin[1] = static_cast<std::int32_t>(d.texture->origin_v);
             } else {
@@ -801,7 +1130,17 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             if (afail == 1) flags &= ~(1 << 6);
         }
         if (Bits(d.alpha, 4, 2) == 2) flags |= 1 << 17;
-        if (d.blend && blend.src_over_128) flags |= 1 << 18;
+        if (blending && blend.src_over_128) flags |= 1 << 18;
+        if (d.aa1 && !d.blend) flags |= 1 << 25;  // AA1 alone: As = coverage = 1.0
+        if (target->psm != 0) flags |= 1 << 24;  // 16-bit frame buffer: 5-bit colour, 1-bit alpha
+        if (date) {
+            flags |= 1 << 22;
+            if (Bits(d.test, 15, 1)) flags |= 1 << 23;
+        }
+        if (d.fog) {
+            flags |= 1 << 20;
+            p.fogcol = static_cast<std::int32_t>(d.fogcol & 0xFFFFFF);
+        }
         p.fix = static_cast<float>(Bits(d.alpha, 32, 8));
         p.flags = flags;
         const std::uint64_t depth = DepthKey(d.test, d.zbuf);
@@ -827,21 +1166,33 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
     end_pass();
 }
 
+const GsBackend::Target* GsBackend::DisplayTarget() const {
+    // No field copy this frame: the frame buffer at DISPFB's FBP with DISPFB's width (menus FBW 10
+    // and flight FBW 8 both draw at block 0); before any DISPFB, or when none matches, the first
+    // frame buffer at block 0.
+    const std::uint32_t fbp = static_cast<std::uint32_t>(dispfb_ & 0x1FF);
+    const std::uint32_t fbw = static_cast<std::uint32_t>((dispfb_ >> 9) & 0x3F);
+    const Target* first = nullptr;
+    for (const auto& [key, t] : targets_) {
+        if (dispfb_ != 0 && t.fbp == fbp && t.fbw == fbw && t.psm == 0) return &t;
+        if (!first && t.fbp == 0 && t.psm == 0) first = &t;
+    }
+    return first;
+}
+
 void GsBackend::PresentSize(int& w, int& h) const {
+    w = h = 0;
     if (present_valid_) {
         w = present_w_;
         h = present_h_;
-        return;
+    } else if (const Target* t = DisplayTarget()) {
+        w = t->img.width;
+        h = std::max(t->used_height, 1);
     }
-    // No field copy this frame: the draw buffer at block 0.
-    for (const auto& [key, t] : targets_) {
-        if (t.fbp == 0) {
-            w = t.img.width;
-            h = std::max(t.used_height, 1);
-            return;
-        }
-    }
-    w = h = 0;
+    // The NTSC display shows at most 448 lines (ADR-006 §4: the 448-line draw buffer); the flight
+    // scissor also covers line 448, which is never displayed. (DISPLAY2.DH cannot bound it: the menus
+    // set a 224-line field display and still draw and present 448 lines.)
+    h = std::min(h, 448);
 }
 
 void GsBackend::CopyPresent(VkCommandBuffer cmd, VkImage dst, int dst_w, int dst_h) {
@@ -850,9 +1201,7 @@ void GsBackend::CopyPresent(VkCommandBuffer cmd, VkImage dst, int dst_w, int dst
     if (w == 0 || h == 0) return;
     Image* src = present_valid_ ? &present_ : nullptr;
     if (!src) {
-        for (auto& [key, t] : targets_) {
-            if (t.fbp == 0) src = &t.img;
-        }
+        if (const Target* t = DisplayTarget()) src = const_cast<Image*>(&t->img);
     }
     if (!src) return;
     const VkImageLayout restore = src->layout;

@@ -1,36 +1,95 @@
 # Pending PCSX2 checks
 
-Checks that need the original game running in PCSX2 2.8.2, ordered by importance. Results go into a new `sessions-NN.md` file (latest: `sessions-10.md`); answered checks are removed from this list. Save states contain game memory: keep them in the save-state folder outside the repo (`*.p2s` is never committed).
+Checks that need the original game running in PCSX2 2.8.2, ordered by importance. Results go into a new `sessions-NN.md` file (latest: `sessions-12.md`); answered checks are removed from this list. Save states contain game memory: keep them in the save-state folder outside the repo (`*.p2s` is never committed).
 
 General: open the debugger with **Debug → Open Debugger**. "Execute breakpoint" = Breakpoints tab → New → Execute, address as given. "Memory watch" = Memory view, go to the address, and read the value while the game runs or is paused.
 
-## S5-A. Slice 5 block A batch: input-recording calibration, mission start (two runs, about 30 minutes)
+## S7. Slice 7 batch: results screen and post-mission menu (one session, about 30 minutes; can follow C2)
+- **Purpose:** reference data for scene 5 (results) and the post-mission menu (`../subsystems/results-startup.md` "Scene 5"), translated 2026-10-18 in `src/game/results_scene.cpp` and `src/game/post_mission_page.cpp`. The port cannot reach the results screen on its own yet: a `--mission` start diverges from PCSX2 (its RNG and heap differ), so replaying `b3_m4_full.p2m2` over it does not complete mission 4 (tried 2026-10-18). Hence test vectors and screenshots.
+- **Blocks:** validation of S7 only.
+- **Preparation:** as for S5-C. Files into `Slices/Slice7/`. Start from the end of C2 (`c2_results_f<frame>.p2s`), or play any campaign mission (mission 4 is fine) to MISSION ACCOMPLISHED and let the replay run into the results.
+- **Steps:**
+  1. Execute breakpoint **0x0024C328** (results sub 0). At the hit save `s7_r0_before.p2s`, Step Out, save `s7_r0_after.p2s`, remove the breakpoint.
+  2. Execute breakpoint **0x00247BD8** (`ResultsUpdate`). Let it hit about 20 times (F5 between hits) so the opening has passed, then at three different moments while the tracks run on the map (units moving, kill markers appearing) save `tv_00247BD8_<n>_before.p2s`, Step Out, save `tv_00247BD8_<n>_after.p2s` (n = 1, 2, 3). Hold **R2** for the third one (5 steps per frame). Remove the breakpoint.
+  3. Screenshots (F8 / Save Screenshot, internal resolution): the results page while the tracks run, after the tracks end (all kills counted), and the debriefing text page.
+  4. Execute breakpoint **0x002476F0** (counts every kill at once). Press **X** on the results page: at the hit save `tv_002476F0_before.p2s`, Step Out, save `tv_002476F0_after.p2s`.
+  5. Execute breakpoint **0x00246FF0** (result summary), then leave the results page (X until the screen fades out): at the hit save `tv_00246FF0_before.p2s`, Step Out, save `tv_00246FF0_after.p2s`.
+  6. In the post-mission menu: screenshot with the cursor on each item (the help line changes). Execute breakpoint **0x00235F10**, choose the first item (continue): `tv_00235F10_before.p2s`, Step Out, `tv_00235F10_after.p2s`. Stop.
+- **Record:** the mission played, the rank shown, which pages appeared after the results (story movie or not), anything unusual.
 
-- **Purpose:** (1) the frame offset between a PCSX2 power-on input recording and the port's game ticks (`../port/s5-plan.md` P2, `--p2m2-offset`); (2) reference RAM and pictures for block A: the mission set up in RAM at its first frame (heap exact) and the first gameplay frame as a GS dump.
-- **Blocks:** validation of P2 and block A only. Documentation and translation go on meanwhile.
-- **Preparation:** as for the S4 batch: save states uncompressed, Internal Resolution Native, PNG screenshots at "Internal Resolution (Aspect Uncorrected)" (F8), screen ratio 4:3, card S in slot 1, pad 2 **unplugged** (Settings → Controllers → Controller Port 2: Not Connected). Debug → Open Debugger. **Settings → Advanced → Enable Recording Tools** on.
+## S5-C. Slice 5 block C batch: sequences, replay, title demo, carrier, game over (one session, about 75 minutes)
+- **Purpose:** reference data for block C (cutscenes and in-engine sequences, replay and title demo, carrier landing/takeoff, game-over and rearm menus; `../port/s5-plan.md` §7): recordings that start from save states, with checkpoint states the port compares RAM against.
+- **Blocks:** validation of block C only. Documentation and translation go on meanwhile. Section 1 below (VU0 skinning vectors) belongs to this batch too; do it in the same session if it is still open.
+- **Preparation:** as for S5-B (states uncompressed, Internal Resolution Native, PNG screenshots, 4:3, pad 2 not connected, Enable Recording Tools on, GS dumps uncompressed). Files into `Slices/Slice5c/`. Recordings start exactly as in S5-B ("How a recording starts"): load the state paused, Tools → Input Recording → New, "Record from: Current frame / Save state", resume. Checkpoint states are named with the recording frame number shown by PCSX2.
 
-### Run 1: calibration recording (cold boot, about 5 minutes)
-1. Tools → Input Recording → New. File `s5_cal.p2m2` (in the Slices folder), record from **power-on / boot** (not from a save state).
-2. Add Execute breakpoints **0x0022D748** (Start accepted on the title) and **0x0022D880** (confirm in the main menu).
-3. Let the game boot to the title. Press **Start**. When 0x0022D748 fires: save `s5_cal_start.p2s`, write down the **recording frame number** PCSX2 shows (window title or the recording OSD), resume.
-4. Press **X** (NEW GAME). When 0x0022D880 fires: save `s5_cal_confirm.p2s`, write down the frame number, resume. Press **X** (NORMAL).
-5. When SS01 starts, stop the recording (Tools → Input Recording → Stop). Disable the breakpoints.
-- **Record:** the file `s5_cal.p2m2`, both states, both frame numbers.
+### C1. Pre-mission sequence of mission 1 (`c1_m1_intro.p2m2`)
+Start a new campaign (or load the card used for S5-A) and select mission 1. Add an Execute breakpoint at **0x0010BA38** (in-engine sequence sub-state 0x13). When it hits the first time, remove it and save `c1_start.p2s`; start the recording from there and **do not touch the pad** until the sequence ends and gameplay starts (or 3 minutes). Checkpoint states about every 20 s (`c1_f<frame>.p2s`) and one at the first gameplay frame (Execute breakpoint 0x0010A230, `c1_end_f<frame>.p2s`). Also two screenshots: the front view of the F-4E on the deck with the island behind it, and the low side view as it rolls (the port draws the aircraft almost black there: lighting check). Then stop.
 
-### Run 2: mission start for missions 1, 3 and 4 (about 25 minutes)
-For each mission, one cold boot. Breakpoint for all three: Execute **0x0010A230** (first frame of the mission start, sub-state 0xA). Add it only once the loading screen is up (it fires once per mission).
-1. **Mission 1:** Start, NEW GAME, NORMAL; skip SS01, the title card and the briefing with Start; in the campaign menu X on START MISSION, then X in the hangar on the default aircraft. While the **loading screen** shows: screenshot `s5_m1_loading.png`, then add the breakpoint. When it fires: save `s5_m1_start.p2s`, disable the breakpoint, resume. About 2 s after the first gameplay picture (or the mission's opening picture) appears: **GS dump** `s5_m1_frame` (the same dump function as the Oct-11 dumps) and screenshot `s5_m1_frame.png`.
-2. **Mission 3:** title → LOAD → slot 1 (as run B of S4), CONTINUE, skip the title card and briefing with Start, START MISSION, X in the hangar on the default aircraft. Same steps: `s5_m3_loading.png`, `s5_m3_start.p2s`, GS dump `s5_m3_frame`, `s5_m3_frame.png`.
-3. **Mission 4:** LOAD → **slot 4** (MISSION 04 / BLOCKADE), then as mission 3: `s5_m4_loading.png`, `s5_m4_start.p2s`, GS dump `s5_m4_frame`, `s5_m4_frame.png`.
-- **Record:** every button with roughly when, which aircraft and colour were selected, anything shown before gameplay (e.g. an opening sequence), and whether the breakpoint fired once per mission.
+### C2. Replay after mission 4 (`c2_m4_replay.p2m2`)
+From the last state of B3 (or play mission 4 to MISSION ACCOMPLISHED). Add an Execute breakpoint at **0x0016E2D0** (`UpdateReplayPlayback`); at its first hit remove it, save `c2_start.p2s` and start the recording. Let the replay run without input (about 60 s), save `c2_f<frame>.p2s` every 15 s, then press START once and keep recording until the results screen; save `c2_results_f<frame>.p2s` there and stop.
 
-## S2b-B. BGM player (optional, needs a card with the campaign cleared; about 5 minutes)
+### C3. Carrier landing and rearm (`c3_m3_carrier.p2m2`)
+From the B4 state at the return line (`b4_f<frame>.p2s`, mission not yet complete), start the recording, follow the landing guidance and land. If the landing fails, the retry is fine: keep going. After touchdown press START to open the **rearm menu**, save `c3_rearm_f<frame>.p2s`, choose CHANGE WEAPON once (any entry), then TAKEOFF and fly the takeoff run until normal control returns (sub 0xB); save `c3_takeoff_f<frame>.p2s` and stop. Checkpoint states about every 30 s in between.
 
-- **Purpose:** reference for the BGM player (OPTIONS shows it only after a cleared campaign), the one S2b page not yet checked (`../port/validation.md` S2b). Also gives the port a cleared save to test it with.
-- **Blocks:** nothing.
-- **Steps:** cold boot with the card in slot 1, Start, OPTIONS. Execute breakpoint **0x00244EA0**, open the BGM player. First hit: save `s2b_bgm_enter.p2s`, disable, resume. After about 2 s: screenshot `s2b_bgm.png`. Play one track and note the buttons.
-- **Record:** state and screenshot names, the buttons, and a copy of the card folder (`Slices/`).
+### C4. Game over (`c4_m4_gameover.p2m2`)
+From `s5_m4_start.p2s`: start the recording and fly into the ground. When the game-over menu appears (RETRY / QUIT MISSION / RETURN TO TITLE) save `c4_menu_f<frame>.p2s`, choose RETRY, and keep recording until the mission restarts (Execute breakpoint 0x0010A230 hits: `c4_retry_f<frame>.p2s`). Stop.
+
+### C5. Title demo (`c5_demo.p2m2`)
+Boot normally to the title screen and leave the pad untouched. Add an Execute breakpoint at **0x0022CC68** (`StartTitleDemo`); when it hits, remove it, save `c5_start.p2s` and start the recording without input. Save `c5_f<frame>.p2s` every 15 s until the demo returns to the title (`c5_end_f<frame>.p2s`). Stop.
+
+### C6. No-save intro (optional, if section 1 run A is done: the same boot)
+With no AC04 save in slot 1, boot; at the first hit of **0x0010BA38** save `c6_start.p2s`, record without input to the end of the intro with states every 20 s (`c6_f<frame>.p2s`).
+
+### C7. Mid-mission sequence (optional, only if a card reaches one of the missions with mission ids 4, 5, 10, 14 or 15, e.g. campaign mission 12)
+Execute breakpoint **0x0010B500** (sub-states 0xD–0xF); at the first hit save `c7_start.p2s` and record without input until gameplay resumes (states every 15 s).
+
+- **Record:** per recording the file name, the checkpoint state names, which path was taken (C3: landing retries; C4: crash place), anything unusual.
+
+## S5-B. Slice 5 block B batch: gameplay recordings, test vectors, effect frames, HUD, sound (one session, about 90 minutes)
+- **Purpose:** reference data for block B (flight, AI, mission rules, weapons, effects, HUD, mission sound; `../port/s5-plan.md` §6): input recordings the port replays with full-RAM checkpoints, entry/exit states of the riskiest functions (test vectors), GS dumps of effect-heavy frames, HUD pictures and a sound capture.
+- **Blocks:** validation of block B only. The port work (documentation, then translation) goes on meanwhile.
+- **Preparation:** as for S5-A (save states uncompressed, Internal Resolution Native, PNG screenshots "Internal Resolution (Aspect Uncorrected)", 4:3, pad 2 not connected, Enable Recording Tools on) and **GS dump compression: Uncompressed** (Settings → Graphics → Debug/Advanced; the S5-A dumps came as `.zst` twice). Files into `Slices/Slice5b/`. Keep `s5_m3_start.p2s` and `s5_m4_start.p2s` from run 12: every recording starts from them.
+- **How a recording starts (all of B1-B4):** load the state (`System → Load State` from file), leave it **paused** (it is at the breakpoint 0x0010A230; remove the breakpoint), then Tools → Input Recording → **New**, "Record from: **Current frame / Save state**", file name as given. Then resume and play. The recording's frame 0 is the anchor. Stop with Tools → Input Recording → Stop.
+- **Checkpoint states during a recording:** pause (the pause hotkey, or System → Pause), `System → Save State` to file with the given name **including the recording frame number** shown by PCSX2 (e.g. `b1_f0600.p2s`), resume. Exact frames do not matter; the number in the name does.
+
+### B1. Mission 4 free flight, 60 s (`b1_m4_flight.p2m2`)
+From `s5_m4_start.p2s`. Fly without firing: about 10 s level, then climbs, dives, rolls both ways, full throttle and air brake (R1/R2 or as mapped), a few seconds very low over the terrain if possible (no crash). Checkpoint states about every 10 s: `b1_f<frame>.p2s` (6 states).
+
+### B2. Mission 4 firing run, about 90 s (`b2_m4_fire.p2m2`)
+From `s5_m4_start.p2s`. Fire the gun in bursts, lock and fire missiles at aircraft or transports (at least 4, some hits), drop the special weapon (UGBM) on a ground target or the ground, change targets (the target button). Checkpoint states about every 15 s (`b2_f<frame>.p2s`) and one right after the first missile hit (`b2_hit_f<frame>.p2s`).
+
+### B3. Mission 4 to the end (`b3_m4_full.p2m2`)
+From `s5_m4_start.p2s`. Play mission 4 normally until MISSION ACCOMPLISHED (or failure) and the replay/results start; stop the recording when the results screen appears. Checkpoint states at every radio message about mission progress (new objective, phase change) and about every 60 s otherwise: `b3_f<frame>.p2s`. Note what happened around each (e.g. "transports appeared").
+
+### B4. Mission 3 to the return line (`b4_m3.p2m2`)
+From `s5_m3_start.p2s`. Destroy the targets and fly to the return line until the carrier landing sequence starts (AWACS "Approaching return line..."; sub-state 0x14, block C). Checkpoint states about every 60 s and at the return line (`b4_f<frame>.p2s`).
+
+### B5. Function test vectors (entry/exit pairs)
+During any free play in mission 4 (load `s5_m4_start.p2s`, no recording needed). For each address below, one at a time: add the Execute breakpoint; when it hits, note **a0, a1, a2, a3, ra**, save `tv_<address>_before.p2s`; then **Step Out** (Debug → Step Out) and save `tv_<address>_after.p2s`; disable the breakpoint and go on. If Step Out stops at another breakpoint, disable the others first.
+
+| Address | Function | When it hits |
+|---|---|---|
+| 0x00129500 | `UpdateFlightDynamics` (player flight model step) | every frame in flight: take one while turning |
+| 0x00122638 | player collision (terrain, units) | every frame: take one flying low over terrain |
+| 0x0017C020 | point-to-triangle distance (collision core, VU0 flag delay) | when flying low; take the first hit |
+| 0x0012B540 | `UpdateAITarget` | every frame per unit: take one while enemies are in the air |
+| 0x0011D580 | group target selection | when AI groups pick targets (soon after the start) |
+| 0x0014C8F0 | `FireBullet` | press the gun button |
+| 0x0014D8B0 | `FireMissile` | fire a missile |
+| 0x0014FA88 | `FireSpecialWeapon` | drop the UGBM |
+| 0x001DD9D8 | rocket/missile trail spawn (random reads) | right after a missile launch |
+| 0x002528C8 | `QueueRadioChatter` (probability table, `rand`) | when a radio chatter line is about to play (an enemy shot down, a missile near) |
+
+### B6. Effect-heavy frames (GS dumps) and HUD pictures
+In B2 or a free run of mission 4:
+1. **GS dump** `b6_explosion` with a large explosion and smoke on screen (a transport or aircraft destroyed nearby), and **GS dump** `b6_missiles` with several missile trails and afterburner heat haze (behind another aircraft). Screenshot of the same frames (`b6_explosion.png`, `b6_missiles.png`).
+2. **Screenshots** (F8): `hud_lockon.png` (lock-on box on a target), `hud_warning.png` (MISSILE ALERT / warning), `hud_map.png` (the full map view, the map button), `hud_message.png` (a centre message such as TARGET DESTROYED), `hud_cockpit.png` (cockpit view).
+3. **16:9:** Options → screen settings → 16:9, then `hud_169.png` in flight; set it back to 4:3.
+
+### B7. Sound capture (about 20 s)
+Tools → Start Video/Audio capture (as for the S3 movie capture), during mission 4 flight with the engine at varying throttle, a gun burst, a missile launch and at least one radio voice line. File `b7_sound` (whatever container PCSX2 writes; `tools/research/flac_mp4.py` reads the MP4/FLAC one).
+
+- **Record:** for each recording its file and the checkpoint state names; for B5 the a0-a3/ra values per address; anything unusual (the game paused, a load, a sequence).      
 
 ## 1. VU0 micro skinning reference data: part types 0 and 3
 
@@ -51,7 +110,7 @@ For each mission, one cold boot. Breakpoint for all three: Execute **0x0010A230*
   5. If neither run hits an address, write that down: that path is then unused in the shipped data and only needs the code-level rewrite check.
 - **Record:** which run, the address, a0–a3, ra and the state names.
 
-Answered in run 05 (`sessions-05.md`): carrier takeoff after a rearm (subs 0x19–0x1B, 0x1D), VU0 skinning path 0x00225110.
+Answered in runs 11 and 12 (`sessions-11.md`, `sessions-12.md`, 2026-10-17): the S5-A batch (calibration recording, mission start of missions 1, 3 and 4). Answered in run 05 (`sessions-05.md`): carrier takeoff after a rearm (subs 0x19–0x1B, 0x1D), VU0 skinning path 0x00225110.
 
 Answered without PCSX2 (static analysis, see `../open-questions.md`): HUD warning texts, DATA 291–332 / BD 2 loaders, mission data for other aircraft, trial follow-up, result mode names.
 

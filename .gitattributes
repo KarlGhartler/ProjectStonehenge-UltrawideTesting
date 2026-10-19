@@ -1,3 +1,7 @@
+# Text files are stored with LF in the repository and checked out with the platform's line endings;
+# Git detects binary files by content.
+* text=auto
+
 # Shell scripts and git hooks must keep LF line endings, also on Windows with core.autocrlf=true,
 # otherwise Git Bash fails on the trailing CR.
 tools/hooks/* text eol=lf

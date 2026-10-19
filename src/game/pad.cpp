@@ -495,6 +495,14 @@ s32 UpdatePads() {
     return 0;
 }
 
+// EE: 0x00102460
+// Dead (no reference): sets pad byte +0x44 and stops the vibration.
+s32 func_00102460(u32 pad) {
+    GRef<u8>(pad + 0x44) = 1;
+    StopPadVibration(pad);
+    return 0;
+}
+
 // EE: 0x00102488
 s32 StopPadVibration(u32 pad) {
     for (u32 i = 0; i < 2; ++i) {
@@ -546,6 +554,20 @@ s32 TickPadVibration(u32 pad) {
         } else {
             timer -= 1;
         }
+    }
+    return 0;
+}
+
+// EE: 0x00102578
+// Dead (no reference): raises motor `motor`'s strength (+0x45 + motor) to `strength` with timer
+// `frames` when the new strength is higher; nothing when vibration is disabled or on a USB joystick.
+s32 func_00102578(u32 pad, s32 motor, u8 strength, u32 frames) {
+    if ((GRef<u8>(pad + 0x44) & 1) != 0) return 0;
+    if (GRef<s32>(pad) == 6) return 0;
+    u8& cur = GRef<u8>(pad + 0x45 + static_cast<u32>(motor));
+    if (cur < strength) {
+        cur = strength;
+        GRef<u32>(pad + 0x48 + 4u * static_cast<u32>(motor)) = frames;
     }
     return 0;
 }

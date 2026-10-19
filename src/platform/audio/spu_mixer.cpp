@@ -226,6 +226,12 @@ void SpuMixer::AdvanceStep() {
     }
 }
 
+void SpuMixer::DropQueued() {
+    std::lock_guard<std::mutex> lock(ring_mutex_);
+    ring_read_ = 0;
+    ring_count_ = 0;
+}
+
 void SpuMixer::Drain(std::int16_t* out, std::uint32_t frames) {
     std::lock_guard<std::mutex> lock(ring_mutex_);
     const std::size_t cap = ring_.size() / 2;

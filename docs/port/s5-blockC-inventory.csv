@@ -1,0 +1,195 @@
+address,name,slice,subsystem,bytes,features,status,note
+0x00106938,FUN_00106938,S5i,sequence,228,,translated,"load sequence still images (part 3): N GIM textures (TBP 0x2500, CBP 0x3E00), 256 image slots (0x2810 bytes)"
+0x00106A20,FUN_00106a20,S5i,sequence,48,,translated,reset the 256 image overlay slots
+0x00106A50,FUN_00106a50,S5i,sequence,260,,translated,"show image overlay (track 0x70): slot, image, position, scale, colour, flags"
+0x00106B58,FUN_00106b58,S5i,sequence,1552,lq/sq,translated,"draw active image overlays (rotation, scale, colour)"
+0x00107168,FUN_00107168,S5i,sequence,208,,translated,"parse animated sprite set ('GMA' header): frames, frame rects, timings"
+0x00107310,FUN_00107310,S5i,sequence,852,,translated,emit GMA animated sprite frame packet
+0x00107BD0,FUN_00107bd0,S5i,sequence,188,,translated,"load sequence animated sprites (part 2): N GMA sets (TBP 0x2500, CBP 0x2600), 32 slots"
+0x00107C90,FUN_00107c90,S5i,sequence,44,,translated,reset the 32 animated sprite slots
+0x00107CC0,FUN_00107cc0,S5i,sequence,264,,translated,"show animated sprite (track 0x71): slot, set, position, scale, colour"
+0x00107DC8,FUN_00107dc8,S5i,sequence,1468,lq/sq,translated,draw active animated sprites
+0x0010B500,FUN_0010b500,S5i,mission,800,,translated,"scene 2 subs 0xD-0xF: scripted mid-mission sequences for mission ids 4, 5, 10, 14, 15 and stage game[0x2C] (table 0x002A16A0: BGM id, length); then next sub-state, RequestScene(5) or sub 0xC"
+0x0010B930,FUN_0010b930,S5j,mission,260,,translated,"scene 2 subs 0x10-0x12: demo / replay playback frame (0x0010C6F8, view of player game[0x2D])"
+0x0010BA38,FUN_0010ba38,S5i,mission,96,,translated,scene 2 sub 0x13: special in-engine sequence frame (mission script 0x0010C748)
+0x0010BAB8,FUN_0010bab8,S5j,mission,224,,translated,scene 2 subs 0x14-0x18: mission-end sequence frame (0x0010C508 -> 0x0017A1B8)
+0x0010BB98,FUN_0010bb98,S5j,mission,208,,translated,scene 2 subs 0x19-0x1B: post-mission sequence frame (0x0010C638 -> 0x0017AC68)
+0x0010BC68,FUN_0010bc68,S5j,mission,108,,translated,scene 2 sub 0x1C: pause/game-over frame (0x0017E200)
+0x0010BCD8,FUN_0010bcd8,S5j,mission,144,,translated,scene 2 sub 0x1D: carrier rearm menu frame 0x0017A920 / 0x0017E450
+0x0010C508,FUN_0010c508,S5j,mission,304,,translated,simulation step during mission-end sequence
+0x0010C638,FUN_0010c638,S5j,mission,188,,translated,simulation step during post-mission sequence
+0x0010C6F8,FUN_0010c6f8,S5j,mission,80,,translated,"demo/replay step: 0x0016E2D0 (MissionEndUpdate), 0x00145DF8"
+0x0010C748,FUN_0010c748,S5i,mission,36,,translated,scripted-sequence step: MissionEventUpdate 0x00177058 + objects/effects
+0x0010D470,FUN_0010d470,S5j,camera,256,,translated,single replay view setup
+0x0010D570,FUN_0010d570,S5j,camera,28,,translated,replay view + 0x00176060
+0x0011D888,FUN_0011d888,S5j,mission,252,,translated,reset all unit target/lock references (-1)
+0x0011E5A8,FUN_0011e5a8,S5j,weapons,52,,translated,"explosion effect id for a unit (table 0x002A1F10, default 0x81 air / 0xB5 ground)"
+0x001211B0,FUN_001211b0,S5j,flight,356,vu0,translated,"force gear up instantly (mid-air start), returns ground clearance"
+0x00135E10,FUN_00135e10,S5j,replay,232,,translated,"snapshot units: position, rotation, velocity, flags, HP, fields 0x70-0x84"
+0x00135EF8,FUN_00135ef8,S5j,replay,232,,translated,restore units from the snapshot
+0x00135FE0,FUN_00135fe0,S5j,replay,608,,translated,"snapshot players: view, animation inputs quantised to u8 (x255), gear, trails"
+0x00136240,FUN_00136240,S5j,replay,728,,translated,"restore players from the snapshot (u8/255 back to float), re-run UpdateAircraftMovingParts"
+0x001373E8,FUN_001373e8,S5i,render,180,,translated,negated light direction matrix of a light set
+0x001374A0,FUN_001374a0,S5i,render,172,,translated,light colour matrix x 0.5 of a light set
+0x0013EC08,FUN_0013ec08,S5i,core,20,,translated,store a 3-vector with w = 0
+0x0014BB88,DrawProjectiles,S5i,weapons,248,,translated,draw calls of the 7 kinds plus a GIF packet in bucket 9
+0x0014D798,FUN_0014d798,S5i,weapons,276,,translated,missiles draw (model 0x0014AA78); the missile tracked by the player camera (+0x162) is flagged
+0x0014DBC0,FUN_0014dbc0,S5i,weapons,8,,translated,flak draw: empty
+0x0014E068,FUN_0014e068,S5i,weapons,8,,translated,shells draw: empty
+0x0014E9B8,FUN_0014e9b8,S5i,weapons,8,,translated,bombs draw: empty
+0x0014EE50,FUN_0014ee50,S5i,weapons,44,,translated,cannon shells draw: empty loop
+0x0014F940,FUN_0014f940,S5i,weapons,328,,translated,special weapons draw (0x0014ACB0); kinds 7 and 12 not drawn; the tracked weapon is flagged
+0x00154A48,ResetEffects,S5i,effects,900,,translated,reset every effect pool (44 pools); called by the in-engine sequence setup/update
+0x0016DA68,FUN_0016da68,S5j,mission,8,,translated,empty hook (per player)
+0x0016E010,FUN_0016e010,S5j,replay,448,,translated,"enter replay/demo playback: heap mark, swap effect/sound pools, replay camera, lock state, stop sounds"
+0x0016E1D0,FUN_0016e1d0,S5j,replay,256,,translated,"leave replay playback: restore pools, heap pop, branch by replay kind (+2)"
+0x0016E2D0,UpdateReplayPlayback,S5j,replay,1504,lq/sq,translated,"scene 2 subs 0x10-0x12 (was HYPOTHESIS MissionEndUpdate): replay/demo playback controller, skip with Start; afterwards EnterMenu(0) (demo), EnterMenu(0x1C) or RequestScene(5) (results)"
+0x0016E910,FUN_0016e910,S5j,replay,60,,translated,record a start marker (0x12344321)
+0x0016E950,FUN_0016e950,S5j,replay,312,,translated,find the next/previous frame marker in the replay ring
+0x0016ECC8,FUN_0016ecc8,S5j,replay,28,,translated,"replay start helpers (0x00135E10, 0x00135FE0)"
+0x0016ECE8,FUN_0016ece8,S5j,replay,28,,translated,replay stop helpers
+0x0016ED08,FUN_0016ed08,S5j,replay,2428,lq/sq,translated,"playback: apply a recorded unit record (position/rotation quantised, aircraft control surfaces, gear, afterburner, effects)"
+0x0016FF10,FUN_0016ff10,S5j,replay,20,,translated,swap active and replay effect pools (gp 0x004106AC <-> 0x00410AFC)
+0x0016FF28,FUN_0016ff28,S5j,replay,20,,translated,swap back effect pools
+0x0016FF40,FUN_0016ff40,S5j,replay,764,lq/sq,translated,"playback: apply recorded weapon/projectile event (missiles, guns, locks 0x00176AA8/0x00176B30)"
+0x00170240,FUN_00170240,S5j,replay,544,,translated,"record projectile event (type, owner, target, position, velocity)"
+0x001704A0,FUN_001704a0,S5j,replay,28,,translated,swap particle pools and re-init effects (block 30)
+0x001704C0,FUN_001704c0,S5j,replay,20,,translated,swap back particle pools
+0x001704D8,FUN_001704d8,S5j,replay,64,,translated,reset particle effects + effect slot flags
+0x00170518,thunk_FUN_00170d48,S5j,replay,8,,translated,thunk to 0x00170D48 (age effect slot flags)
+0x00170520,FUN_00170520,S5j,replay,120,,translated,playback: dispatch a recorded effect event by kind
+0x00170598,FUN_00170598,S5j,replay,312,,translated,playback: restart an explosion/smoke effect event
+0x001706D0,FUN_001706d0,S5j,replay,508,,translated,playback: restart a trail/flare effect event
+0x001708D0,FUN_001708d0,S5j,replay,464,,translated,playback: restart a debris/fire effect event
+0x00170AA0,FUN_00170aa0,S5j,replay,188,,translated,record effect event (1 vector)
+0x00170B60,FUN_00170b60,S5j,replay,224,,translated,record effect event (2 vectors)
+0x00170C40,FUN_00170c40,S5j,replay,264,,translated,record effect event (3 vectors)
+0x00170D48,FUN_00170d48,S5j,replay,88,,translated,age effect slot flags each frame
+0x00170DA0,FUN_00170da0,S5j,replay,132,,translated,"find effect slot by (owner, id)"
+0x00170E28,FUN_00170e28,S5j,replay,108,,translated,"allocate effect slot (owner, id, handle)"
+0x00170F68,FUN_00170f68,S5j,replay,44,,translated,stop all sounds for replay start
+0x00170F98,FUN_00170f98,S5j,replay,444,,translated,"playback: apply recorded sound event (looping SE state at 0x004206A0, one-shots)"
+0x00171158,FUN_00171158,S5j,replay,416,,translated,record sound event
+0x001712F8,FUN_001712f8,S5j,replay,360,,translated,replay camera: line-of-sight test to terrain and large units near the line
+0x00171460,FUN_00171460,S5j,replay,480,,translated,replay camera: clamp camera position out of terrain/objects
+0x00171640,FUN_00171640,S5j,replay,1188,,translated,"replay camera: smooth target tracking, collision avoidance"
+0x00171AE8,FUN_00171ae8,S5j,replay,488,lq/sq,translated,"replay camera style 8: fixed offset (-5, 15) in the unit frame (rotation from +0x10): replay camera style 8: camera mode 3; eye = unit position + rotate((0, -5, 15), unit angles); second point = unit position + (+-1024, -32, -512) (x sign by the unit x against 0x002B75E0), stored with the unit rotation through 0x0010D5F0 (camera +0x10/+0x20); mode byte +9 = 0x16, timer 240 with 0x0040EA24 when manager +0x1A4 bit 4 [constants corrected, validation.md]; with camera flag 4 a 240-frame blend (0x0040EA24); FOV 2048"
+0x00171CD0,FUN_00171cd0,S5j,replay,436,lq/sq,translated,"replay camera style 9: as style 8 (rotated (0, -5, 15) offset to camera +0x70 through 0x0010D680), but the second point is unit position + (0, -1024, -512) (no side switch), mode byte +9 = 0x17, timer 240 with 0x0040EA28 [constants corrected, validation.md; earlier note said (0, -1024, -32)]"
+0x00171E88,FUN_00171e88,S5j,replay,524,lq/sq,translated,"replay camera style 7: midpoint between the unit and the camera target unit (+0x190), view mode 1"
+0x00172098,FUN_00172098,S5j,replay,948,,translated,"replay camera style 5: chase offset (-5, 15) with terrain clearance and random variation (rand): replay camera style: fly-by: target = unit position + rotate((0, -5, 15)); on a cut (camera flag 4) places the eye ahead along the camera velocity (x 60 frames) plus a random side offset: angle (rand() % 360 - 180) scaled by 0x0040EA30 / 180, pushed out of the dead zone 0x0040EA34/0x0040EA38 and clamped to 0x0040EA3C..0x0040EA40, rotated about the unit's Z and applied at radius 2048; holds 300 frames; keeps the eye 256 above the ground (0x0013E2B0); FOV from the distance (x 4, minimum 2048); one rand() per cut"
+0x00172450,FUN_00172450,S5j,replay,1024,,translated,"replay camera style 6: external view mode 0x43, terrain clearance and object clamp 0x00171460, rand: replay camera style: low fly-by: as 0x00172098 with a 64-unit offset, angle range 0x0040EA44 and limits 0x0040EA48..0x0040EA58; the eye height is taken from a ground ray (0x00171460) or the terrain height (0x0013E2B0) minus 64; one rand() per cut; camera mode 0x43"
+0x00172850,FUN_00172850,S5j,replay,804,lq/sq,translated,"replay camera style 4: offset (-8, 256) view with line-of-sight check, random variation (rand): replay camera style: fixed mounts around the aircraft: on a cut picks mount rand() % 4, then follows the fallback chain in 0x002B77A0 (4 bytes per mount) while the line of sight is blocked (0x001712F8), mount offsets 0x002B7720 + 0x002B7760; target = unit + rotate((0, -8, 256)); holds 300 frames with the delay 0x0040EA5C; one rand() per cut"
+0x00172B78,FUN_00172b78,S5j,replay,888,lq/sq,translated,"replay camera: default external view (mode 0x43) with offset from table 0x002B7720 and line-of-sight check; used by style 12 when no projectile is followed: replay camera style: wing mounts: tests two mount points (0x002B7720 and 0x002B7750 with +-60 / +-24 offsets) for line of sight (0x001712F8) and switches between them with a 60-frame hysteresis (+0x194), forcing a cut when switching; target = unit + rotate((0, -8, 256)); camera mode 0x43; no random use"
+0x00172EF0,FUN_00172ef0,S5j,replay,304,lq/sq,translated,"replay camera style 3: cockpit view of the unit (view mode 0xC2, cockpit flag +0x149 = 1), 300-frame cut when flag 4"
+0x00173020,FUN_00173020,S5j,replay,1096,vu0 lq/sq,translated,"replay camera style 13: cockpit view (mode 0xC2) with per-player pad extension input: replay camera style: cockpit view with look-around: sets the unit view byte (+0x149) to 1 (cockpit), camera mode 0xC2; on a cut resets the look angles (+0x20); look yaw/pitch follow the analog pressure of the pad direction buttons (pad_ext +0x1A..+0x1D x limit / 255) clamped to the aircraft's look limits (aircraft table 0x00410650: +0x30..+0x40, or +0xD4..+0xE4 with ctx flag 0x10000); for flag 0x1000000 units uses a fixed offset (z - 1024); writes only the unit's view/look fields during replay"
+0x00173468,FUN_00173468,S5j,replay,516,lq/sq,translated,"replay camera style 14: hand control back to the player view (view mode 0, flag 0x100, cockpit flag 0)"
+0x00173670,FUN_00173670,S5j,replay,1064,lq/sq,translated,"replay camera styles 2 and 11: orbit/offset view of the unit with line-of-sight check 0x001712F8 and random variation (rand): replay camera style: orbit: target = unit + rotate((0, -5, 15)); on a cut picks a random orbit direction (pitch (rand() % 360 - 180) / 180 x 0.5 x 0x0040EA94, then yaw (rand() % 360 - 180) / 180 x 0x0040EA94; two rand() calls) applied to (0, 0, 128) in the unit frame, holds 300 frames (delay 0x0040EA98); eye at 1.25 x the offset; if the line of sight is blocked (0x001712F8) tries the mirrored offset, then (-128, 0, 0), then (128, 0, 0)"
+0x00173A98,FUN_00173a98,S5j,replay,1468,,translated,"replay camera style 15: external view 0x43 following the projectile-follow state when no special view is active, terrain clearance, rand: replay camera style 15: projectile follow: while the unit's projectile record in 0x00410680 is active (+0x10 != -1) looks from behind the projectile (mode 0x18); when it has hit (+0x5C bit 0) switches for 180 frames to the hit unit (+0x59); otherwise a chase camera (mode 0x11, target unit + rotate((0, -5, 15))); on cuts two rand() calls: the first result is discarded, the second gives the side angle (rand() % 360 - 180, no dead zone or clamp) at radius 64; ground clearance via 0x0013E2B0, FOV from the distance"
+0x00174058,FUN_00174058,S5j,replay,1116,,translated,"replay camera style 1: chase offset (-5, 15) behind the unit with terrain clearance (0x0013E2B0) and random variation (rand): replay camera style: chase with drift: on a cut places the eye ahead along the camera velocity (x 60) plus a random side offset (one rand(): (rand() % 360 - 180) x 0x0040EAAC / 180, dead zone 0x0040EAB0/0x0040EAB4, clamp 0x0040EAB8..0x0040EABC) at radius 32, sets the drift velocity (x 0x0040EAC0), holds 300 frames; between cuts the eye drifts by +0xD0 and is pushed out to a minimum distance of 128 (factor 0x0040EAC8)"
+0x001744B8,FUN_001744b8,S5j,replay,388,lq/sq,translated,"replay camera style 0 (table 0x002B77B0, index camera state +0x191): fixed view on the unit (view mode 3, cut flag 0x10), uses the results helpers 0x00246D98/0x00246DE8"
+0x00174640,FUN_00174640,S5j,replay,612,lq/sq,translated,"replay camera: missile-follow view (from style 12 and the weapon-event camera 0x00175B08): replay camera: missile-follow view: follows the player missile slot (projectile pool +0x4000 + slot x 0x60), mode 0x41 once the missile has hit; eye behind the missile rotated by fixed angles; for the first 60 frames the FOV eases from 512 to 4096 via the curve 0x00246D98/0x00246DE8"
+0x001748A8,FUN_001748a8,S5j,replay,2936,vu0 lq/sq,translated,"replay camera: special-weapon-follow view (from style 12 and 0x00175B08): replay camera: weapon-follow view for the unit's record in 0x00410680 (skipped when +0x14 is -1): follows the tracked object (+4) by state (+8: 1 start, 0x1F end, flags in the replay camera block 0x00410B08 +0x14/+0x18), eye placed behind and above with angles from the constants 0x0040EAEC..0x0040EB3C, kept above the terrain (0x0013E2B0, 6 checks), FOV eased with the curve 0x00246D98/0x00246DE8; no random use"
+0x00175420,FUN_00175420,S5j,replay,668,lq/sq,translated,"replay camera: chase camera on target unit (path point from camera table), FOV from distance (512..max)"
+0x001756C0,FUN_001756c0,S5j,replay,460,,translated,"replay auto-camera: choose next camera style by situation flags (rand() % 10 over allowed mask 0x1D0+n), dispatch table 0x002B77B0 (unreferenced by code: only via the table)"
+0x00175890,FUN_00175890,S5j,replay,344,,translated,replay camera follow-target mode / random style pick (rand)
+0x001759E8,FUN_001759e8,S5j,replay,284,,translated,"replay camera style 12 (table 0x002B77B0): follow the projectile of the projectile-follow state: special weapon -> 0x001748A8, missile -> 0x00174640, else default 0x00172B78; created as a function 2026-10-11"
+0x00175BA0,FUN_00175ba0,S5j,replay,360,lq/sq,translated,replay camera when the player is destroyed: high orbit over the wreck
+0x00175D08,FUN_00175d08,S5j,replay,740,vu0 lq/sq,translated,"create replay camera state (0x1E0, gp 0x00410B0C), camera tables 0x002B7670, HUD mode by mission kind/demo"
+0x00175FF0,FUN_00175ff0,S5j,replay,100,vu0 lq/sq,translated,reset replay camera cut state
+0x00176058,thunk_FUN_0017d8e8,S5j,replay,8,,translated,reset replay HUD object 0x00410B40 (thunk-like)
+0x00176060,FUN_00176060,S5j,replay,2216,lq/sq,translated,"replay camera frame: L/R (pad bits 4/8) switch among 5 manual cameras or auto mode, camera style dispatch 0x002B77D8, Bezier path, shake noise (rand), view matrices"
+0x00176940,FUN_00176940,S5j,mission,128,,translated,reset per-player target-lock state (0xFF = none)
+0x001769C0,FUN_001769c0,S5j,mission,228,,translated,per-player lock state: drop locks on targets no longer valid (mask 0x004106AC+0x8A28)
+0x00176AA8,FUN_00176aa8,S5j,mission,112,,translated,player n: set primary lock target (record 0x004106AC+0x4000+id*0x60)
+0x00176B18,FUN_00176b18,S5j,mission,20,,translated,player n: clear primary lock
+0x00176B30,FUN_00176b30,S5j,mission,112,,translated,player n: set secondary lock target
+0x00176BA0,FUN_00176ba0,S5j,mission,20,,translated,player n: clear secondary lock
+0x00176BB8,FUN_00176bb8,S5i,sequence,536,,translated,"in-engine sequence: start cut (cut table 0x00410B1C[+0x110]): bind skinned/character models ('""' tracks), reset player weapon targets"
+0x00176DD0,SetupInEngineSequence,S5i,sequence,648,,translated,"block 29 of the mission data, sequence game[0x2C]: 4 parts (cuts, model table, 0x00107BD0 animated sprites (GMA), 0x00106938 still images (GIM)), state 0x150 at gp 0x00410B18; BGM 0x30/0x33/0x32 for ids 0x23/0x24/0x25"
+0x00177058,UpdateInEngineSequence,S5i,sequence,7576,,translated,"baked-keyframe cutscene player, one record per frame per track: 0x10 camera (pos, yaw, FOV), 0x11 look-at, 0x20-0x24 object transforms + animation channels, 0x40-0x49 object flags and effects, 0x70 still-image overlay, 0x71 animated-sprite overlay, 0x80-0x84 fades/colour; next cut at the end; finally EnterMenu(0) (intro) or RequestScene(2) (to gameplay)"
+0x00178DF8,FUN_00178df8,S5i,sequence,524,lq/sq,translated,"sequence camera: single view, projection (16:9 aware), eye/target from tracks, FOV, sky colour"
+0x00179008,FUN_00179008,S5i,sequence,652,lq/sq,translated,draw sequence character/skinned models (0x001E0A98) with drawing context
+0x00179298,FUN_00179298,S5i,sequence,1096,lq/sq,translated,"draw sequence overlays: colour fade, two blur/glow levels, images, animated sprites"
+0x00179780,FUN_00179780,S5i,sequence,136,lq/sq,translated,apply extra Euler rotation to a direction vector (sequence objects)
+0x0017A1B8,FUN_0017a1b8,S5j,mission,1552,,translated,"carrier-landing controller subs 0x14-0x18: 0x14 approach (after 0xB4 frames -> 0x15); 0x15 landing: START -> 0x18 (skip) or pause 0x1D, countdown, touchdown (height below 0x0040EBFC) -> message 0xC and 0x17/0x16, leaving the +-32768 area or crashing -> 0x16, timer warning at 0x708; 0x16 failure/retry; 0x17 success -> replay (sub 0x10); 0x18 -> results (scene 5)"
+0x0017A920,FUN_0017a920,S5j,mission,96,lq/sq,translated,freeze player at the stored position (pause)
+0x0017A980,FUN_0017a980,S5j,mission,600,lq/sq,translated,"restart player state for a retry: weapons reset, HP by difficulty, position from start point"
+0x0017AC68,FUN_0017ac68,S5j,mission,1096,,translated,"carrier takeoff controller subs 0x19-0x1B: 0x19 intro (START -> 0x1B; after 0xB4 frames -> 0x1A); 0x1A takeoff run: timer, airborne counter player state +0x27C > 5 -> 0x1B, radio messages 0x12 at frame 600 and 0x13 at 0x4B0, crash or timeout -> 0x1B; 0x1B result: success -> fade, centre message 7 and back to gameplay sub 0xB; failure -> centre message 4, retry"
+0x0017D838,FUN_0017d838,S5j,hud,8,,translated,replay HUD: set time
+0x0017D890,FUN_0017d890,S5j,hud,8,,translated,replay HUD: set visible-element mask
+0x0017D898,FUN_0017d898,S5j,hud,24,,translated,replay HUD: set camera index
+0x0017E200,FUN_0017e200,S5j,mission,12,,translated,game-over menu update
+0x0017E450,FUN_0017e450,S5j,mission,12,,translated,pause menu update (table 0x002B8450)
+0x001C9768,FUN_001c9768,S5i,effects,204,lq/sq,translated,"spawn or refresh an effect in pool +0x61BE0 (handle -1 allocates the lowest free record, else reuses it; returns the handle or -1 when full) [cutscene effect (sequence, mission 0x24); spawn 0x001C9768]"
+0x001D8098,FUN_001d8098,S5i,effects,256,,translated,"allocate the lowest free record of an effect pool (occupancy mask scan, count +4), -1 when full"
+0x001E9540,FUN_001e9540,S5i,effects,44,,translated,cutscene explosion by index (id table 0x002BA2C0)
+0x00216C58,FUN_00216c58,S5j,sound,72,,translated,reset the 3-slot positional SE table
+0x00216D88,FUN_00216d88,S5j,sound,828,,translated,"positional SE update: distance and pan per listener, play: positional SE update for the 3 slots (0x004241C4): distance gain 255 - d/20, angle and pan (0x00219850/0x00219900, curve 0x00219998), PlaySound of the slot sounds; for one variant the volumes are scaled by 0.7 in double precision through libgcc (__extendsfdf2/__muldf3/__fixdfsi); slot state 1 to 2"
+0x00220228,FUN_00220228,S5i,sequence,212,,translated,"draw the sequence character list for a view (walk the linked models +0xC8, visibility mask +0xD4/+0xD8): skin 0x002236A0, draw 0x00223830, shadow 0x00221440"
+0x00220308,FUN_00220308,S5i,sequence,644,,translated,"create one sequence character model from its data block: matrices, parts table, bump-allocated work (0x002252D0): bind a character model: allocates the part array (0x160 bytes per part, count from the model header +2, 0x002252D0), sets scale 1.0, copies the view and screen matrices (0x00366000, 0x00365FC0) into the object, and per part record (0x30 bytes) of type 0/1/3 stores the data pointers (vertices, normals, UVs, strips, colours as model-relative offsets), counts and the GIF tag template; tracks the smallest NLOOP-field value; returns the bytes used"
+0x00220590,FUN_00220590,S5i,sequence,300,,translated,"bind the motion data of a character (motion header, 0x002217E8, 0x002221B0): bind a character motion: allocates the motion state and bone arrays (0x002252D0), copies the motion header (0x002217E8), clears the root transform, sets the rotation order (0x002221B0); returns the bytes used"
+0x002206C0,FUN_002206c0,S5i,sequence,540,,translated,"reset the per-part draw state of a character (0x160-byte parts: flags +0x150, copy of +0x100 to +0x10) with the fog colour D_00410D70"
+0x00220948,FUN_00220948,S5i,sequence,16,,translated,store the sequence camera world->screen matrix (0x00365F40)
+0x00220958,FUN_00220958,S5i,sequence,16,,translated,store the sequence camera world->clip matrix (0x00365F80)
+0x00220A40,FUN_00220a40,S5i,sequence,84,,translated,set matrix +0x60 on a character and all linked characters (+0xC8)
+0x00220A98,FUN_00220a98,S5i,sequence,84,,translated,set matrix +0x20 on a character and all linked characters
+0x00220B00,FUN_00220b00,S5i,sequence,52,,translated,"sequence fog: near/far -> scale 255/(far-near), colour D_00410D70"
+0x00220B40,FUN_00220b40,S5i,sequence,60,,translated,find the first linked character whose mask +0xD4 matches its parent mask +0xD8
+0x00220BF0,FUN_00220bf0,S5i,sequence,60,,translated,create (0x00220C40) or clear the character set of a sequence object (+0xE4)
+0x00220C38,FUN_00220c38,S5i,sequence,8,,translated,store a value at +0xEC of a sequence object
+0x00220C40,FUN_00220c40,S5i,sequence,1232,,translated,"create the sequence character set from a container (up to 3 parts, 0x00220308/0x00220590), VU0 memory pages 0x00225570: create a character object from a sequence container: sizes the allocation (per sub-object: header 0xF0, parts x 0x160, motion block (bones + 1) x 0xB0), allocates it (0x00225570), binds the first model (0x00220308) and its motion (0x00220590), stores the optional texture (+0xA4), extra (+0xAC) and attachment (+0xB8) blocks, then chains the remaining sub-objects (+0xC8 list) the same way; returns the object"
+0x00221110,FUN_00221110,S5i,sequence,180,,translated,default sequence camera: sceVu0CameraMatrix + sceVu0ViewScreenMatrix into the engine matrices
+0x002211C8,FUN_002211c8,S5i,sequence,212,,translated,default sequence lights: two directional lights (+-0.5) via sceVu0NormalLightMatrix / sceVu0LightColorMatrix
+0x002212A0,FUN_002212a0,S5i,sequence,268,lq/sq,translated,"build the sequence draw-env GIF template 0x00384340 (TEST, ALPHA, TEX1, FBA, frame from the main draw env)"
+0x002213C0,FUN_002213c0,S5i,sequence,124,,translated,build the sequence texture-upload GIF template 0x00384240 (BITBLTBUF/TRXPOS/TRXREG/TRXDIR)
+0x00221440,FUN_00221440,S5i,sequence,784,,translated,"draw a character shadow (drop-shadow matrix) and its bones (0x00221758, 0x002228F8, 0x00222FA0): character shadow and bones: evaluates the motion if needed (0x00222FA0), bone matrices (0x00221758, 0x002228F8), drop-shadow matrix (sceVu0DropShadowMatrix towards the ground plane), and per bone the world, screen (0x00365F40/0x00365F80) and shadow matrices into the bone tables 0x00366240..0x0036B240"
+0x00221758,FUN_00221758,S5i,sequence,144,,translated,bone world matrices: bone matrix table 0x00369240[n] = character +0x60 x bone local (+0x20 of 0xB0-byte bones)
+0x002217E8,FUN_002217e8,S5i,sequence,212,,translated,"bind a motion header: key tables (+2/+4 offsets), 4 channel slots reset"
+0x00221C30,FUN_00221c30,S5i,sequence,192,,translated,"accumulate a bone chain (walk +0xA4 parents until a cached one, multiply down)"
+0x00221CF0,FUN_00221cf0,S5i,sequence,88,,translated,matrix from a rotation vector (sceVu0RotMatrix) and translation
+0x00221D48,FUN_00221d48,S5i,sequence,120,,translated,"matrix from Euler angles in order Z, X, Y plus translation (rotation order case of 0x00222800)"
+0x00221DC0,FUN_00221dc0,S5i,sequence,120,,translated,"matrix from Euler angles in order Y, Z, X plus translation (rotation order case of 0x00222800)"
+0x00221E38,FUN_00221e38,S5i,sequence,120,,translated,"matrix from Euler angles in order Y, X, Z plus translation (rotation order case of 0x00222800)"
+0x00221EB0,FUN_00221eb0,S5i,sequence,120,,translated,"matrix from Euler angles in order X, Z, Y plus translation (rotation order case of 0x00222800)"
+0x00221F28,FUN_00221f28,S5i,sequence,120,,translated,"matrix from Euler angles in order X, Y, Z plus translation (rotation order case of 0x00222800)"
+0x00221FA0,FUN_00221fa0,S5i,sequence,176,,translated,"start motion n on the character (prints ""Error!! This motiondata does not exist"" when missing)"
+0x002221B0,FUN_002221b0,S5i,sequence,268,,translated,set the current motion number and reset the 4 channel slots
+0x00222800,FUN_00222800,S5i,sequence,124,,translated,"set the root transform of a character: position, rotation, rotation order (switch to 0x00221D48/DC0/E38/EB0/F28)"
+0x002228F8,FUN_002228f8,S5i,sequence,88,,translated,copy a position into a 3x4 matrix record
+0x00222A18,FUN_00222a18,S5i,sequence,1416,,translated,"evaluate one motion channel at time t into bone transforms (key interpolation 0x00225840): evaluate one motion track into scratchpad: for the frame (float +0x130 of the track slot, 0x38 bytes) finds the key in each bone's key list by interpolation search, converts the packed short translation/rotation to float (sceVu0ITOF0Vector), scales by the track scale and adds the base offset for root bones; writes the bone transforms to the given scratchpad buffer (0x70000000 or 0x70001000)"
+0x00222FA0,FUN_00222fa0,S5i,sequence,1396,,translated,"evaluate all motion channels and build the bone matrices (0x00221C30, 0x00222A18): motion update for a character: sorts the 4 track slots by state (+0x15E), evaluates the active track (0x00222A18 into 0x70000000) and, while blending, the second track (into 0x70001000) and blends them per bone (0x00225840 with the weight +0x13C); advances the frames by the speed (+0x138), keeps the blend source in step when both tracks have the same length class, decrements the blend time (+0x148) and ends the blend at 0; then wraps or clamps the frame per loop mode"
+0x00223518,FUN_00223518,S5i,sequence,360,,translated,set the motion time of the character active channel
+0x002236A0,FUN_002236a0,S5i,sequence,396,,translated,skin all parts of a character: by part type (+0x140) 0x002238E0 / 0x00223B80 / 0x00224180 / 0x00224410 / 0x00224848
+0x00223830,FUN_00223830,S5i,sequence,172,,translated,"upload the skinned parts: 0x00223A58 per part, then 0x00224D50"
+0x002238E0,FUN_002238e0,S5i,sequence,372,lq/sq,translated,"texture upload packets for a part (0x00103ED0, 0x00104198): emit a character part as GIF strips: copies the part's GIF template (+0x150 qwords) and then for each strip writes a tag (NLOOP from the strip header, PRIM fixed) and per vertex the colour, UV and position from the index list, forcing the ADC (no-kick) flag for the 3 vertices after a strip restart; sends the packet to the character path (0x00104198 with 0x00410D40)"
+0x00223A58,FUN_00223a58,S5i,sequence,292,lq/sq,translated,"draw-env packets for the parts (0x00384340 template): appends the draw-environment template (0x00384340, count 0x00410D68) and the part GIF tags (strips from the index list, ADC kick flags every 3rd vertex) into the current buffer; links it into list 0x00410D44"
+0x00223B80,FUN_00223b80,S5i,sequence,316,lq/sq,translated,"textured triangle-strip mesh for a part (second draw pass when part +0x152 != 0): appends the texture template (0x00384240, count 0x00410D60) and per-strip textured vertex data (UV, colour, position with ADC flags) for a part into the current buffer; links it into list 0x00410D44"
+0x00223CC0,FUN_00223cc0,S5i,sequence,36,,translated,wait for a DMA channel (spin while CHCR STR bit 0x100 is set) - direct hardware access through the channel pointer
+0x00223CE8,FUN_00223ce8,S5i,sequence,32,,translated,"start a DMA channel: TADR, QWC 0, CHCR = chain mode + STR (0x104) - direct hardware access"
+0x00224180,FUN_00224180,S5i,sequence,656,lq/sq,translated,"skin a part of type 0 (part +0x140 == 0, set from the character data; called by FUN_002236A0) on VU0 micro: lighting setup (0x00225048), then in batches of up to 128 vertices DMAs positions and normals into scratchpad 0x70002200/0x70002230 (0x00223CE8, wait 0x00223CC0), loads bone matrices (0x00225088) and runs the micro entries 0x002250E8 / 0x00225178 (and 0x00225210 for parts with normals)"
+0x00224410,FUN_00224410,S5i,sequence,1076,lq/sq,translated,"skin a part of type 1 (part +0x140 == 1; called by FUN_002236A0) on VU0 micro, entries 0x00225110/0x002251A8/0x00225240 (PCSX2 hit, sessions-05.md): clears the scratchpad header, sets the light (colour 255, direction 0x00410024..0x0041002C, ambient 0x00410D74/0x00410D78) with 0x00225048, then per vertex batch (up to 64) DMAs the positions and normals into scratchpad and runs the micro program with the bone matrices; the output vertices go to the part's draw list"
+0x00224848,FUN_00224848,S5i,sequence,1288,lq/sq,translated,"skin a part of type 3 (morph track active, set by FUN_00223F58, reset to 1 by FUN_00223E20) on VU0 micro, entries 0x00225140/0x002251D8/0x00225270: as 0x00224410 with light constants 0x00410030..0x00410038, but blends two vertex sets (+0x118/+0x11C and +0x120/+0x124) with weights (1 - t, t), t = track weight +0x138; 1 - t is computed in double precision through libgcc (__extendsfdf2, __subdf3, __truncdfsf2)"
+0x00224D50,FUN_00224d50,S5i,sequence,760,lq/sq,translated,"transform and send the skinned vertices (VU0 micro, scratchpad DMA, GIF): skin a type-2 (rigid, single bone) character part on VU0 micro: light constants 0x0041003C..0x00410044, positions only (+0x110), batches of up to 64 vertices with the bone matrix; output to the part draw list"
+0x00225048,FUN_00225048,S5i,sequence,60,vu0,translated,"load the VU0 registers for a skinning batch: matrix (4 qw), light and colour vectors, counts"
+0x00225088,FUN_00225088,S5i,sequence,24,vu0,translated,load a 4x4 matrix into VU0 registers
+0x002250A0,FUN_002250a0,S5i,sequence,72,vu0,translated,load two 4x4 matrices into VU0 registers
+0x002250E8,FUN_002250e8,S5i,sequence,40,vu0 vu0-micro/cfc2,translated,"run VU0 microprogram entry 0x00 n times (vcallms 0), store vf1 results"
+0x00225110,FUN_00225110,S5i,sequence,44,vu0 vu0-micro/cfc2,translated,run VU0 microprogram entry 0x10 (2 parameters in VI registers)
+0x00225140,FUN_00225140,S5i,sequence,52,vu0 vu0-micro/cfc2,translated,run VU0 microprogram entry 0x30 (3 parameters)
+0x00225178,FUN_00225178,S5i,sequence,44,vu0 vu0-micro/cfc2,translated,run VU0 microprogram entry 0x40 (1 parameter)
+0x002251A8,FUN_002251a8,S5i,sequence,48,vu0 vu0-micro/cfc2,translated,run VU0 microprogram entry 0x50 (2 parameters)
+0x002251D8,FUN_002251d8,S5i,sequence,52,vu0 vu0-micro/cfc2,translated,run VU0 microprogram entry 0x70 (3 parameters)
+0x00225210,FUN_00225210,S5i,sequence,44,vu0 vu0-micro/cfc2,translated,run VU0 microprogram entry 0x80 (1 parameter)
+0x00225240,FUN_00225240,S5i,sequence,48,vu0 vu0-micro/cfc2,translated,run VU0 microprogram entry 0x90 (2 parameters)
+0x00225270,FUN_00225270,S5i,sequence,52,vu0 vu0-micro/cfc2,translated,run VU0 microprogram entry 0xB0 (3 parameters)
+0x002252B0,FUN_002252b0,S5i,sequence,28,,translated,offset table lookup: base + (u32 table[n+1] & ~3)
+0x002252D0,FUN_002252d0,S5i,sequence,56,,translated,round a value up to a multiple of n
+0x00225408,UploadVu0Microcode,S5i,sequence,148,,translated,"upload the VU0 microprogram (.vutext 0x0029C200) by direct VIF0 DMA (D0_TADR, D0_CHCR 0x145), FlushCache, wait (render-boundary.md)"
+0x002254A0,FUN_002254a0,S5i,sequence,52,,translated,clear the 512-entry VU0/texture page table 0x00366040
+0x002254D8,FUN_002254d8,S5i,sequence,32,,translated,round up to 4 KB
+0x00225570,FUN_00225570,S5i,sequence,212,,translated,"allocate 4 KB pages in the page table 0x00366040 (first fit), returns the address"
+0x00225698,InitSequenceModelEngine,S5i,sequence,180,,translated,"init the sequence model engine: DMA channel handles 0/1/2/8/9, default camera and lights, 64 KB work (0x00101060), GIF templates, page table"
+0x00225840,FUN_00225840,S5i,sequence,200,vu0,translated,linear interpolation of two quaternion/vector keys by t on VU0 (macro mode)
+0x0024CDD0,FUN_0024cdd0,S5j,results,1016,,translated,"per frame (simulation step): update the result record from the units (kills by group, flags 0x200000), timers: result recording per simulation step: for every unit destroyed this frame (+0x4C bit 0x200000) that is a player or a tracked unit (+0x64), appends a kill event to its group record (max 16 per group, 0xD0-byte groups at result +8): time (mission timer 0x004104F4 +0x28), position / 8, attacker kind 1 (player 1), 2 (player 2) or 3 (other) from +0x63 (in VS mode the victim index decides); once per new second writes a snapshot block into the result buffer 0x00411584: type 0x10 per tracked aircraft (position / 8, angles, alive flag, velocity direction × 127) or type 0x11 for unit kinds 2/3 (alive flag only), terminated by 0"
+0x0024D1C8,FUN_0024d1c8,S5j,results,676,,translated,"versus/objective scoring update from the units (scene 2 sub 0xB rules): versus result recording per frame: for the 10 tracked units writes a 0x16-byte replay sample (position /8, angles, alive flag, normalised velocity x127, frame index) into the result buffer 0x00411584, then copies mission counters (0x004104F4 +0x28..+0x30, mission data 0x004104F0 +0x18..+0x50) into the result record 0x00411578"
+0x00259340,FUN_00259340,S5i,radio,96,,translated,select scripted timeline track n (scene 2 subs 0xD-0xF scripted sequence)

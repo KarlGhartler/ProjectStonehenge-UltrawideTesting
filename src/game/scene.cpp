@@ -155,30 +155,31 @@ void SceneBootLoader() {
 }
 AC04_GUEST_FUNCTION(0x001008B0, SceneBootLoader);
 
-// ---- Scene stubs (skeleton) ----------------------------------------------------------------------
+// Handlers of scenes 1-7 at their original addresses (scene table 0x0029FDA0).
+// Scenes 1 (SceneMenuEntry, 0x00211C58) and 3 (SceneMovie, 0x00211CA8), both dead, are translated
+// in movie.cpp.
+// Scene 2 (SceneFlight, 0x0010A030) is translated in flight_load.cpp.
+// Scene 4 (SceneMenu, 0x002262D0) is translated in menu.cpp.
+// Scene 5 (SceneResults, 0x00246E18) is translated in results_scene.cpp.
+// Scene 6 (SceneStartup, 0x002613F0) is translated in startup.cpp.
+// Scene 7 (SceneHddError, 0x00261680) is translated in hdd.cpp.
 
-namespace {
-
-template <int kScene>
-void SceneStub() {
-    static const char* const kNames[8] = {"SceneBootLoader", "SceneMenuEntry", "SceneFlight",
-                                          "SceneMovie",      "SceneMenu",      "SceneResults",
-                                          "SceneStartup",    "SceneHddError"};
-    char key[32];
-    std::snprintf(key, sizeof(key), "scene-stub-%d", kScene);
-    log::WriteOnce(key, log::Level::Info, "game", "entered scene %d (%s): not translated yet, idling",
-                   kScene, kNames[kScene]);
+// EE: 0x00100A98
+// Dead (no reference): scene request with request bits `req`, next scene and sub-state.
+void func_00100A98(u16 scene, u16 sub, u32 req) {
+    MainContext* ctx = Ctx();
+    ctx->req = req;
+    ctx->next_scene = scene;
+    ctx->next_sub = sub;
 }
 
-}  // namespace
-
-// Handlers of scenes 1-7 at their original addresses (scene table 0x0029FDA0).
-AC04_GUEST_FUNCTION(0x00211C58, SceneStub<1>);  // SceneMenuEntry (dead)
-// Scene 2 (SceneFlight, 0x0010A030) is translated in flight_load.cpp.
-AC04_GUEST_FUNCTION(0x00211CA8, SceneStub<3>);  // SceneMovie (dead)
-// Scene 4 (SceneMenu, 0x002262D0) is translated in menu.cpp.
-AC04_GUEST_FUNCTION(0x00246E18, SceneStub<5>);  // SceneResults
-// Scene 6 (SceneStartup, 0x002613F0) is translated in startup.cpp.
-AC04_GUEST_FUNCTION(0x00261680, SceneStub<7>);  // SceneHddError
+// EE: 0x00100AE0
+// Dead (no reference): the same with request bits 7.
+void func_00100AE0(u16 scene, u16 sub) {
+    MainContext* ctx = Ctx();
+    ctx->req = 7;
+    ctx->next_scene = scene;
+    ctx->next_sub = sub;
+}
 
 }  // namespace ac04::game

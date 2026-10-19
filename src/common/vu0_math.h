@@ -66,6 +66,22 @@ inline s32 FloatToInt4(f32 v) {
     return static_cast<s32>(d);
 }
 
+// vftoi12: v * 4096 truncated toward zero, saturated to the 32-bit range.
+inline s32 FloatToInt12(f32 v) {
+    const double d = static_cast<double>(v) * 4096.0;
+    if (d >= 2147483647.0) return INT32_MAX;
+    if (d <= -2147483648.0) return INT32_MIN;
+    return static_cast<s32>(d);
+}
+
+// vftoi0: v truncated toward zero, saturated to the 32-bit range.
+inline s32 FloatToInt0(f32 v) {
+    const double d = static_cast<double>(v);
+    if (d >= 2147483647.0) return INT32_MAX;
+    if (d <= -2147483648.0) return INT32_MIN;
+    return static_cast<s32>(d);
+}
+
 namespace detail {
 
 // Rounds `d` to the nearest float (ties to even), clamped to +-FLT_MAX, denormal results flushed.

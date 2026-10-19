@@ -14,6 +14,8 @@
 #include <map>
 #include <memory>
 #include <tuple>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "platform/render/gs/gs_memory.h"
@@ -30,11 +32,17 @@ struct GsVertex {
     std::uint8_t fog = 0;
 };
 
-// Decoded texels for one draw: `width` x `height` RGBA8 texels covering texture coordinates
-// [origin_u, origin_u + width) x [origin_v, ...). Shared between draws with the same source.
+// Decoded texels for one draw: level 0 is `base_width` x `base_height` RGBA8 texels covering texture
+// coordinates [origin_u, origin_u + base_width) x [origin_v, ...). Mipmap levels 1..`levels` (TEX1.MMIN
+// 2-5 with MXL > 0) follow in full, to the right of level 0 and stacked top to bottom: level l is
+// max(tex_width >> l, 1) x max(tex_height >> l, 1) at x = base_width, y = sum of the heights of levels
+// 1..l-1 (gs.frag computes the same layout). `width` x `height` is the whole packed image.
+// Shared between draws with the same source.
 struct DecodedTexture {
     std::uint32_t origin_u = 0, origin_v = 0;
     std::uint32_t width = 0, height = 0;
+    std::uint32_t base_width = 0, base_height = 0;
+    std::uint32_t levels = 0;
     std::uint32_t tex_width = 0, tex_height = 0;  // 2^TW, 2^TH
     std::vector<std::uint8_t> rgba;               // GS alpha in A (0x80 = 1.0)
 };
@@ -49,10 +57,14 @@ struct DrawCommand {
     // Context registers in force
     std::uint64_t tex0 = 0, tex1 = 0, clamp = 0, alpha = 0, test = 0, frame = 0, zbuf = 0, scissor = 0;
     std::uint64_t texa = 0, fba = 0, fogcol = 0;
+    std::uint64_t miptbp1 = 0, miptbp2 = 0;  // MIPTBP1/2 of the context (mip levels 1-3 / 4-6)
     bool colclamp = true, pabe = false, dthe = false;
     std::shared_ptr<const DecodedTexture> texture;  // null when untextured or sourced from a target
     // Texture source is a frame buffer drawn earlier (block pointer of that frame buffer), or -1.
     std::int32_t texture_from_frame = -1;
+    // For a paletted texture read from a frame buffer: the palette as RGBA8 (TEXA applied for 16-bit
+    // CLUTs; 4-bit formats: the 16 entries from CSA in 0-15), for the backend's format conversion.
+    std::shared_ptr<const std::array<std::uint32_t, 256>> frame_clut;
     // Movie upscaling side path (ADR-006 §5): when the texture's last IMAGE upload came from a marked
     // guest block, the guest address of the upload's first texel and the upload width (texels).
     std::uint32_t texture_guest_source = 0;
@@ -78,6 +90,9 @@ public:
     void ProcessGif(const std::uint8_t* data, std::size_t bytes, const std::vector<SourceMark>* marks = nullptr);
     // Takes the draws produced since the last call.
     std::vector<DrawCommand> TakeDraws();
+    // Off: primitives update no draw list (registers, local memory and CLUTs still do). For steps that
+    // are never shown (--fast-until).
+    void SetDrawsEnabled(bool on) { draws_enabled_ = on; }
 
     void WriteRegister(std::uint32_t reg, std::uint64_t value);
     const GsMemory& Memory() const { return mem_; }
@@ -90,6 +105,8 @@ private:
     void EmitPrimitive(const GsVertex* v, int count);
     void LoadClut(std::uint64_t tex);
     std::shared_ptr<const DecodedTexture> DecodeTexture(const DrawCommand& d, const GsVertex* v, int count);
+    // The palette of a paletted texture as RGBA8 (DrawCommand::frame_clut).
+    std::shared_ptr<const std::array<std::uint32_t, 256>> ClutRgba(const DrawCommand& d) const;
     // Texel rectangle [u0, u1) x [v0, v1) that the primitive can reach (DecodeTexture's footprint).
     void TexelRange(const DrawCommand& d, const GsVertex* v, int count, std::uint32_t r[4]) const;
     void AppendVertices(std::vector<GsVertex>& out, const DrawCommand& d, const GsVertex* v, int count);
@@ -98,6 +115,7 @@ private:
 
     GsMemory mem_;
     std::array<std::uint64_t, 128> regs_{};
+    mutable std::shared_ptr<const std::array<std::uint32_t, 256>> last_frame_clut_;  // ClutRgba reuse
     std::array<std::uint32_t, 512> clut_{};  // CLUT buffer: 32-bit entries (CT32 palettes)
     std::uint32_t cbp_[2] = {0, 0};
     // What the CLUT buffer holds, per 16-entry slot (0-31) and for a whole 8-bit palette (32): the
@@ -138,6 +156,14 @@ private:
     std::map<std::uint32_t, std::pair<std::uint32_t, std::uint32_t>> upload_source_;
     std::vector<DrawCommand> draws_;
     FrameQuery frame_query_;
+    // Frame buffers drawn so far, in stream order (FBP -> pages covered by FBW x scissor height), and
+    // those a later host->local or local->local transfer wrote over: a texture at such an address is
+    // what the transfer stored (the HUD font is uploaded each frame over a sky work page), so it is
+    // read from local memory until the buffer is drawn again.
+    std::unordered_map<std::uint32_t, std::uint32_t> fb_pages_;
+    std::unordered_set<std::uint32_t> fb_overwritten_;
+    void NoteFrameBuffer(const DrawCommand& d);
+    void NoteTransferDestination();
     using TextureKey = std::tuple<std::uint64_t, std::uint64_t, std::uint64_t, std::uint32_t, std::uint32_t,
                                   std::uint32_t, std::uint32_t>;
     std::map<TextureKey, std::shared_ptr<const DecodedTexture>> texture_cache_;
@@ -148,6 +174,7 @@ private:
     // No register that feeds the draw state was written since the last primitive, which went to
     // draws_.back() with texel range fast_range_ (fast path: append without rebuilding the state).
     bool state_dirty_ = true;
+    bool draws_enabled_ = true;
     std::uint32_t fast_range_[4] = {};
     std::uint32_t clut_gen_ = 0;
     std::uint32_t clut_hash_gen_ = ~0u;

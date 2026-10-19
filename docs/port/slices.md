@@ -2,7 +2,7 @@
 
 Status: **order approved by the owner 2026-10-13.** Work starts with S1.
 
-Method: ADR-007. Validation: `validation-strategy.md`. Every one of the 2,884 game functions belongs to exactly one slice; the assignment is computed by `tools/research/slices.py` (writes `out/research/slices.csv`; `--list S5d` lists one slice). Rules of the tool, in order: already translated → S0; dead → S8; pinned VS code → S6; then each slice's roots (sub-state handlers from the scene tables) and their call closure, optionally limited to some subsystems; code reached only through data tables falls back by subsystem. Counts below are from the tool's run of 2026-10-13. They will shift a little as translation finds callbacks the static graph misses; the tool is rerun at each slice start.
+Method: ADR-007. Validation: `validation-strategy.md`. Every one of the 2,884 game functions belongs to exactly one slice; the assignment is computed by `tools/research/slices. B as ..py` (writes `out/research/slices.csv`; `--list S5d` lists one slice). Rules of the tool, in order: already translated → S0; dead → S8; pinned VS code → S6; then each slice's roots (sub-state handlers from the scene tables) and their call closure, optionally limited to some subsystems; code reached only through data tables falls back by subsystem. Counts below are from the tool's run of 2026-10-13. They will shift a little as translation finds callbacks the static graph misses; the tool is rerun at each slice start.
 
 LAN play (ADR-008, option A accepted 2026-10-13) is added as **S9**, after S8: it needs the VS slice and determinism proven by the input-recording validation of S5c–S5j.
 
@@ -69,7 +69,7 @@ Common to all slices: `// EE:` comment and `translated-functions.csv` row per fu
 - **Playable:** all non-mission menu pages; save and load.
 - **Validation:** RAM at each page's first run step and after leaving it with changed options (`MenuGoTo` 0x00226450); RAM after a card load (0x0023D4FC); screenshots per page, 4:3 and 16:9. The save page enters **save** mode only from sub-pages 0x4A–0x4E (campaign menu, post-mission and mission-select pages, later slices); main-menu LOAD is sub-page 0x4F (load mode). So the byte-identical save check (folder card round trip both ways, `../STATUS.md` §2) moves to S4, the first slice that reaches a save sub-page. The write path is translated here.
 - **PCSX2 batch:** written 2026-10-14 (`../pcsx2/procedures.md` item S2b): 12 save states, about 10 screenshots, button sequences per page.
-- **Status (2026-10-14):** translated 151/151 and validated (`validation.md` S2b-1/S2b-2: 9 RAM checkpoints 0 unexplained, 10 screens). The BGM player is not reachable with the available cards (optional `../pcsx2/procedures.md` S2b-B).
+- **Status (2026-10-14):** translated 151/151 and validated (`validation.md` S2b-1/S2b-2: 9 RAM checkpoints 0 unexplained, 10 screens). The BGM player reference was captured 2026-10-17 (`../pcsx2/sessions-11.md` S2b-B, card with a cleared campaign); its port comparison is pending.
 
 ### S3: movies (86)
 - **Functions:** in-menu player subs 7–13 (`MenuMovieEnter` 0x002390C8 … `MenuMovieEnd` 0x002392A8), interlude viewer subs 52–54, `StartMenuMovie` 0x00238778, `UpdateMenuMovie` 0x00238810, `MovieFrameSync` 0x00238870, the SMV reader state machine (0x00212630–0x00212960), decode/draw `func_00212F88`/`func_00213048`, subtitle pages, audio feeder `func_00213CE8`.
@@ -164,6 +164,7 @@ Plan for all of slice 5 (blocks P, A = S5a+S5b, B = S5c–S5h, C = S5i+S5j, and 
 - **Playable:** the full campaign loop mission → results → story movie → next mission, with saving.
 - **Validation:** RAM at the results screen and after `ResultsExit` for a campaign mission, a trial and a VS match (mode 0/2/3); screenshots.
 - **PCSX2 batch:** 3 save states, 4 screenshots.
+- **Status (2026-10-18):** all 46 functions translated (`src/game/results_scene.cpp`, `src/game/post_mission_page.cpp`); not yet validated (batch S7 in `../pcsx2/procedures.md`: test vectors and screenshots, since the port cannot reach the results on its own yet).
 
 ### S8: remaining code (328)
 - **Functions:** all dead code (272: scenes 1 and 3, `SetReturnScene`, unreached helpers, dead sound/sequence/frontend functions, `func_0022D030` debug VS setup), the HDD layer and HDD install page (scene 4 subs 62–64), scene 7 `SceneHddError` 0x00261680, file-layer helpers (`InternHostPath`), and anything the tool still assigns by fallback.
@@ -171,6 +172,7 @@ Plan for all of slice 5 (blocks P, A = S5a+S5b, B = S5c–S5h, C = S5i+S5j, and 
 - **Debug layer:** a debug menu entry to enter scenes 1 and 3 (`../port/debug-overlay.md` "Jump to scene"), marked as modifying the session.
 - **Validation:** default build never reaches them (scene request log); build and unit tests; `dead-code.md` updated with each function's translation.
 - **PCSX2 batch:** none (dead code cannot be reached in PCSX2 without patches).
+- **Status (2026-10-19):** all functions translated (`slices.py --list S8` empty; 2,888 translated functions in total, 269 of them dead). Default build unchanged (mission 1 smoke run). The debug menu entry for scenes 1 and 3 is not built yet (needs the owner's go-ahead). Details: `dead-code.md` "S8 translation".
 
 ### S9: VS LAN play (no game code; ADR-008 option A)
 - **Port:** netplay layer in `src/platform/` between the input backend and `scePadRead` (input queue per port, step gate in the game thread), UDP sockets (no dependency unless the owner approves one), LAN discovery, handshake (ISO SHA-1, build hash), transfer of the host's memory card image for the session, per-step RAM hash exchange and desync stop, optional crop of the output pass to the local player's half. Opt-in, off by default.

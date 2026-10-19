@@ -1,0 +1,14 @@
+start,end,category,reason
+0x004D1790,0x006D1790,timing,"flight packet double buffers (AllocDoubleBuffer, two 1 MiB halves at the first scene-2 allocations): loading-screen packets whose fade and blink phase follow how many frames the loading screen ran (PCSX2 350, port 95 in mission 1: CD latency); validation.md S5-A3"
+0x004D15EC,0x004D1608,timing,flight scene object (0x004CFF80) +0x166C..+0x1687: loading-screen frame counter and its timers (CD latency); validation.md S5-A2/S5-A3
+0x011A1060,0x011A1064,leftover,"mission 3 layout: effect pool +0x267F0 record +0x30 = random phase + effect clock (block +0x6249C); InitEffects reads the clock before anything writes it in the scene (subsystems/mission-load.md), so it holds a leftover briefing-movie pixel whose value depends on when the briefing was skipped; validation.md S5-A3"
+0x011A6E2C,0x011A7D10,leftover,mission 3 layout: effect pool +0x2E4F0 records (stride 0x110) +0xFC = random phase + the same leftover effect clock; validation.md S5-A3
+0x002BBCA8,0x002BBCA9,input,g_MovieTable+0x298: briefing movie state left by the Start that skipped the briefing (pad-script timing against the owner's press)
+0x00411828,0x0041182A,input,g_Briefing+0x8: briefing frame counter at the skip (pad-script timing)
+0x00353D2C,0x00353D31,timing,VAG slot 2 state: a stream started during loading still plays in the port (shorter loading screen) and has finished in PCSX2
+0x00353E54,0x00353E59,timing,VAG slot 4 state: as slot 2
+0x0042CF60,0x0042CFB0,timing,"VAG client command queue records after the S2b range (0x0042CEAC-0x0042CF60): commands issued during the loading screen, whose length differs (CD latency)"
+0x004C5700,0x004C58A0,sdk,"libkernl C part (Deci2 TTY / sifcmd work, written by 0x00264BA8 and 0x00265008): kernel-library internals the game never reads; the port's SDK layer works at the call boundary"
+0x01FFC000,0x01FFE000,stack,guest stack below main's sp and deeper than in earlier slices (the flight load's call depth): dead frames of SDK and game calls (host locals stay on the host)
+0x01EFE00C,0x01EFE420,sdk,newlib stdio buffer (malloc chunk 0x410 right after the work heap) holding the game's debug printf text; the port does not model newlib stdio
+0x002BBCD4,0x002BBCDC,input,"movie audio feeder (0x002BBCB8) +0x1C/+0x20 fade time and length: the port's scripted Start skipped the mission 4 briefing after its audio had started (1 s fade-out recorded); in the owner's run no fade was recorded (HYPOTHESIS: skipped before the audio started)"

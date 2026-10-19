@@ -7,6 +7,7 @@
 #include "common/guest_stack.h"
 #include "sce/ee_hw.h"
 #include "sce/sce.h"
+#include "common/ee_math.h"
 
 namespace ac04::game {
 
@@ -401,6 +402,108 @@ void FlushSprWorkBuffer(u32 sadr, s32 qwc) {
     } while (room <= static_cast<u32>(qwc << 4));
     sce::EeHwWrite(sce::EeReg::kD8Chcr, sce::EeHwRead(sce::EeReg::kD8Chcr) | 0x100);
     GRef<u32>(0x0041179C) ^= 1;
+}
+
+// EE: 0x00103C50
+// Dead (no reference): waits for the GIF channel, sets D_CTRL bits 2-3 (stall control), points the
+// fromSPR MADR and the GIF TADR at the ring 0x00418000 and starts the GIF chain (CHCR 0x104); flag
+// 0x004117A0 = 1. Translated as in the original; never runs.
+void func_00103C50() {
+    GRef<u32>(0x004117A0) = 1;
+    while ((sce::EeHwRead(sce::EeReg::kD2Chcr) & 0x100) != 0) {
+    }
+    sce::EeHwWrite(sce::EeReg::kDmacCtrl, sce::EeHwRead(sce::EeReg::kDmacCtrl) | 0xC);
+    sce::EeHwWrite(sce::EeReg::kD8Madr, 0x00418000);
+    sce::EeHwWrite(sce::EeReg::kD2Tadr, 0x00418000);
+    sce::EeHwWrite(sce::EeReg::kD2Chcr, 0x104);
+}
+
+// EE: 0x00103CC8
+// Dead (no reference): closes an empty VIF1 packet in the scratchpad work buffer, sends it to RAM
+// (FlushSprWorkBuffer), waits for the GIF channel, clears flag 0x004117A0 and D_CTRL bits 2-3.
+// Translated as in the original; never runs.
+void func_00103CC8() {
+    guest::GuestFrame frame(0x10);
+    const u32 pkt = frame.Address();
+    sceVif1PkInit(pkt, GetSprWorkBuffer());
+    sceVif1PkReset(pkt);
+    sceVif1PkEnd(pkt, 0);
+    sceVif1PkTerminate(pkt);
+    const u32 sadr = GRef<u32>(pkt + 4) & 0x3FF0;
+    FlushSprWorkBuffer(sadr, static_cast<s32>(sceVif1PkSize(pkt)));
+    while ((sce::EeHwRead(sce::EeReg::kD2Chcr) & 0x100) != 0) {
+    }
+    GRef<u32>(0x004117A0) = 0;
+    sce::EeHwWrite(sce::EeReg::kDmacCtrl, sce::EeHwRead(sce::EeReg::kDmacCtrl) & 0xFFFFFFF3u);
+}
+
+// EE: 0x00105070
+// Dead (no reference): per-byte blend of two packed colours, a + ((b - a) x (s16)(t x 4096) >> 12)
+// clamped to 0-255 (MMI pextlb / pmulth / paddsh / ppacb). The register operands are the 32-bit
+// arguments sign-extended to 64 bits, so bytes 4-7 come from their sign; the result's eight bytes
+// are returned.
+u64 func_00105070(u32 a, u32 b, f32 t) {
+    const s16 k = static_cast<s16>(fpu::FloatToInt(t * 4096.0f));
+    const u64 a64 = static_cast<u64>(static_cast<s64>(static_cast<s32>(a)));
+    const u64 b64 = static_cast<u64>(static_cast<s64>(static_cast<s32>(b)));
+    u64 out = 0;
+    for (u32 i = 0; i < 8; ++i) {
+        const s16 ah = static_cast<s16>((a64 >> (8 * i)) & 0xFF);
+        const s16 bh = static_cast<s16>((b64 >> (8 * i)) & 0xFF);
+        const s16 d = static_cast<s16>(bh - ah);
+        const s16 prod = static_cast<s16>((static_cast<s32>(d) * k) >> 12);
+        s32 sum = static_cast<s32>(ah) + prod;  // paddsh
+        if (sum > 0x7FFF) sum = 0x7FFF;
+        if (sum < -0x8000) sum = -0x8000;
+        if (sum < 0) sum = 0;          // pmaxh with 0
+        if (sum > 0xFF) sum = 0xFF;    // pminh with 0xFF
+        out |= static_cast<u64>(static_cast<u8>(sum)) << (8 * i);
+    }
+    return out;
+}
+
+// EE: 0x00105210
+// Dead (no reference): scratchpad -> RAM DMA (channel 8) of `qwc` quadwords from `sadr` to `madr`
+// after the channel is idle.
+void func_00105210(u32 qwc, u32 sadr, u32 madr) {
+    while ((sce::EeHwRead(sce::EeReg::kD8Chcr) & 0x100) != 0) {
+    }
+    sce::EeHwWrite(sce::EeReg::kD8Madr, madr);
+    sce::EeHwWrite(sce::EeReg::kD8Sadr, sadr);
+    sce::EeHwWrite(sce::EeReg::kD8Qwc, qwc);
+    sce::EeHwWrite(sce::EeReg::kD8Chcr, 0x100);
+}
+
+// EE: 0x00105278
+// Dead (no reference): waits until channel 8 is idle.
+void func_00105278() {
+    while ((sce::EeHwRead(sce::EeReg::kD8Chcr) & 0x100) != 0) {
+    }
+}
+
+// EE: 0x001052A8
+// Dead (no reference): RAM -> scratchpad DMA (channel 9) of `qwc` quadwords from `madr` to `sadr`
+// after the channel is idle.
+void func_001052A8(u32 qwc, u32 madr, u32 sadr) {
+    while ((sce::EeHwRead(sce::EeReg::kD9Chcr) & 0x100) != 0) {
+    }
+    sce::EeHwWrite(sce::EeReg::kD9Madr, madr);
+    sce::EeHwWrite(sce::EeReg::kD9Sadr, sadr);
+    sce::EeHwWrite(sce::EeReg::kD9Qwc, qwc);
+    sce::EeHwWrite(sce::EeReg::kD9Chcr, 0x100);
+}
+
+// EE: 0x00144D68
+// Dead (no reference): starts a RAM -> scratchpad DMA (channel 9) of `bytes` (rounded up to
+// quadwords) without waiting (the two CHCR reads around it are kept).
+void func_00144D68(u32 madr, u32 sadr, s32 bytes) {
+    (void)sce::EeHwRead(sce::EeReg::kD9Chcr);
+    sce::EeHwWrite(sce::EeReg::kD9Madr, madr);
+    sce::EeHwWrite(sce::EeReg::kD9Sadr, sadr);
+    const s32 t = bytes + 0xF;
+    sce::EeHwWrite(sce::EeReg::kD9Qwc, static_cast<u32>((-1 < t ? t : bytes + 0x1E) >> 4));
+    sce::EeHwWrite(sce::EeReg::kD9Chcr, sce::EeHwRead(sce::EeReg::kD9Chcr) | 0x100);
+    (void)sce::EeHwRead(sce::EeReg::kD9Chcr);
 }
 
 }  // namespace ac04::game

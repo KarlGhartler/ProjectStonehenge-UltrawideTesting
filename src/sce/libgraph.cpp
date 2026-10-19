@@ -265,6 +265,18 @@ s32 sceDmaReset(s32 mode) {
     return 0;
 }
 
+// PS2 (0x00262C10): mode 1 returns the busy bit (CHCR.STR) of `chan`; any other mode waits until
+// the channel is idle (polling at most `timeout` times, 0x1000000 when 0; on expiry it prints a
+// message and clears STR) and returns 0. Port: every transfer completes when it is started, so the
+// channel is idle; a STR left set is cleared as the timeout path does.
+s32 sceDmaSync(u32 chan, s32 mode, s32 timeout) {
+    (void)timeout;
+    const u32 chcr = ac04::sce::EeDmaReadChcr(chan);
+    if (mode == 1) return static_cast<s32>((chcr >> 8) & 1u);
+    if ((chcr & 0x100u) != 0) ac04::sce::EeDmaWriteChcr(chan, chcr & ~0x100u);
+    return 0;
+}
+
 // PS2 (0x002626C0): starts a source-chain transfer on `chan` from tag address `tag` (waits for the
 // channel to be idle first). Port: walks the chain and counts packets/qwords per channel; the
 // transfer completes at once.

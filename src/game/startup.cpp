@@ -26,6 +26,7 @@ namespace {
 
 AC04_GUEST_VAR(u32, g_StartupWork, 0x00411714)   // gp-0x42DC
 AC04_GUEST_VAR(u32, g_StartupWindow, 0x00411900) // gp-0x40F0
+AC04_GUEST_VAR(u16, g_MissionNo, 0x002A15B8)     // campaign mission number (--mission only)
 
 u32 W() { return g_StartupWork(); }
 u32& Flags() { return GRef<u32>(W() + 0x1F0); }
@@ -82,6 +83,14 @@ void UpdateSoundBankLoad() {
         GRef<u8>(W() + 0x1FC) = 0;
         Flags() = (Flags() & 0xFFFFF7FFu) | 0x1000;
     }
+}
+
+// EE: 0x00260058
+// Dead (no reference): clears the startup warning flags (0x100000..0x800000) and the warning step.
+void func_00260058() {
+    const u32 w = g_StartupWork();
+    GRef<u8>(w + 0x200) = 0;
+    GRef<u32>(w + 0x1F0) &= 0xFF0FFFFFu;
 }
 
 // EE: 0x00260078
@@ -321,6 +330,42 @@ void DrawCardMessages() {
     DrawScreenFade(GRef<f32>(W() + 0x1EC), list, 0, 0, cam);
 }
 
+// Debug layer, category 3 (--mission / --mission-id / --mission-mode, docs/port/command-line.md):
+// instead of the intro request or the title, starts the flight scene the way the campaign path
+// does (ApplyCampaignSelection 0x00226A98) with the game's own default selection: aircraft 2 colour
+// 0 weapon 0 (the fallback of ValidateCampaignSelection and AcceptMission), difficulty 2 (NORMAL,
+// also the free-mission default), flight-entry kind 1 as MenuGoTo kind 3. Free mode takes the mission
+// id as AcceptMission does (GetMissionId(2, n)). Special ids get the aircraft their own paths set:
+// 0x23 (startup intro) 0x11 with entry kind 0, 0x25 (hangar, opening before mission 1) 0x17.
+// Not part of the original: no menu ran, so guest RAM differs from a front-end route.
+bool StartBootMission() {
+    const debug::BootMission& m = debug::GetBootMission();
+    if (!m.active) return false;
+    GRef<u16>(0x002A15BE) = 2;
+    GRef<u16>(0x002A15C0) = 0;
+    GRef<u16>(0x002A15C2) = 0;
+    GRef<u16>(0x002A15BA) = 2;
+    if (m.number > 0) g_MissionNo() = static_cast<u16>(m.number);
+    ApplyCampaignSelection();
+    const guest::ps2ptr<u8> game = g_GameState();
+    if (m.free) {
+        game[0x29] = 2;
+        if (m.number > 0) game[0x27] = static_cast<u8>(GetMissionId(2, m.number));
+    }
+    if (m.id >= 0) game[0x27] = static_cast<u8>(m.id);
+    if (game[0x27] == 0x23) {
+        game[0] = 0x11;
+        game[1] = 0;
+        game[3] = 0;
+    } else if (game[0x27] == 0x25) {
+        game[0] = 0x17;
+    }
+    game[0x2A] = game[0x27] == 0x23 ? 0 : 1;
+    func_0022CC50(1);
+    RequestScene(2);
+    return true;
+}
+
 // EE: 0x00260980
 // HYPOTHESIS: StartupSplashUpdate (scene 6 sub 9). Fade in (60 frames), hold (120 frames, image 1
 // skippable with pad 0x50; waits for the sound banks, flag 0x2000), fade out (60 frames). After
@@ -366,6 +411,7 @@ void StartupSplashUpdate() {
     Counter() = 0;
     if (image == 0) {
         if ((flags & 0x4000) == 0) {
+            if (StartBootMission()) return;
             const guest::ps2ptr<u8> game = g_GameState();
             game[0x25] = 1;
             game[0x27] = 0x23;
@@ -381,6 +427,7 @@ void StartupSplashUpdate() {
         GRef<u8>(w + 0x1FD) = 1;
         Flags() |= 1;
     } else if (image == 1) {
+        if (StartBootMission()) return;
         func_0022CC50(1);
         debug::OnGuestCheckpoint(0x00260B78);
         EnterMenu(0);

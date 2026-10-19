@@ -89,6 +89,64 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
 #else
             result.errors.push_back(arg + " is only available in development builds");
 #endif
+        } else if (arg == "--mission" || arg == "--mission-id" || arg == "--mission-mode") {
+#if AC04_DEV_BUILD
+            std::string spec;
+            value(spec);
+            if (arg == "--mission-mode") {
+                if (spec == "campaign" || spec == "free") {
+                    o.mission_free = spec == "free";
+                } else {
+                    result.errors.push_back("--mission-mode expects campaign or free: " + spec);
+                }
+            } else {
+                char* end = nullptr;
+                const unsigned long v = std::strtoul(spec.c_str(), &end, 0);
+                const bool number = arg == "--mission";
+                if (end == spec.c_str() || *end != 0 || (number ? (v < 1 || v > 18) : v > 0xFF)) {
+                    result.errors.push_back(number ? "--mission expects a campaign mission number 1-18: " + spec
+                                                   : "--mission-id expects a mission id 0-255 (or 0x00-0xFF): " + spec);
+                } else if (number) {
+                    o.mission = static_cast<int>(v);
+                } else {
+                    o.mission_id = static_cast<int>(v);
+                }
+            }
+#else
+            result.errors.push_back(arg + " is only available in development builds");
+#endif
+        } else if (arg == "--heap-fill") {
+#if AC04_DEV_BUILD
+            std::string spec;
+            value(spec);
+            char* end = nullptr;
+            const unsigned long v = std::strtoul(spec.c_str(), &end, 0);
+            if (end == spec.c_str() || *end != 0 || v > 0xFF) {
+                result.errors.push_back("--heap-fill expects a byte value (0-255 or 0x00-0xFF): " + spec);
+            } else {
+                o.heap_fill = static_cast<int>(v);
+            }
+#else
+            result.errors.push_back(arg + " is only available in development builds");
+#endif
+        } else if (arg == "--play-gsdump") {
+#if AC04_DEV_BUILD
+            value(o.play_gsdump);
+#else
+            result.errors.push_back(arg + " is only available in development builds");
+#endif
+        } else if (arg == "--dump-vram") {
+#if AC04_DEV_BUILD
+            o.dump_vram = true;
+#else
+            result.errors.push_back(arg + " is only available in development builds");
+#endif
+        } else if (arg == "--log-allocs") {
+#if AC04_DEV_BUILD
+            o.log_allocs = true;
+#else
+            result.errors.push_back(arg + " is only available in development builds");
+#endif
         } else if (arg == "--dump-audio") {
 #if AC04_DEV_BUILD
             o.dump_audio = true;
@@ -105,6 +163,20 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
                 result.errors.push_back("--dump-dma-at expects a vblank number above 0: " + spec);
             } else {
                 o.dump_dma_at = static_cast<unsigned>(v);
+            }
+#else
+            result.errors.push_back(arg + " is only available in development builds");
+#endif
+        } else if (arg == "--fast-until") {
+#if AC04_DEV_BUILD
+            std::string spec;
+            value(spec);
+            char* end = nullptr;
+            const unsigned long v = std::strtoul(spec.c_str(), &end, 10);
+            if (end == spec.c_str() || *end != 0) {
+                result.errors.push_back("--fast-until expects a vblank number: " + spec);
+            } else {
+                o.fast_until = static_cast<unsigned>(v);
             }
 #else
             result.errors.push_back(arg + " is only available in development builds");
@@ -233,10 +305,25 @@ std::string CommandLineHelp() {
            "  --dump-audio          Development builds: write the mixed sound to\n"
            "                        <user data>\\dumps\\audio.wav at exit (research only)\n"
            "  --exit-at <n>         Development builds: exit normally after vblank n\n"
+           "  --fast-until <n>      Development builds: run the game as fast as possible up to vblank\n"
+           "                        n (one picture about every 100 ms), then at normal speed\n"
            "  --dump-dma-at <n>     Development builds: write the VIF1 words and GIF data of the step\n"
            "                        starting at vblank n to <user data>\\dumps (research only)\n"
            "  --freeze-sim          Development builds: in a mission, draw the world from the start\n"
            "                        camera without running the simulation step (S5 block A)\n"
+           "  --mission <1-18>      Development builds: after the startup screens, start this campaign\n"
+           "                        mission with the default aircraft (F-4E, weapon 0, NORMAL)\n"
+           "  --mission-id <id>     Development builds: as --mission with a raw mission id (0x23 intro,\n"
+           "                        0x24 after mission 18, 0x25 opening, free-mission ids)\n"
+           "  --mission-mode <m>    Development builds: campaign (default) or free (free mission)\n"
+           "  --heap-fill <byte>    Development builds: fill the work heap freed at each scene change\n"
+           "                        with this byte (two runs show the bytes the game never wrote)\n"
+           "  --play-gsdump <file>  Development builds: draw an uncompressed PCSX2 GS dump with the port's\n"
+           "                        renderer, write gsdump_native.png and gsdump_pcsx2.png, then exit\n"
+           "  --dump-vram           Development builds: screenshots also write the GS local memory to\n"
+           "                        <user data>\\dumps\\vram_<vblank>.bin (tools/research/gsvram.py)\n"
+           "  --log-allocs          Development builds: log every work-heap allocation with its\n"
+           "                        caller to <user data>\\dumps\\allocs.txt (tools/research/heapdiff.py)\n"
            "  --movie-upscale <n>   Development builds: run the movie upscaling stage (FSR 1) with\n"
            "                        factor n (2-4) while the game is still drawn at 1x; screenshots\n"
            "                        during a movie also write its output (movie_x<n>_<vblank>.png)\n"

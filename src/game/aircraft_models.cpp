@@ -4,6 +4,7 @@
 // *0x004106A8 (other aircraft, weapons). docs/subsystems/rendering.md "Aircraft models",
 // docs/formats/AIRCRAFT.md (blocks 0-2 of the aircraft container).
 #include "game/game.h"
+#include "game/game_flight.h"
 
 #include <cmath>
 
@@ -838,10 +839,6 @@ void func_0014ACB0(u32 mdl, u32 cam, u32 ot, u32 angles, u32 pos, s32 slot, s32 
 
 namespace {
 
-void AircraftNotYet(const char* name, const char* what) {
-    log::WriteOnce(name, log::Level::Info, "game", "aircraft draw: %s (%s) not translated yet", name, what);
-}
-
 // "TEX2 pair (t)": twice [DMA cnt 1, UNPACK 0x6C01C01C] [TEX2_1 = CLUT of GIM record t] [DMA cnt 0,
 // MSCAL 0]; the TEX2 qword's 4th word is unwritten.
 u32 Tex2Pair(u32 p, u32 tex) {
@@ -879,7 +876,6 @@ bool ShadowVariant() {
 // cockpit clip test, ground shadow and its passes, light set, the external model or cockpit (VU1
 // program E or C by the view mode), node switches, weapons, effects (S5f) and the glow pass.
 void func_001483A0(u32 a, u32 v, u32 ot, s32 k, u32 ot2) {
-    (void)ot2;
     guest::GuestFrame frame(0x130);
     const u32 sp = frame.Address();
     const u32 m0 = sp + 0x10, mw = sp + 0x50, vec = sp + 0x90, ma = sp + 0xA0, mb = sp + 0xE0, z = sp + 0x120;
@@ -1079,7 +1075,7 @@ void func_001483A0(u32 a, u32 v, u32 ot, s32 k, u32 ot2) {
     if ((GRef<u32>(a + 0x40) & 1) == 0) {
         for (u32 o = 0; o < 16; o += 4) GRef<u32>(z + o) = 0;  // memset
         GRef<f32>(z + 0xC) = 1.0f;
-        AircraftNotYet("func_00155900", "effect camera, slice S5f");
+        func_00155900(c);
         auto effects = [&](u32 ins) {
             const u32 table = GRef<u32>(ins + 0xC);
             const s32 count = GRef<s32>(GRef<u32>(ins + 0x30) + 8);
@@ -1093,11 +1089,12 @@ void func_001483A0(u32 a, u32 v, u32 ot, s32 k, u32 ot2) {
                 if ((GRef<u8>(v + 7) & 0x80) == 0) sceVu0TransMatrix(mb, mb, unit);
                 MulMatrixVu0(mb, mb, node);
                 sceVu0ApplyMatrix(o, mb, z);
-                AircraftNotYet("func_001E0A98", "DrawSpecialObject, slice S5f");
+                func_001E0A98(c, ot2, o);
             }
         };
         effects(GRef<u32>(GRef<u32>(a) + p4));
         if (GRef<u8>(GRef<u32>(a + 0x1C) + pl) == 5) effects(GRef<u32>(GRef<u32>(a) + p4) + 0x130);
+        func_00155900(cam);
     }
     // 8. Second and third passes (ALPHA_2 FIX from T+0xB5 / T+0xB6).
     const u32 t = GRef<u32>(0x00410694);
@@ -1147,7 +1144,8 @@ void func_001483A0(u32 a, u32 v, u32 ot, s32 k, u32 ot2) {
             sceVu0CopyMatrix(mw, m0);
         else
             sceVu0TransMatrix(mw, m0, unit);
-        AircraftNotYet("func_00142460", "DrawGlowPass");
+        func_00142460(GRef<u32>(GRef<u32>(a) + p4) + 0xE4, c, ot, b, mw, 0x2500, 0x2A00, m0,
+                      GRef<u8>(GRef<u32>(0x00410694) + 0xB4));
     }
     p = BeginPacket();
     wr(4, 0); wr(0, 0x10000000); wr(8, 0); wr(0xC, 0x11000000);
@@ -1174,8 +1172,702 @@ void func_0011E0D8(u32 v, u32 ot, u32 ot2) {
         const u32 f = GRef<u32>(unit + 0x4C);
         if ((f & 0x10000000) == 0 || (f & 0x1000000) == 0) continue;
         if (GRef<u8>(unit + 0x69) != 0xB2) continue;
-        AircraftNotYet("func_001BCBD8", "effect drawer, slice S5f");
+        func_001BCBD8(v + 0xB0, ot2, unit, 500.0f);
     }
 }
+
+namespace {
+
+// One quadword (lq / sq).
+void GlowCopyQword(u32 dst, u32 src) {
+    for (u32 o = 0; o < 16; o += 4) GRef<u32>(dst + o) = GRef<u32>(src + o);
+}
+
+}  // namespace
+// EE: 0x00141EE0
+// Composite packet of the half-resolution glow pass (docs/subsystems/rendering.md): DMA cnt + DIRECT of
+// 2 x ceil(w / 64) + 12 qwords: GIF tag (NLOOP 7), ZBUF from the main context with ZMSK, XYOFFSET_1 0,
+// TEST_1 0x30000, TEXFLUSH, FRAME_1 (fbp / 32, width `fbw`, PSM 0x0A), TEX1_1 0, SCISSOR_1 (0..w - 1,
+// 0..2 h - 1); a REGLIST tag (PRIM 0x116 sprite, TEX0 base `fbp`, CLAMP_1, a NOP) and the strips:
+// per 64-pixel column from x0, UV (u + 8, 8) / XY (u, 0) and UV (u + 0x408, h2 x 32 + 8) / XY
+// (u + 0x400, h2 x 32). Words the original leaves unwritten are kept. Returns the end.
+u32 func_00141EE0(u32 p, s32 fbp, s32 fbw, s32 w, s32 h, s32 x0, s32 width, s32 h2) {
+    const s32 n = (width + 0x3F >= 0 ? width + 0x3F : width + 0x7E) >> 6;
+    const auto put = [](u32 a, u32 v) { GRef<u32>(a) = v; };
+    put(p, static_cast<u32>(n * 2 + 0xC) | 0x10000000u);
+    put(p + 4, 0);
+    put(p + 8, 0);
+    put(p + 0xC, static_cast<u32>(n * 2 + 0xC) | 0x50000000u);
+    p += 0x10;
+    put(p, 7);
+    put(p + 4, 0x10000000);
+    put(p + 8, 0xE);
+    p += 0x10;
+    GlowCopyQword(p, GRef<u32>(0x004104A8) + 0xE0);
+    put(p + 4, 1);
+    p += 0x10;
+    put(p, 0);
+    put(p + 4, 0);
+    put(p + 8, 0x18);
+    p += 0x10;
+    put(p, 0x30000);
+    put(p + 8, 0x47);
+    p += 0x10;
+    put(p + 8, 0x3F);
+    p += 0x10;
+    put(p, static_cast<u32>(fbp >> 5) | (static_cast<u32>(fbw) << 16) | 0x0A000000u);
+    put(p + 4, 0);
+    put(p + 8, 0x4C);
+    put(p + 0xC, 0);
+    p += 0x10;
+    put(p, 0);
+    put(p + 4, 0);
+    put(p + 8, 0x14);
+    p += 0x10;
+    put(p, static_cast<u32>(w - 1) << 16);
+    put(p + 4, static_cast<u32>(h * 2 - 1) << 16);
+    put(p + 8, 0x40);
+    p += 0x10;
+    put(p, 1);
+    put(p + 4, 0x44000000);
+    put(p + 8, 0xF860);
+    p += 0x10;
+    GRef<u64>(p) = 0x116;
+    p += 8;
+    put(p, static_cast<u32>(fbp) | (static_cast<u32>(fbw) << 14) | 0xA8A00000u);
+    put(p + 4, 0xE);
+    p += 8;
+    put(p, 0xFF003F7Fu);
+    put(p + 4, 3);
+    p += 0x10;  // the NOP register's data is left as it is
+    put(p, static_cast<u32>(n) | 0x8000u);
+    put(p + 4, 0x44000000);
+    put(p + 8, 0x4343);
+    p += 0x10;
+    u32 u = static_cast<u32>(x0) << 4;
+    for (s32 k = 0; k < n; ++k) {
+        put(p, (u + 8) | 0x80000u);
+        p += 8;
+        put(p, u);
+        put(p + 4, 0);
+        p += 8;
+        put(p, (u + 0x408) | ((static_cast<u32>(h2) * 32 + 8) << 16));
+        p += 8;
+        put(p, (u + 0x400) | (static_cast<u32>(h2) << 21));
+        put(p + 4, 0);
+        p += 8;
+        u += 0x400;
+    }
+    return p;
+}
+
+// EE: 0x001420F0
+// BuildScaledCameraMatrices: UpdateCameraMatrices (0x001029E0) for a render target scaled by `scale`:
+// the viewport scale and centre ((c - 2048) x scale + 2048) scaled, far = +0x170 x C 0x0040E514, the
+// scissor scaled ((origin + size) x scale - 1); SCISSOR_1 / _2 register ids at +0x1A8 / +0x1B8.
+void BuildScaledCameraMatrices(u32 cam, f32 scale) {
+    const u32 view = cam + 0x20;
+    sceVu0UnitMatrix(view);
+    func_00102D28(view, view, cam + 0x10);
+    sceVu0TransMatrix(view, view, cam);
+    sceVu0InversMatrix(view, view);
+    if ((GRef<u32>(cam + 0x198) & 1) != 0) {
+        const f32 sx = fpu::IntToFloat(GRef<s16>(cam + 0x18C)) / GRef<f32>(cam + 0x160);
+        const f32 sy = fpu::IntToFloat(GRef<s16>(cam + 0x18E)) / GRef<f32>(cam + 0x164);
+        GRef<f32>(cam + 0x180) = sx;
+        GRef<f32>(cam + 0x184) = sy;
+    }
+    const u32 screen = cam + 0x60;
+    const u32 clip = cam + 0xA0;
+    sceVu0UnitMatrix(screen);
+    {
+        const f32 cx = fpu::Add(fpu::Sub(GRef<f32>(cam + 0x178), 2048.0f) * scale, 2048.0f);
+        const f32 cy = fpu::Add(fpu::Sub(GRef<f32>(cam + 0x17C), 2048.0f) * scale, 2048.0f);
+        const f32 farz = GRef<f32>(cam + 0x170) * GRef<f32>(0x0040E514);
+        sceVu0ViewScreenMatrix(screen, GRef<f32>(cam + 0x168), GRef<f32>(cam + 0x180) * scale,
+                               GRef<f32>(cam + 0x184) * scale, cx, cy, GRef<f32>(cam + 0x190),
+                               GRef<f32>(cam + 0x194), GRef<f32>(cam + 0x16C), farz);
+    }
+    BuildClipMatrix(clip, GRef<f32>(cam + 0x160), GRef<f32>(cam + 0x164), GRef<f32>(cam + 0x168),
+                    GRef<f32>(cam + 0x16C), GRef<f32>(cam + 0x170));
+    MulMatrixVu0(cam + 0xE0, screen, view);
+    MulMatrixVu0(cam + 0x120, clip, view);
+    const s64 x = GRef<s16>(cam + 0x188);
+    const s64 y = GRef<s16>(cam + 0x18A);
+    const s64 y1 = static_cast<s32>(fpu::FloatToInt(fpu::IntToFloat(GRef<s16>(cam + 0x18A) + GRef<s16>(cam + 0x18E)) * scale) - 1);
+    const s64 x1 = static_cast<s32>(fpu::FloatToInt(fpu::IntToFloat(GRef<s16>(cam + 0x188) + GRef<s16>(cam + 0x18C)) * scale) - 1);
+    GRef<u64>(cam + 0x1B8) = 0x41;
+    GRef<u64>(cam + 0x1A8) = 0x40;
+    const u64 scissor = static_cast<u64>(x) | static_cast<u64>(y1) << 48 | (static_cast<u64>(y) << 32 | static_cast<u64>(x1) << 16);
+    GRef<u64>(cam + 0x1A0) = scissor;
+    GRef<u64>(cam + 0x1B0) = scissor;
+}
+
+// EE: 0x00142460
+// DrawGlowPass (docs/subsystems/rendering.md "Half-resolution glow pass"; VU1 program D,
+// docs/subsystems/vu-programs.md): with a non-zero `level`, links program D (MPG from .vutext
+// 0x0029A940) into bucket `bucket`, renders the glow model `inst` (node flags +0, chains +0x2C, node
+// matrices +0x10, header +0x30 with the node count at +8) at half resolution into the buffer `fbp_a`
+// (Z buffer cleared with a frame copy, then two passes: silhouette fins with ALPHA 0x68 / 0x62, light
+// from the direction 0x00410688 rotated by the camera, offset -32 x the light), composites it via
+// `fbp_b` with the composite packet 0x00141EE0, blurs it with sprite strips of colour `level`, and
+// adds it to the frame; the camera matrices are rebuilt at scale 0.5 and restored at 1.0.
+void func_00142460(u32 inst, u32 cam, u32 list, s32 bucket, u32 mw, s32 fbp_a, s32 fbp_b, u32 /*m0*/, u32 level) {
+    if (level == 0) return;
+    guest::GuestFrame frame(0x100);
+    const u32 sp = frame.Address();
+    const u32 ctx = GRef<u32>(0x004104A8);
+    const u32 hgt = GRef<u16>(ctx + 0x72);
+    const s32 off_y = static_cast<s32>((0x800 - (hgt >> 2)) * 16);
+    const u32 wid = GRef<u16>(ctx + 0x70);
+    const s32 vx = GRef<s16>(cam + 0x188), vy = GRef<s16>(cam + 0x18A), vw = GRef<s16>(cam + 0x18C), vh = GRef<s16>(cam + 0x18E);
+    const s32 n = (vw + 0x3F >= 0 ? vw + 0x3F : vw + 0x7E) >> 6;
+    const s32 hwb = static_cast<s32>((wid >> 1) + 0x3F) >> 6;
+    const s32 wb = static_cast<s32>(wid + 0x3F) >> 6;
+    const s32 hx = vx >> 1, hy = vy >> 1, hw = vw >> 1, hh = vh >> 1;
+    const s32 off_x = static_cast<s32>((0x800 - (wid >> 2)) * 16);
+    const s32 cx = (fpu::FloatToInt(GRef<f32>(cam + 0x178)) - 0x800) / 2 + 0x800;
+    const s32 cy = (fpu::FloatToInt(GRef<f32>(cam + 0x17C)) - 0x800) / 2 + 0x800;
+    const s32 x1h = hx + hw, y1h = hy + hh;
+    const s32 n2 = n * 2;
+    const u32 n_eop = static_cast<u32>(n) | 0x8000u;
+    const u32 fbp_a32 = static_cast<u32>((fbp_a >= 0 ? fbp_a : fbp_a + 0x1F) >> 5);
+    const u32 fbp_b32 = static_cast<u32>((fbp_b >= 0 ? fbp_b : fbp_b + 0x1F) >> 5);
+    const u32 hwb16 = static_cast<u32>(hwb) << 16;
+    const u32 u0 = static_cast<u32>(vx) << 4;
+    const s32 q = hw >> 1, hh2 = hh >> 1;
+    const u32 tbw_full = static_cast<u32>(wb) << 14;
+    AddBucketRef(list, bucket, 0x0029A940, GRef<u16>(0x0029A930));
+    u32 p = BeginPacket();
+    BuildScaledCameraMatrices(cam, 0.5f);
+    const auto put = [](u32 a, u32 v) { GRef<u32>(a) = v; };
+    const auto at = [](u32 base, u32 i) { return base + i * 4; };
+    // Draw environment of the half-resolution target, Z cleared by a copy of the frame.
+    put(at(p, 1), 0);
+    put(at(p, 0), 0x10000002);
+    put(at(p, 2), 0);
+    put(at(p, 3), 0x50000002);
+    put(at(p, 4), 0x8001);
+    put(at(p, 5), 0x10000000);
+    put(at(p, 6), 0xE);
+    put(at(p, 8), 0);
+    put(at(p, 9), 0);
+    put(at(p, 10), 0x3B);
+    put(at(p, 0xC), 0x10000006);
+    put(at(p, 0xD), 0);
+    put(at(p, 0xE), 0);
+    put(at(p, 0xF), 0x50000006);
+    put(at(p, 0x10), 0x8005);
+    put(at(p, 0x11), 0x10000000);
+    put(at(p, 0x12), 0xE);
+    GlowCopyQword(at(p, 0x14), ctx + 0xE0);
+    put(at(p, 0x15), 1);
+    put(at(p, 0x18), fbp_b32 | hwb16 | 0x31000000u);
+    put(at(p, 0x1A), 0x4C);
+    put(at(p, 0x19), 0);
+    put(at(p, 0x1B), 0);
+    put(at(p, 0x1E), 0x18);
+    put(at(p, 0x1C), static_cast<u32>(off_x));
+    put(at(p, 0x1D), static_cast<u32>(off_y));
+    put(at(p, 0x20), static_cast<u32>(hx) | (static_cast<u32>(x1h - 1) << 16));
+    put(at(p, 0x21), static_cast<u32>(hy) | (static_cast<u32>(y1h - 1) << 16));
+    put(at(p, 0x22), 0x40);
+    put(at(p, 0x24), 0x30000);
+    put(at(p, 0x26), 0x47);
+    put(at(p, 0x28), 0x10000003);
+    put(at(p, 0x29), 0);
+    put(at(p, 0x2A), 0);
+    put(at(p, 0x2B), 0x50000003);
+    put(at(p, 0x2C), 2);
+    put(at(p, 0x2D), 0x10000000);
+    put(at(p, 0x2E), 0xE);
+    put(at(p, 0x30), 0);
+    put(at(p, 0x31), 0);
+    put(at(p, 0x32), 0x14);
+    put(at(p, 0x34), 0x4010);
+    put(at(p, 0x35), 0);
+    put(at(p, 0x36), 8);
+    put(at(p, 0x38), static_cast<u32>(n2 + 3) | 0x10000000u);
+    put(at(p, 0x39), 0);
+    put(at(p, 0x3A), 0);
+    put(at(p, 0x3B), static_cast<u32>(n2 + 3) | 0x50000000u);
+    put(at(p, 0x3C), 1);
+    put(at(p, 0x3D), 0x24000000);
+    put(at(p, 0x3E), 0x60);
+    GRef<u64>(at(p, 0x40)) = 0x116;
+    put(at(p, 0x43), 10);
+    put(at(p, 0x42), (static_cast<u32>(GRef<u16>(ctx + 0x8E)) << 5) | 0x80000000u | (static_cast<u32>(GRef<u8>(ctx + 0x7D)) << 20) |
+                         tbw_full | 0x28000000u);
+    put(at(p, 0x45), 0x44000000);
+    put(at(p, 0x46), 0x43C3);
+    put(at(p, 0x44), n_eop);
+    u32 r = at(p, 0x48);
+    {
+        u32 u = u0;
+        u32 x = static_cast<u32>(cx - q) * 16;
+        for (s32 k = 0; k < n; ++k) {
+            put(at(r, 0), u);
+            put(at(r, 3), 0);
+            u += 0x400;
+            put(at(r, 2), x | (static_cast<u32>(cy - hh2) << 20));
+            put(at(r, 4), u | (static_cast<u32>(vh) << 20));
+            put(at(r, 7), 0);
+            put(at(r, 6), (x + 0x200) | (static_cast<u32>(cy + hh2) << 20));
+            r = at(r, 8);
+            x += 0x200;
+        }
+    }
+    // Copy the half-resolution frame back into buffer A.
+    put(at(r, 1), 0);
+    put(at(r, 0), 0x10000003);
+    put(at(r, 2), 0);
+    put(at(r, 3), 0x50000003);
+    put(at(r, 4), 2);
+    put(at(r, 5), 0x10000000);
+    put(at(r, 6), 0xE);
+    put(at(r, 10), 0x4C);
+    put(at(r, 8), fbp_a32 | hwb16);
+    put(at(r, 9), 0);
+    put(at(r, 0xB), 0);
+    put(at(r, 0xC), fbp_b32 | 0x1000000u);
+    put(at(r, 0xE), 0x4E);
+    put(at(r, 0xD), 1);
+    put(at(r, 0xF), 0);
+    put(at(r, 0x10), 0x10000003);
+    put(at(r, 0x11), 0);
+    put(at(r, 0x12), 0);
+    put(at(r, 0x13), 0x50000003);
+    put(at(r, 0x14), 2);
+    put(at(r, 0x15), 0x10000000);
+    put(at(r, 0x16), 0xE);
+    put(at(r, 0x18), 0x30000);
+    put(at(r, 0x1A), 0x47);
+    put(at(r, 0x1C), 0x60);
+    put(at(r, 0x1E), 0x14);
+    put(at(r, 0x1D), 0);
+    put(at(r, 0x20), static_cast<u32>(n2 + 4) | 0x10000000u);
+    put(at(r, 0x21), 0);
+    put(at(r, 0x22), 0);
+    put(at(r, 0x23), static_cast<u32>(n2 + 4) | 0x50000000u);
+    put(at(r, 0x24), 1);
+    put(at(r, 0x25), 0x44000000);
+    put(at(r, 0x26), 0xF160);
+    put(at(r, 0x28), 0x116);
+    put(at(r, 0x29), 0);
+    put(at(r, 0x2A), tbw_full | 0xA8000000u);
+    put(at(r, 0x2B), 6);
+    put(at(r, 0x2C), 0x80000000u);
+    put(at(r, 0x2D), 0x3F800000u);
+    put(at(r, 0x31), 0x44000000);
+    put(at(r, 0x32), 0x43C3);
+    put(at(r, 0x30), n_eop);
+    r = at(r, 0x34);
+    {
+        u32 u = u0;
+        u32 x = static_cast<u32>(cx - q) * 16;
+        for (s32 k = 0; k < n; ++k) {
+            put(at(r, 0), u);
+            put(at(r, 3), 0);
+            put(at(r, 2), x | (static_cast<u32>(cy - (hh >> 1)) << 20));
+            put(at(r, 4), (u + 0x400) | (static_cast<u32>(vh) << 20));
+            x += 0x200;
+            put(at(r, 7), 0);
+            put(at(r, 6), x | (static_cast<u32>(cy + (hh >> 1)) << 20));
+            r = at(r, 8);
+            u += 0x400;
+        }
+    }
+    put(at(r, 1), 0);
+    put(at(r, 0), 0x10000002);
+    put(at(r, 2), 0);
+    put(at(r, 3), 0x50000002);
+    put(at(r, 4), 0x8001);
+    put(at(r, 5), 0x10000000);
+    put(at(r, 6), 0xE);
+    put(at(r, 8), fbp_b32 | 0x1000000u);
+    put(at(r, 9), 1);
+    put(at(r, 10), 0x4E);
+    put(at(r, 0xB), 0);
+    r = at(r, 0xC);
+    // The two fin passes through program D.
+    const u32 light = sp + 0x80, offset = sp + 0x90, axis = sp + 0xA0, rot = sp + 0xB0, node_m = sp + 0x40, screen_m = sp;
+    for (u32 pass = 0; pass < 2; ++pass) {
+        if (pass != 2) {
+            put(at(r, 0), 0x10000002);
+            put(at(r, 1), 0);
+            put(at(r, 2), 0);
+            put(at(r, 3), 0x50000002);
+            put(at(r, 6), 0xE);
+            put(at(r, 4), 0x8001);
+            put(at(r, 5), 0x10000000);
+            put(at(r, 8), 0x7C000);
+            put(at(r, 10), 0x47);
+            r = at(r, 0xC);
+        }
+        sceVu0CopyVector(light, GRef<u32>(0x00410688));
+        for (u32 o = 0; o < 16; o += 4) GRef<u32>(axis + o) = 0;  // memset
+        GRef<f32>(sp + 0xA8) = 1.0f;
+        sceVu0UnitMatrix(rot);
+        RotateMatrix(rot, rot, cam + 0x10);
+        sceVu0ApplyMatrix(axis, rot, axis);
+        sceVu0ScaleVector(offset, light, -32.0f);
+        put(at(r, 0), 0x10000002);
+        put(at(r, 1), 0);
+        GRef<u32>(sp + 0x9C) = 0;
+        put(at(r, 2), 0x11000000);
+        put(at(r, 3), 0x50000002);
+        put(at(r, 6), 0xE);
+        put(at(r, 4), 0x8001);
+        put(at(r, 5), 0x10000000);
+        put(at(r, 9), 0x80);
+        put(at(r, 8), pass == 0 ? 0x68u : pass == 1 ? 0x62u : 0x28u);
+        put(at(r, 10), 0x42);
+        put(at(r, 0xB), 0);
+        put(at(r, 0xC), 0x10000002);
+        put(at(r, 0xD), 0);
+        put(at(r, 0xE), 0);
+        put(at(r, 0xF), 0x50000002);
+        put(at(r, 0x10), 0x8001);
+        put(at(r, 0x11), 0x10000000);
+        put(at(r, 0x12), 1);
+        put(at(r, 0x14), 1);
+        put(at(r, 0x15), 1);
+        put(at(r, 0x16), 1);
+        put(at(r, 0x17), 0x80);
+        put(at(r, 0x18), 0x1000000C);
+        put(at(r, 0x19), 0);
+        put(at(r, 0x1A), 0x01000404);
+        put(at(r, 0x1B), 0x6C0C0020);
+        sceVu0CopyMatrix(at(r, 0x1C), cam + 0xE0);
+        sceVu0CopyMatrix(at(r, 0x2C), cam + 0x120);
+        sceVu0CopyMatrix(at(r, 0x3C), cam + 0x20);
+        put(at(r, 0x4C), 0x10000002);
+        put(at(r, 0x4D), 0);
+        put(at(r, 0x4E), 0x01000202);
+        put(at(r, 0x4F), 0x6C02002C);
+        GlowCopyQword(at(r, 0x50), light);
+        GlowCopyQword(at(r, 0x54), offset);
+        put(at(r, 0x59), 0);
+        put(at(r, 0x58), 0x10000003);
+        put(at(r, 0x5A), 0);
+        put(at(r, 0x5B), 0x6C03402E);
+        put(at(r, 0x5D), 0x50224000);
+        put(at(r, 0x5C), 1);
+        put(at(r, 0x5E), 0x44441);
+        put(at(r, 0x60), 1);
+        put(at(r, 0x61), 0x4021C000);
+        put(at(r, 0x62), 0x4441);
+        put(at(r, 0x64), 0x8000);
+        put(at(r, 0x65), 0);
+        put(at(r, 0x66), 0);
+        put(at(r, 0x68), 0x10000000);
+        put(at(r, 0x69), 0);
+        put(at(r, 0x6A), 0x6E014031);
+        put(at(r, 0x6B), pass);
+        put(at(r, 0x6C), 0x10000000);
+        put(at(r, 0x6D), 0);
+        put(at(r, 0x6E), 0);
+        put(at(r, 0x6F), 0x14000000);
+        // Per drawable node: two MSCNT uploads of {node matrix, world -> screen x node} and a DMA call
+        // of the node's strip chain; the DMA tag of each piece is written into the slot left before it.
+        u32 tag = at(r, 0x70);
+        r = at(r, 0x72);
+        for (s32 i = 0; i < GRef<s32>(GRef<u32>(inst + 0x30) + 8); ++i) {
+            const u32 f = GRef<u32>(GRef<u32>(inst) + static_cast<u32>(i) * 4);
+            if ((f & 1) != 0 || (f & 2) != 0) continue;
+            const u32 chain = GRef<u32>(GRef<u32>(inst + 0x2C) + static_cast<u32>(i) * 4);
+            MulMatrixVu0(node_m, mw, GRef<u32>(inst + 0x10) + static_cast<u32>(i) * 0x40);
+            MulMatrixVu0(screen_m, cam + 0xE0, node_m);
+            for (s32 k = 0;;) {
+                put(at(tag, 1), 0);
+                put(at(tag, 0), 0x10000009);
+                put(at(r, 0), 0x01000404);
+                ++k;
+                put(at(r, 1), 0x6C088000);
+                sceVu0CopyMatrix(at(r, 2), node_m);
+                sceVu0CopyMatrix(at(r, 0x12), screen_m);
+                put(at(r, 0x22), 0);
+                put(at(r, 0x23), 0);
+                put(at(r, 0x24), 0);
+                put(at(r, 0x25), 0x14000000);
+                tag = at(r, 0x26);
+                if (1 < k) break;
+                r = at(r, 0x28);
+            }
+            put(at(r, 0x27), chain);
+            put(tag, 0x50000000);
+            put(at(r, 0x28), 0);
+            put(at(r, 0x29), 0);
+            tag = at(r, 0x2A);
+            r = at(r, 0x2C);
+        }
+        put(at(tag, 1), 0);
+        put(at(tag, 0), 0x10000000);
+        put(at(r, 0), 0x11000000);
+        put(at(r, 1), 0);
+        r = at(r, 2);
+    }
+    u32 q9 = func_00141EE0(r, fbp_a, hwb, static_cast<s32>(wid) >> 1, static_cast<s32>(hgt) >> 1, hx, hw, hh);
+    sceVu0CopyVector(node_m, GRef<u32>(0x00410688));
+    // Blur buffer A into B (colour `level`, additive).
+    put(at(q9, 1), 0);
+    put(at(q9, 0), 0x10000007);
+    put(at(q9, 2), 0);
+    put(at(q9, 3), 0x50000007);
+    put(at(q9, 6), 0xE);
+    put(at(q9, 4), 6);
+    put(at(q9, 5), 0x10000000);
+    put(at(q9, 10), 0x3F);
+    put(at(q9, 0xC), fbp_b32 | hwb16);
+    put(at(q9, 0xD), 0);
+    put(at(q9, 0xE), 0x4C);
+    put(at(q9, 0xF), 0);
+    put(at(q9, 0x10), static_cast<u32>(off_x));
+    put(at(q9, 0x12), 0x18);
+    put(at(q9, 0x11), static_cast<u32>(off_y));
+    put(at(q9, 0x14), static_cast<u32>(hx) | (static_cast<u32>(x1h) << 16));
+    put(at(q9, 0x15), static_cast<u32>(hy) | (static_cast<u32>(y1h - 1) << 16));
+    put(at(q9, 0x16), 0x40);
+    GlowCopyQword(at(q9, 0x18), ctx + 0xE0);
+    put(at(q9, 0x19), 1);
+    put(at(q9, 0x1C), 0x30000);
+    put(at(q9, 0x1E), 0x47);
+    put(at(q9, 0x20), static_cast<u32>(n + 3) | 0x10000000u);
+    put(at(q9, 0x21), 0);
+    put(at(q9, 0x22), 0);
+    put(at(q9, 0x23), static_cast<u32>(n + 3) | 0x50000000u);
+    put(at(q9, 0x24), 1);
+    put(at(q9, 0x26), 0x10);
+    put(at(q9, 0x25), 0x24000000);
+    GRef<u64>(at(q9, 0x28)) = 6;
+    put(at(q9, 0x2A), level | 0x80000000u | (level << 16) | (level << 8));
+    put(at(q9, 0x2B), 0x3F800000u);
+    put(at(q9, 0x2D), 0x24000000);
+    put(at(q9, 0x2E), 0x4C);
+    put(at(q9, 0x2C), n_eop);
+    r = at(q9, 0x30);
+    {
+        u32 x = static_cast<u32>(cx - q) * 16;
+        const s32 hy2 = hh >> 1;
+        for (s32 k = 0; k < n; ++k) {
+            put(at(r, 1), 0);
+            put(at(r, 0), x | (static_cast<u32>(cy - hy2) << 20));
+            put(at(r, 2), (x + 0x200) | (static_cast<u32>(cy + hy2) << 20));
+            put(at(r, 3), 0);
+            r = at(r, 4);
+            x += 0x200;
+        }
+    }
+    put(at(r, 1), 0);
+    put(at(r, 0), 0x10000004);
+    put(at(r, 2), 0);
+    put(at(r, 3), 0x50000004);
+    put(at(r, 4), 3);
+    put(at(r, 6), 0xE);
+    put(at(r, 5), 0x10000000);
+    put(at(r, 8), 0x30007);
+    put(at(r, 10), 0x47);
+    put(at(r, 0xE), 0x3F);
+    put(at(r, 0x10), 0);
+    put(at(r, 0x11), 0);
+    put(at(r, 0x12), 8);
+    put(at(r, 0x14), static_cast<u32>(n2 + 4) | 0x10000000u);
+    put(at(r, 0x15), 0);
+    put(at(r, 0x16), 0);
+    put(at(r, 0x17), static_cast<u32>(n2 + 4) | 0x50000000u);
+    put(at(r, 0x18), 1);
+    put(at(r, 0x19), 0x44000000);
+    put(at(r, 0x1A), 0xF160);
+    put(at(r, 0x1C), 0x116);
+    put(at(r, 0x1D), 0);
+    put(at(r, 0x1E), static_cast<u32>(fbp_a) | (static_cast<u32>(hwb) << 14) | 0xA8000000u);
+    put(at(r, 0x1F), 6);
+    put(at(r, 0x20), 0x80000000u);
+    put(at(r, 0x21), 0x3F800000u);
+    put(at(r, 0x25), 0x44000000);
+    put(at(r, 0x26), 0x43C3);
+    put(at(r, 0x24), n_eop);
+    r = at(r, 0x28);
+    {
+        u32 x = static_cast<u32>(cx - q) * 16;
+        u32 u = static_cast<u32>(hx) << 4;
+        const s32 hy2 = hh >> 1;
+        for (s32 k = 0; k < n; ++k) {
+            put(at(r, 0), (u + 8) | 0x80000u);
+            put(at(r, 2), x | (static_cast<u32>(cy - hy2) << 20));
+            put(at(r, 3), 0);
+            put(at(r, 4), (u + 0x208) | ((static_cast<u32>(hh) * 16 + 8) << 16));
+            x += 0x200;
+            put(at(r, 7), 0);
+            put(at(r, 6), x | (static_cast<u32>(cy + hy2) << 20));
+            u += 0x200;
+            r = at(r, 8);
+        }
+    }
+    q9 = func_00141EE0(r, fbp_b, hwb, static_cast<s32>(wid) >> 1, static_cast<s32>(hgt) >> 1, hx, hw, hh);
+    BuildScaledCameraMatrices(cam, 1.0f);
+    // Add buffer B to the frame (full resolution, the main context's draw environment restored).
+    put(at(q9, 1), 0);
+    put(at(q9, 0), 0x10000008);
+    put(at(q9, 2), 0x11000000);
+    put(at(q9, 3), 0x50000008);
+    put(at(q9, 4), 0x8007);
+    put(at(q9, 6), 0xE);
+    put(at(q9, 5), 0x10000000);
+    GlowCopyQword(at(q9, 8), ctx + 0xD0);
+    put(at(q9, 9), 0xFFFFFF);
+    put(at(q9, 0xC), 0x30000);
+    put(at(q9, 0xE), 0x47);
+    put(at(q9, 0x10), 0x4010);
+    put(at(q9, 0x12), 8);
+    put(at(q9, 0x11), 0);
+    GlowCopyQword(at(q9, 0x14), ctx + 0xF0);
+    GlowCopyQword(at(q9, 0x18), cam + 0x1A0);
+    put(at(q9, 0x1E), 0x3F);
+    put(at(q9, 0x20), 0x60);
+    put(at(q9, 0x21), 0);
+    put(at(q9, 0x22), 0x14);
+    put(at(q9, 0x24), static_cast<u32>(n2 + 4) | 0x10000000u);
+    put(at(q9, 0x25), 0);
+    put(at(q9, 0x26), 0);
+    put(at(q9, 0x27), static_cast<u32>(n2 + 4) | 0x50000000u);
+    put(at(q9, 0x28), 1);
+    put(at(q9, 0x2A), 0xF160);
+    put(at(q9, 0x29), 0x44000000);
+    GRef<u64>(at(q9, 0x2C)) = 0x116;
+    put(at(q9, 0x2E), static_cast<u32>(fbp_b) | (static_cast<u32>(hwb) << 14) | 0xA8000000u);
+    put(at(q9, 0x2F), 6);
+    put(at(q9, 0x30), 0x80808080u);
+    put(at(q9, 0x31), 0x3F800000u);
+    put(at(q9, 0x35), 0x44000000);
+    put(at(q9, 0x36), 0x43C3);
+    put(at(q9, 0x34), n_eop);
+    r = at(q9, 0x38);
+    {
+        u32 x = static_cast<u32>(fpu::FloatToInt(GRef<f32>(cam + 0x178)) - hw) * 16;
+        u32 u = static_cast<u32>(hx) << 4;
+        const s32 hy2 = hh;
+        for (s32 k = 0; k < n; ++k) {
+            put(at(r, 0), (u + 8) | 0x80000u);
+            put(at(r, 3), 0);
+            put(at(r, 2), x | (static_cast<u32>(cy - hy2) << 20));
+            put(at(r, 4), (u + 0x208) | ((static_cast<u32>(hh) * 16 + 8) << 16));
+            x += 0x400;
+            put(at(r, 7), 0);
+            put(at(r, 6), x | (static_cast<u32>(cy + hy2) << 20));
+            r = at(r, 8);
+            u += 0x200;
+        }
+    }
+    put(at(r, 1), 0);
+    put(at(r, 0), 0x10000004);
+    put(at(r, 2), 0x11000000);
+    put(at(r, 3), 0x50000004);
+    put(at(r, 4), 3);
+    put(at(r, 6), 0xE);
+    put(at(r, 5), 0x10000000);
+    GlowCopyQword(at(r, 8), ctx + 0xD0);
+    put(at(r, 0xC), 0x30000);
+    put(at(r, 0xE), 0x47);
+    put(at(r, 0x10), 0x56);
+    put(at(r, 0x12), 0x42);
+    put(at(r, 0x11), 0);
+    put(at(r, 0x13), 0);
+    put(at(r, 0x14), static_cast<u32>(n + 3) | 0x10000000u);
+    put(at(r, 0x15), 0);
+    put(at(r, 0x16), 0);
+    put(at(r, 0x17), static_cast<u32>(n + 3) | 0x50000000u);
+    put(at(r, 0x18), 1);
+    put(at(r, 0x1A), 0x10);
+    put(at(r, 0x19), 0x24000000);
+    put(at(r, 0x1C), 0x46);
+    put(at(r, 0x1D), 0);
+    put(at(r, 0x1E), 0x80808080u);
+    put(at(r, 0x1F), 0x3F800000u);
+    put(at(r, 0x20), n_eop);
+    put(at(r, 0x21), 0x24000000);
+    put(at(r, 0x22), 0x44);
+    r = at(r, 0x24);
+    {
+        u32 x = static_cast<u32>(fpu::FloatToInt(GRef<f32>(cam + 0x178)) - hw) * 16;
+        const s32 hy2 = hh;
+        for (s32 k = 0; k < n; ++k) {
+            put(at(r, 1), 0);
+            put(at(r, 0), x | (static_cast<u32>(cy - hy2) << 20));
+            put(at(r, 2), (x + 0x400) | (static_cast<u32>(cy + hy2) << 20));
+            put(at(r, 3), 0);
+            r = at(r, 4);
+            x += 0x400;
+        }
+    }
+    put(at(r, 1), 0);
+    put(at(r, 0), 0x10000004);
+    put(at(r, 2), 0x11000000);
+    put(at(r, 3), 0x50000004);
+    put(at(r, 4), 0x8003);
+    put(at(r, 5), 0x10000000);
+    put(at(r, 6), 0xE);
+    GlowCopyQword(at(r, 8), ctx + 0xD0);
+    GlowCopyQword(at(r, 0xC), ctx + 0xE0);
+    GlowCopyQword(at(r, 0x10), ctx + 0x110);
+    EndPacket(list, bucket, (at(r, 0x14) + 0xF) & 0xFFFFFFF0u);
+}
+
+// EE: 0x001422E8
+// Dead (no reference): full-screen quad packet: ALPHA_1 0x68 (0x62 with `alt`), FIX 0x80, PRIM 0x44,
+// RGBAQ 0x80010101, and the four ftoi4 vertices v0-v3. Returns the end.
+u32 func_001422E8(u32 p, u32 a1, u32 a2, u32 a3, u32 t0, u32 v0, u32 v1, u32 v2, u32 v3, s32 alt) {
+    (void)a1;
+    (void)a2;
+    (void)a3;
+    (void)t0;
+    const auto xyz = [](u32 at, u32 v) {
+        GRef<u32>(at) = GRef<u32>(v) | GRef<u32>(v + 4) << 16;
+        GRef<s32>(at + 4) = GRef<s32>(v + 8) >> 4;
+    };
+    GRef<u32>(p + 4) = 0;
+    GRef<u32>(p) = 0x10000007;
+    GRef<u32>(p + 8) = 0;
+    GRef<u32>(p + 0xC) = 0x50000007;
+    GRef<u32>(p + 0x10) = 1;
+    GRef<u32>(p + 0x14) = 0x10000000;
+    GRef<u32>(p + 0x18) = 0xE;
+    GRef<u32>(p + 0x20) = alt != 0 ? 0x62 : 0x68;
+    GRef<u32>(p + 0x24) = 0x80;
+    GRef<u32>(p + 0x28) = 0x42;
+    GRef<u32>(p + 0x2C) = 0;
+    GRef<u32>(p + 0x30) = 1;
+    GRef<u32>(p + 0x34) = 0x24000000;
+    GRef<u32>(p + 0x38) = 0x10;
+    GRef<u64>(p + 0x40) = 0x44;
+    GRef<u32>(p + 0x48) = 0x80010101;
+    GRef<f32>(p + 0x4C) = 1.0f;
+    GRef<u32>(p + 0x50) = 0x8004;
+    GRef<u32>(p + 0x54) = 0x14000000;
+    GRef<u32>(p + 0x58) = 4;
+    xyz(p + 0x60, v0);
+    xyz(p + 0x68, v1);
+    xyz(p + 0x70, v2);
+    xyz(p + 0x78, v3);
+    return p + 0x80;
+}
+
+// EE: 0x00149D08
+// Dead (no reference): sets channel `channel` of the model instance of slot `n` (+8 table) to v.
+void func_00149D08(f32 v, u32 rec, s32 n, s32 channel) {
+    SetModelPartValue(v, GRef<u32>(GRef<u32>(rec + 8) + static_cast<u32>(n) * 4), channel);
+}
+
+// EE: 0x00149D20
+// Dead (no reference): value of channel `channel` of the instance of slot `n` (+0 table); 0 when none.
+f32 func_00149D20(u32 rec, s32 n, s32 channel) {
+    const u32 inst = GRef<u32>(GRef<u32>(rec) + static_cast<u32>(n) * 4);
+    if (inst == 0) return 0.0f;
+    return func_00141000(inst, channel);
+}
+
+// EE: 0x00149E10
+// Dead (no reference): stores v in entry n of table +0x18.
+void func_00149E10(u32 rec, s32 n, u32 v) { GRef<u32>(GRef<u32>(rec + 0x18) + static_cast<u32>(n) * 4) = v; }
 
 }  // namespace ac04::game

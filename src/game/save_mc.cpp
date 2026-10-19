@@ -34,11 +34,13 @@ AC04_GUEST_VAR(s32, g_McReadTimeout, 0x004118D0)
 AC04_GUEST_VAR(s32, g_McReadFd, 0x004118D4)
 AC04_GUEST_VAR(s32, g_McReadFailed, 0x004118D8)
 AC04_GUEST_VAR(s32, g_McFormatTimeout, 0x004118DC)
+AC04_GUEST_VAR(s32, g_McUnformatTimeout, 0x004118E0)
 AC04_GUEST_VAR(s32, g_McMkdirTimeout, 0x004118E4)
 AC04_GUEST_VAR(s32, g_McWriteTimeout, 0x004118E8)
 AC04_GUEST_VAR(s32, g_McWriteFd, 0x004118EC)
 AC04_GUEST_VAR(s32, g_McWriteFailed, 0x004118F0)
 AC04_GUEST_VAR(s32, g_McDeleteTimeout, 0x004118F4)
+AC04_GUEST_VAR(s32, g_McChdirTimeout, 0x004118F8)
 
 constexpr u32 kMcFilePaths = 0x004C2EB0;  // 0x100 bytes per registered file path
 
@@ -468,6 +470,52 @@ s32 FormatMcCard(u32 block) {
     return ret;
 }
 
+// EE: 0x0025EB58
+// Dead (reached only from func_0025F820): sceMcUnformat of the block's card (1800 polls before
+// timing out); the result code becomes the status on failure.
+s32 UnformatMcCard(u32 block) {
+    guest::GuestFrame frame(0x10);
+    const u32 result_addr = frame.Address();
+    s32 ret = 0;
+    s32 step = GRef<s32>(block + 0x4A0);
+    if (step == 0) {
+        g_McUnformatTimeout() = 0;
+        if (sceMcUnformat(GRef<s32>(block + 0x480), GRef<s32>(block + 0x484)) != 0) {
+            GRef<s32>(block + 0x4A4) = 3;
+            GRef<s32>(block + 0x4A0) = 0;
+            return -1;
+        }
+        GRef<s32>(block + 0x4A4) = 2;
+        GRef<s32>(block + 0x4A0) = 1;
+        step = 1;
+    }
+    if (step == 1) {
+        if (sceMcSync(1, kMcCmd, result_addr) != 1) {
+            g_McUnformatTimeout() += 1;
+            if (!(g_McUnformatTimeout() < 0x709)) {
+                g_McUnformatTimeout() = 0;
+                GRef<s32>(block + 0x494) = -9999;
+                ret = -1;
+                GRef<s32>(block + 0x488) = -1;
+                GRef<s32>(block + 0x4A4) = 4;
+            }
+        } else {
+            const s32 r = GRef<s32>(result_addr);
+            GRef<s32>(block + 0x498) = 0;
+            GRef<s32>(block + 0x4A0) = 0;
+            if (r == 0) {
+                GRef<s32>(block + 0x4A4) = 1;
+                ret = 1;
+            } else {
+                GRef<s32>(block + 0x4A4) = r;
+                ret = -1;
+            }
+        }
+    }
+    if (ret != 0) GRef<s32>(block + 0x4A0) = 0;
+    return ret;
+}
+
 // EE: 0x0025EC58
 // sceMcMkdir of `path`; the request and its first poll run in the same frame.
 s32 MakeMcDir(u32 block, u32 path) {
@@ -721,6 +769,59 @@ s32 DeleteMcFile(u32 block, u32 path) {
     return ret;
 }
 
+// EE: 0x0025F170
+// Dead (no reference): sceMcChdir to `path` (180 polls before timing out); results below -10
+// become -11.
+s32 ChangeMcDir(u32 block, u32 path) {
+    guest::GuestFrame frame(0x10);
+    const u32 result_addr = frame.Address();
+    s32 ret = 0;
+    s32 step = GRef<s32>(block + 0x4A0);
+    if (step == 0) {
+        g_McChdirTimeout() = 0;
+        const s32 r = sceMcChdir(GRef<s32>(block + 0x480), GRef<s32>(block + 0x484), path, 0);
+        GRef<s32>(result_addr) = r;
+        if (r != 0) {
+            GRef<s32>(block + 0x4A4) = 3;
+            GRef<s32>(block + 0x4A0) = 0;
+            return -1;
+        }
+        GRef<s32>(block + 0x4A4) = 2;
+        GRef<s32>(block + 0x4A0) = 1;
+        step = 1;
+    }
+    if (step == 1) {
+        const s32 sync = sceMcSync(1, kMcCmd, result_addr);
+        if (sync == 1) {
+            s32 r = GRef<s32>(result_addr);
+            if (r == 0) {
+                GRef<s32>(block + 0x4A4) = sync;
+                ret = 1;
+                GRef<s32>(block + 0x4A0) = 0;
+            } else {
+                if (r < -10) {
+                    r = -11;
+                    GRef<s32>(result_addr) = -11;
+                }
+                ret = -1;
+                GRef<s32>(block + 0x494) = r;
+                GRef<s32>(block + 0x4A4) = GRef<s32>(result_addr);
+            }
+        } else {
+            g_McChdirTimeout() += 1;
+            if (!(g_McChdirTimeout() < 0xB5)) {
+                g_McChdirTimeout() = 0;
+                GRef<s32>(block + 0x494) = -9999;
+                ret = -1;
+                GRef<s32>(block + 0x488) = -1;
+                GRef<s32>(block + 0x4A4) = 4;
+            }
+        }
+    }
+    if (ret != 0) GRef<s32>(block + 0x4A0) = 0;
+    return ret;
+}
+
 // EE: 0x0025F340
 // Registers save file `index` of `port` (0..5; 5 = the main file named like the directory):
 // builds its card path ("<dir>/<name>", 0x100 bytes per file at 0x004C2EB0; index 5 "<dir><dir>"
@@ -817,6 +918,30 @@ s32 CheckSaveCard(u32 save, s32 port, u32 block) {
 }
 
 }  // namespace
+
+// EE: 0x0025F820
+// Dead (no reference): unformats the card of `port` (step 0/1), then probes it (step 2). Returns 1
+// once the card info probe succeeds, -1 on failure.
+s32 func_0025F820(u32 save, s32 port) {
+    s32 ret = 0;
+    const u32 block = save + static_cast<u32>(port) * 0x540 + 0x40;
+    const s32 step = GRef<s32>(save);
+    if (step == 0 || step == 1) {
+        if (step == 0) {
+            GRef<s32>(block + 0x4A4) = 0;
+            GRef<s32>(save) = 1;
+        }
+        const s32 r = UnformatMcCard(block);
+        if (r == -1) ret = -1;
+        else if (r == 1) GRef<s32>(save) = 2;
+    } else if (step == 2) {
+        const s32 r = ProbeMcCardInfo(block);
+        if (r == -1) ret = -1;
+        else if (r != 0) ret = r == 1 ? 1 : 0;
+    }
+    if (ret != 0) GRef<s32>(save) = 0;
+    return ret;
+}
 
 // EE: 0x0025F900
 // New save: card check, the directory must not exist yet (status 9), mkdir, then every registered

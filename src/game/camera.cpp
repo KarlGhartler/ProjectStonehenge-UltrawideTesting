@@ -19,6 +19,38 @@ namespace ac04::game {
 
 using guest::GRef;
 
+// EE: 0x00102870
+// Dead (no reference): screen centre (+0x178 x, +0x17C y).
+void SetCameraScreenCentre(u32 cam, f32 x, f32 y) {
+    GRef<f32>(cam + 0x17C) = y;
+    GRef<f32>(cam + 0x178) = x;
+}
+
+// EE: 0x00102880
+// Dead (no reference): x/y scale (+0x180/+0x184), clears the viewport-scale-pending flag and sets
+// the screen size to viewport size / scale.
+void SetCameraScale(u32 cam, f32 sx, f32 sy) {
+    const f32 w = static_cast<f32>(GRef<s16>(cam + 0x18C));
+    const f32 h = static_cast<f32>(GRef<s16>(cam + 0x18E));
+    GRef<f32>(cam + 0x180) = sx;
+    GRef<f32>(cam + 0x184) = sy;
+    GRef<u32>(cam + 0x198) &= 0xFFFFFFFEu;
+    // div.s: a zero scale gives +-FLT_MAX on the EE.
+    GRef<f32>(cam + 0x160) = fpu::Div(w, sx);
+    GRef<f32>(cam + 0x164) = fpu::Div(h, sy);
+}
+
+// EE: 0x00102798
+// Dead (no reference): diagonal field of view: 2 * atan2(|half screen size|, distance +0x168).
+f32 GetCameraDiagonalFov(u32 cam) {
+    const f32 hw = GRef<f32>(cam + 0x160) * 0.5f;
+    const f32 hh = GRef<f32>(cam + 0x164) * 0.5f;
+    // sqrt.s (the NaN fallback to sqrtf never triggers on the EE).
+    const f32 r = fpu::Sqrt(fpu::Add(hw * hw, hh * hh));
+    const f32 a = ee::atan2f(r, GRef<f32>(cam + 0x168));
+    return fpu::Add(a, a);
+}
+
 // EE: 0x001029E0
 // Per frame: world->view = inverse(translate(position) * rotation(+0x10)); the viewport scale when
 // flagged (viewport size / screen size); view->screen (sceVu0ViewScreenMatrix with far + k), the
@@ -109,6 +141,17 @@ void SetCameraLookAt(u32 cam, u32 look) {
     GRef<f32>(dir + 4) = -GRef<f32>(look + 0x2C) * scale;
     GRef<f32>(dir) = -GRef<f32>(look + 0x28) * scale;
     sceVu0ApplyMatrix(cam, m, dir);
+}
+
+// EE: 0x00103150
+// Dead (no reference): world->view matrix `out` = inverse(translate(trans) * rotation(rot)).
+void func_00103150(u32 out, u32 trans, u32 rot) {
+    guest::GuestFrame frame(0x40);
+    const u32 m = frame.Address();
+    sceVu0UnitMatrix(m);
+    func_00102D28(m, m, rot);
+    sceVu0TransMatrix(m, m, trans);
+    sceVu0InversMatrix(out, m);
 }
 
 // EE: 0x001031C0

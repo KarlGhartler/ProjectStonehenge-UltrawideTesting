@@ -696,4 +696,65 @@ void func_0021E798(s32 slot, s32 mode) {
     }
 }
 
+// ---- Dead stream helpers (slice S8; no callers) --------------------------------------------------
+
+// EE: 0x0021EF10
+// Starts the next of the four BGM variations (counter 0x00410D38) on slot 0.
+void func_0021EF10() {
+    func_0021FD40(0, static_cast<u16>(GRef<u32>(0x00410D38)));
+    GRef<s32>(0x00410D38) = (GRef<s32>(0x00410D38) + 1) % 4;
+}
+
+// EE: 0x0021EF58
+u32 func_0021EF58(s32 slot) { return GRef<u32>(Slot(slot) + 0x28); }
+
+// EE: 0x0021EF78
+u32 func_0021EF78(s32 slot) { return GRef<u32>(Slot(slot) + 0x2C); }
+
+// EE: 0x0021EF98
+u32 func_0021EF98(s32 slot) { return GRef<u32>(Slot(slot) + 0x48); }
+
+// EE: 0x0021EFB8
+u32 func_0021EFB8(s32 slot) { return GRef<u32>(Slot(slot) + 0x44); }
+
+// EE: 0x0021F108
+// Output volume pair of `slot` (+0x8C, +0x90).
+void func_0021F108(s32 slot, u32 left, u32 right) {
+    GRef<u32>(left) = GRef<u32>(Slot(slot) + 0x8C);
+    GRef<u32>(right) = GRef<u32>(Slot(slot) + 0x90);
+}
+
+// EE: 0x0021F160
+// Base volume pair of `slot` (+0x84, +0x88).
+void func_0021F160(s32 slot, u32 left, u32 right) {
+    GRef<u32>(left) = GRef<u32>(Slot(slot) + 0x84);
+    GRef<u32>(right) = GRef<u32>(Slot(slot) + 0x88);
+}
+
+// EE: 0x0021F238
+// Adds (dl, dr) to the current volume pair of `slot` (+0x7C, +0x80) and fades to it over `time`
+// (0x0021F190 mode 1; `time` is passed through in f12).
+void func_0021F238(f32 time, s32 slot, s32 dl, s32 dr) {
+    const u32 s = Slot(slot);
+    func_0021F190(time, slot, GRef<s32>(s + 0x7C) + dl, GRef<s32>(s + 0x80) + dr, 1);
+}
+
+// EE: 0x0021F278
+// Fade time of `slot` (+0x68).
+f32 func_0021F278(s32 slot) { return GRef<f32>(Slot(slot) + 0x68); }
+
+// EE: 0x0021F928
+// Word +4 of VPK track table entry `n` (0x00365B40, 0xC bytes each).
+u32 func_0021F928(s32 n) { return GRef<u32>(0x00365B40 + static_cast<u32>(n) * 0xC + 4); }
+
+// EE: 0x0021F948
+// First word of the record that entry `n` points to.
+u32 func_0021F948(s32 n) { return GRef<u32>(GRef<u32>(0x00365B40 + static_cast<u32>(n) * 0xC + 4)); }
+
+// EE: 0x0021FB28
+void func_0021FB28(s32 n, u32 v) { GRef<u32>(0x0042CE94 + static_cast<u32>(n) * 4) = v; }
+
+// EE: 0x0021FB40
+u32 func_0021FB40(s32 n) { return GRef<u32>(0x0042CE94 + static_cast<u32>(n) * 4); }
+
 }  // namespace ac04::game

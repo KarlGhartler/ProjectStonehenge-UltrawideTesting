@@ -15,6 +15,7 @@ enum Reg : std::uint32_t {
     kTex0_1 = 0x06, kTex0_2 = 0x07, kClamp1 = 0x08, kClamp2 = 0x09, kFog = 0x0A,
     kXyzf3 = 0x0C, kXyz3 = 0x0D, kTex1_1 = 0x14, kTex1_2 = 0x15, kTex2_1 = 0x16, kTex2_2 = 0x17,
     kXyoffset1 = 0x18, kXyoffset2 = 0x19, kPrmodecont = 0x1A, kPrmode = 0x1B, kTexclut = 0x1C,
+    kMiptbp1_1 = 0x34, kMiptbp1_2 = 0x35, kMiptbp2_1 = 0x36, kMiptbp2_2 = 0x37,
     kTexa = 0x3B, kFogcol = 0x3D, kTexflush = 0x3F, kScissor1 = 0x40, kScissor2 = 0x41,
     kAlpha1 = 0x42, kAlpha2 = 0x43, kDthe = 0x45, kColclamp = 0x46, kTest1 = 0x47, kTest2 = 0x48,
     kPabe = 0x49, kFba1 = 0x4A, kFba2 = 0x4B, kFrame1 = 0x4C, kFrame2 = 0x4D, kZbuf1 = 0x4E, kZbuf2 = 0x4F,
@@ -43,8 +44,8 @@ bool SameState(const DrawCommand& a, const DrawCommand& b) {
            a.blend == b.blend && a.aa1 == b.aa1 && a.fst == b.fst && a.tex0 == b.tex0 && a.tex1 == b.tex1 &&
            a.clamp == b.clamp && a.alpha == b.alpha && a.test == b.test && a.frame == b.frame &&
            a.zbuf == b.zbuf && a.scissor == b.scissor && a.texa == b.texa && a.fba == b.fba &&
-           a.fogcol == b.fogcol && a.colclamp == b.colclamp && a.pabe == b.pabe && a.dthe == b.dthe &&
-           a.texture == b.texture && a.texture_from_frame == b.texture_from_frame &&
+           a.fogcol == b.fogcol && a.miptbp1 == b.miptbp1 && a.miptbp2 == b.miptbp2 && a.colclamp == b.colclamp && a.pabe == b.pabe && a.dthe == b.dthe &&
+           a.texture == b.texture && a.texture_from_frame == b.texture_from_frame && a.frame_clut == b.frame_clut &&
            a.texture_guest_source == b.texture_guest_source && a.texture_guest_width == b.texture_guest_width;
 }
 
@@ -147,6 +148,7 @@ void GsState::ProcessGif(const std::uint8_t* data, std::size_t bytes, const std:
                 }
             }
         } else if (flg == 1) {
+            if (pre) WriteRegister(kPrim, prim);  // PRE applies to REGLIST tags as well (HUD glyphs)
             const std::uint64_t count = static_cast<std::uint64_t>(nloop) * nreg;
             std::uint32_t descs[16];
             for (std::uint32_t r = 0; r < nreg; ++r) descs[r] = static_cast<std::uint32_t>(Bits(hi, static_cast<int>(r * 4), 4));
@@ -383,6 +385,7 @@ void GsState::WriteRegister(std::uint32_t reg, std::uint64_t value) {
         case kTrxdir: {
             regs_[reg] = value;
             const std::uint32_t dir = static_cast<std::uint32_t>(value & 3);
+            if (dir == 0 || dir == 2) NoteTransferDestination();
             transfer_pos_ = 0;
             transfer_rest_n_ = 0;
             transfer_active_ = dir == 0;
@@ -413,6 +416,32 @@ void GsState::WriteRegister(std::uint32_t reg, std::uint64_t value) {
             break;
     }
     regs_[reg] = value;
+}
+
+void GsState::NoteFrameBuffer(const DrawCommand& d) {
+    const std::uint32_t fbp = d.Fbp(), fbw = std::max<std::uint32_t>(d.Fbw(), 1);
+    const std::uint32_t h = static_cast<std::uint32_t>(Bits(d.scissor, 48, 11)) + 1;
+    const std::uint32_t page_h = BitsPerPixel(d.Fpsm()) == 16 ? 64 : 32;
+    const std::uint32_t pages = fbw * ((h + page_h - 1) / page_h);
+    std::uint32_t& n = fb_pages_[fbp];
+    n = std::max(n, pages);
+    fb_overwritten_.erase(fbp);
+}
+
+void GsState::NoteTransferDestination() {
+    if (fb_pages_.empty()) return;
+    const std::uint64_t bb = regs_[kBitbltbuf], tp = regs_[kTrxpos], tr = regs_[kTrxreg];
+    const std::uint32_t dbp = static_cast<std::uint32_t>(Bits(bb, 32, 14));
+    const std::uint32_t dbw = static_cast<std::uint32_t>(Bits(bb, 48, 6));
+    const std::uint32_t dpsm = static_cast<std::uint32_t>(Bits(bb, 56, 6));
+    const std::uint32_t w = static_cast<std::uint32_t>(Bits(tr, 0, 12)), h = static_cast<std::uint32_t>(Bits(tr, 32, 12));
+    if (w == 0 || h == 0 || BitsPerPixel(dpsm) == 0) return;
+    const std::uint32_t x = static_cast<std::uint32_t>(Bits(tp, 32, 11)), y = static_cast<std::uint32_t>(Bits(tp, 48, 11));
+    const std::uint32_t first = GsMemory::PixelAddress(dpsm, dbp, dbw, x, y) >> 13;
+    const std::uint32_t last = GsMemory::PixelAddress(dpsm, dbp, dbw, x + w - 1, y + h - 1) >> 13;
+    for (const auto& [fbp, pages] : fb_pages_) {
+        if (fbp <= last && first < fbp + pages) fb_overwritten_.insert(fbp);
+    }
 }
 
 void GsState::Kick(bool draw) {
@@ -490,6 +519,10 @@ void GsState::AppendVertices(std::vector<GsVertex>& out, const DrawCommand& d, c
 }
 
 void GsState::EmitPrimitive(const GsVertex* v, int count) {
+    if (!draws_enabled_) {
+        state_dirty_ = true;
+        return;
+    }
     if (!state_dirty_ && !draws_.empty()) {
         DrawCommand& last = draws_.back();
         bool same = true;
@@ -525,17 +558,28 @@ void GsState::EmitPrimitive(const GsVertex* v, int count) {
     d.fba = regs_[ctxt ? kFba2 : kFba1];
     d.texa = regs_[kTexa];
     d.fogcol = regs_[kFogcol];
+    d.miptbp1 = regs_[ctxt ? kMiptbp1_2 : kMiptbp1_1];
+    d.miptbp2 = regs_[ctxt ? kMiptbp2_2 : kMiptbp2_1];
     d.colclamp = (regs_[kColclamp] & 1) != 0;
     d.pabe = (regs_[kPabe] & 1) != 0;
     d.dthe = (regs_[kDthe] & 1) != 0;
     d.texture.reset();
     d.texture_from_frame = -1;
+    d.frame_clut.reset();
     d.texture_guest_source = 0;
     d.texture_guest_width = 0;
+    NoteFrameBuffer(d);
     if (d.textured) {
         const std::uint32_t tbp = static_cast<std::uint32_t>(Bits(d.tex0, 0, 14));
-        if (frame_query_ && frame_query_(tbp)) {
+        // A frame buffer drawn earlier in this frame counts too: the backend creates its targets
+        // only when the frame is recorded (mission 4: the cloud-cover texture at FBP 0x128 is drawn
+        // at the start of the frame and sampled by the terrain's second pass in the same frame).
+        const bool page = (tbp & 31) == 0;
+        const bool drawn = page && fb_pages_.count(tbp >> 5) != 0;
+        if (!(page && fb_overwritten_.count(tbp >> 5) != 0) && (drawn || (frame_query_ && frame_query_(tbp)))) {
             d.texture_from_frame = static_cast<std::int32_t>(tbp);
+            const std::uint32_t psm = static_cast<std::uint32_t>(Bits(d.tex0, 20, 6));
+            if (psm == kPsmT8 || psm == kPsmT8H || psm == kPsmT4 || psm == kPsmT4HL || psm == kPsmT4HH) d.frame_clut = ClutRgba(d);
         } else {
             d.texture = DecodeTexture(d, v, count);
         }
@@ -558,6 +602,34 @@ void GsState::EmitPrimitive(const GsVertex* v, int count) {
         d = DrawCommand{};
     }
     state_dirty_ = false;
+}
+
+std::shared_ptr<const std::array<std::uint32_t, 256>> GsState::ClutRgba(const DrawCommand& d) const {
+    const std::uint64_t t = d.tex0;
+    const std::uint32_t psm = static_cast<std::uint32_t>(Bits(t, 20, 6));
+    const std::uint32_t cpsm = static_cast<std::uint32_t>(Bits(t, 51, 4));
+    const std::uint32_t csa = static_cast<std::uint32_t>(Bits(t, 56, 5));
+    const std::uint32_t ta0 = static_cast<std::uint32_t>(Bits(d.texa, 0, 8));
+    const std::uint32_t ta1 = static_cast<std::uint32_t>(Bits(d.texa, 32, 8));
+    const bool aem = Bits(d.texa, 15, 1) != 0;
+    auto conv = [&](std::uint32_t e) {
+        if (cpsm == 0) return e;
+        const std::uint32_t r = (e & 0x1F) << 3, g = ((e >> 5) & 0x1F) << 3, b = ((e >> 10) & 0x1F) << 3;
+        std::uint32_t a = (e & 0x8000) ? ta1 : ta0;
+        if (aem && (e & 0x7FFF) == 0) a = 0;
+        return r | g << 8 | b << 16 | a << 24;
+    };
+    auto out = std::make_shared<std::array<std::uint32_t, 256>>();
+    out->fill(0);
+    if (psm == kPsmT8 || psm == kPsmT8H) {
+        for (std::uint32_t i = 0; i < 256; ++i) (*out)[i] = conv(clut_[i]);
+    } else {
+        const std::uint32_t base = (cpsm == 0 ? (csa & 15) : csa) * 16;
+        for (std::uint32_t i = 0; i < 16; ++i) (*out)[i] = conv(clut_[(base + i) & 511]);
+    }
+    if (last_frame_clut_ && *last_frame_clut_ == *out) return last_frame_clut_;
+    last_frame_clut_ = out;
+    return out;
 }
 
 void GsState::TexelRange(const DrawCommand& d, const GsVertex* v, int count, std::uint32_t r[4]) const {
@@ -595,7 +667,8 @@ void GsState::TexelRange(const DrawCommand& d, const GsVertex* v, int count, std
     const std::uint32_t wmt = static_cast<std::uint32_t>(Bits(d.clamp, 2, 2));
     // Bilinear filtering (TEX1.MMAG) reads texels floor(c - 0.5) and floor(c - 0.5) + 1 (the
     // shader's footprint); nearest reads floor(c).
-    const bool bilinear = Bits(d.tex1, 5, 1) != 0;
+    const std::uint32_t mmin = static_cast<std::uint32_t>(Bits(d.tex1, 6, 3));
+    const bool bilinear = Bits(d.tex1, 5, 1) != 0 || mmin == 1 || mmin == 4 || mmin == 5;
     auto range = [bilinear](float lo, float hi, std::uint32_t size, std::uint32_t mode, std::uint32_t& a, std::uint32_t& b) {
         const bool repeat = mode == 0 || mode == 3;
         const std::int64_t l = static_cast<std::int64_t>(std::floor(bilinear ? lo - 0.5f : lo));
@@ -610,6 +683,16 @@ void GsState::TexelRange(const DrawCommand& d, const GsVertex* v, int count, std
     };
     range(umin, umax, size_u, wms, r[0], r[2]);
     range(vmin, vmax, size_v, wmt, r[1], r[3]);
+    // No vertices or NaN coordinates leave an empty or inverted rectangle: take the whole texture.
+    if (!(r[0] < r[2]) || !(r[1] < r[3])) {
+        log::WriteOnce("gs:tex-range", log::Level::Warning, "renderer",
+                       "texel range empty (tex0 0x%llx, %d vertices): whole texture used",
+                       static_cast<unsigned long long>(t), count);
+        r[0] = 0;
+        r[1] = 0;
+        r[2] = size_u;
+        r[3] = size_v;
+    }
 }
 
 std::shared_ptr<const DecodedTexture> GsState::DecodeTexture(const DrawCommand& d, const GsVertex* v, int count) {
@@ -643,8 +726,40 @@ std::shared_ptr<const DecodedTexture> GsState::DecodeTexture(const DrawCommand& 
         }
         clut_hash = clut_hash_;
     }
-    const std::uint64_t gen = mem_.RegionHash(psm, tbp, tbw, size_u, size_v);
-    const auto key = std::make_tuple(t & 0x1FFFFFFFFFFFFFFFull, clut_hash ^ (d.texa * 31), gen, u0, v0, u1, v1);
+    // Mipmap levels (TEX1.MMIN 2-5 with MXL > 0; level 0 only for frame-buffer sources). Base
+    // pointers: MTBA = 1 derives levels 1-3 from TBP0 (each level follows the previous one in local
+    // memory, buffer width halved), else MIPTBP1 (levels 1-3) and MIPTBP2 (4-6).
+    struct Level {
+        std::uint32_t tbp, tbw, w, h;
+    };
+    std::vector<Level> mips;
+    const std::uint32_t mmin = static_cast<std::uint32_t>(Bits(d.tex1, 6, 3));
+    const std::uint32_t mxl = std::min<std::uint32_t>(static_cast<std::uint32_t>(Bits(d.tex1, 2, 3)), 6);
+    if (mmin >= 2 && mmin <= 5 && mxl > 0) {
+        const bool mtba = Bits(d.tex1, 9, 1) != 0;
+        std::uint32_t bp = tbp, bw = tbw, w = size_u, h = size_v;
+        for (std::uint32_t l = 1; l <= mxl; ++l) {
+            if (mtba) {
+                if (l > 3) break;  // MTBA covers levels 1-3 only
+                // HYPOTHESIS: the next level starts right after this one's texels (w * h * bpp / 8
+                // bytes, in 256-byte blocks); exact for the power-of-two page-filling terrain textures.
+                bp += std::max<std::uint32_t>(1, w * h * BitsPerPixel(psm) / 2048);
+                bw = std::max<std::uint32_t>(bw / 2, 1);
+            } else {
+                const std::uint64_t reg = l <= 3 ? d.miptbp1 : d.miptbp2;
+                const int shift = static_cast<int>(((l - 1) % 3) * 20);
+                bp = static_cast<std::uint32_t>(Bits(reg, shift, 14));
+                bw = static_cast<std::uint32_t>(Bits(reg, shift + 14, 6));
+            }
+            w = std::max<std::uint32_t>(w / 2, 1);
+            h = std::max<std::uint32_t>(h / 2, 1);
+            mips.push_back({bp, bw, w, h});
+        }
+    }
+    std::uint64_t gen = mem_.RegionHash(psm, tbp, tbw, size_u, size_v);
+    for (const Level& m : mips) gen = gen * 1099511628211ull ^ mem_.RegionHash(psm, m.tbp, m.tbw, m.w, m.h);
+    const std::uint64_t mipkey = mips.empty() ? 0 : (d.tex1 & 0x3FC) ^ d.miptbp1 * 31 ^ d.miptbp2 * 131;
+    const auto key = std::make_tuple(t & 0x1FFFFFFFFFFFFFFFull, clut_hash ^ (d.texa * 31) ^ mipkey, gen, u0, v0, u1, v1);
     if (last_key_valid_ && key == last_key_) return last_texture_;
     if (auto it = texture_cache_.find(key); it != texture_cache_.end()) {
         last_key_valid_ = true;
@@ -657,11 +772,16 @@ std::shared_ptr<const DecodedTexture> GsState::DecodeTexture(const DrawCommand& 
     auto tex = std::make_shared<DecodedTexture>();
     tex->origin_u = u0;
     tex->origin_v = v0;
-    tex->width = u1 - u0;
-    tex->height = v1 - v0;
+    tex->base_width = u1 - u0;
+    tex->base_height = v1 - v0;
+    tex->levels = static_cast<std::uint32_t>(mips.size());
+    std::uint32_t mips_h = 0;
+    for (const Level& m : mips) mips_h += m.h;
+    tex->width = tex->base_width + (mips.empty() ? 0 : mips[0].w);
+    tex->height = std::max(tex->base_height, mips_h);
     tex->tex_width = size_u;
     tex->tex_height = size_v;
-    tex->rgba.resize(static_cast<std::size_t>(tex->width) * tex->height * 4);
+    tex->rgba.assign(static_cast<std::size_t>(tex->width) * tex->height * 4, 0);
     const std::uint32_t ta0 = static_cast<std::uint32_t>(Bits(d.texa, 0, 8));
     const std::uint32_t ta1 = static_cast<std::uint32_t>(Bits(d.texa, 32, 8));
     const bool aem = Bits(d.texa, 15, 1) != 0;
@@ -671,29 +791,39 @@ std::shared_ptr<const DecodedTexture> GsState::DecodeTexture(const DrawCommand& 
         if (aem && (p & 0x7FFF) == 0) a = 0;
         return r | g << 8 | b << 16 | a << 24;
     };
-    for (std::uint32_t y = 0; y < tex->height; ++y) {
-        for (std::uint32_t x = 0; x < tex->width; ++x) {
-            const std::uint32_t raw = mem_.ReadPixel(psm, tbp, tbw, u0 + x, v0 + y);
-            std::uint32_t c;
-            switch (psm) {
-                case kPsmCt32: c = raw; break;
-                case kPsmCt24: {
-                    std::uint32_t a = ta0;
-                    if (aem && (raw & 0xFFFFFF) == 0) a = 0;
-                    c = (raw & 0xFFFFFF) | a << 24;
-                    break;
+    // Decodes `w` x `h` texels at (su, sv) of the texture at (bp, bw) into the packed image at (dx, dy).
+    auto decode = [&](std::uint32_t bp, std::uint32_t bw, std::uint32_t su, std::uint32_t sv, std::uint32_t w,
+                      std::uint32_t h, std::uint32_t dx, std::uint32_t dy) {
+        for (std::uint32_t y = 0; y < h; ++y) {
+            for (std::uint32_t x = 0; x < w; ++x) {
+                const std::uint32_t raw = mem_.ReadPixel(psm, bp, bw, su + x, sv + y);
+                std::uint32_t c;
+                switch (psm) {
+                    case kPsmCt32: c = raw; break;
+                    case kPsmCt24: {
+                        std::uint32_t a = ta0;
+                        if (aem && (raw & 0xFFFFFF) == 0) a = 0;
+                        c = (raw & 0xFFFFFF) | a << 24;
+                        break;
+                    }
+                    case kPsmCt16: case kPsmCt16S: c = from16(raw); break;
+                    case kPsmT8: case kPsmT8H: c = cpsm == 0 ? clut_[raw & 255] : from16(clut_[raw & 255]); break;
+                    default: {  // 4-bit
+                        const std::uint32_t base = (cpsm == 0 ? (csa & 15) : csa) * 16;
+                        const std::uint32_t e = clut_[(base + (raw & 15)) & 511];
+                        c = cpsm == 0 ? e : from16(e);
+                        break;
+                    }
                 }
-                case kPsmCt16: case kPsmCt16S: c = from16(raw); break;
-                case kPsmT8: case kPsmT8H: c = cpsm == 0 ? clut_[raw & 255] : from16(clut_[raw & 255]); break;
-                default: {  // 4-bit
-                    const std::uint32_t base = (cpsm == 0 ? (csa & 15) : csa) * 16;
-                    const std::uint32_t e = clut_[(base + (raw & 15)) & 511];
-                    c = cpsm == 0 ? e : from16(e);
-                    break;
-                }
+                std::memcpy(&tex->rgba[(static_cast<std::size_t>(dy + y) * tex->width + dx + x) * 4], &c, 4);
             }
-            std::memcpy(&tex->rgba[(static_cast<std::size_t>(y) * tex->width + x) * 4], &c, 4);
         }
+    };
+    decode(tbp, tbw, u0, v0, tex->base_width, tex->base_height, 0, 0);
+    std::uint32_t my = 0;
+    for (const Level& m : mips) {
+        decode(m.tbp, m.tbw, 0, 0, m.w, m.h, tex->base_width, my);
+        my += m.h;
     }
     texture_cache_[key] = tex;
     last_key_valid_ = true;

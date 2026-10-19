@@ -5,14 +5,13 @@
 // Layout per format (GS User's Manual, "Local Memory"):
 //   PSMCT32 page 64x32, block 8x8;  PSMCT16/16S page 64x64, block 16x8;
 //   PSMT8   page 128x64, block 16x16; PSMT4 page 128x128, block 32x16.
-// Blocks are placed inside a page by the per-format block tables, so different textures and
-// formats overlap exactly as on the GS at block granularity. Inside a block the pixels are stored
-// in row-major order, not in the GS column order: identical results as long as a block is written
-// and read in the same format, which holds for everything up to slice S1 (each texture is uploaded
-// and sampled in one format; CLUTs are CT32 images read as CT32). HYPOTHESIS until a format
-// reinterpretation (PSMT8H, depth as texture, heat haze) needs the exact column order.
+// Blocks are placed inside a page by the per-format block tables and the pixels inside a block in
+// the GS column order, so the memory image is byte for byte the GS's (and PCSX2's VRAM image,
+// checked with tools/research/gsvram.py) and data written in one format and read in another
+// (PSMT8H over CT32, CLUTs, frame buffers as textures) lands where the GS would put it.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -76,6 +75,12 @@ public:
                              std::uint32_t h) const;
 
     const std::uint8_t* Data() const { return mem_.data(); }
+    // Replaces the whole memory with a 4 MiB GS memory image (--play-gsdump: a PCSX2 VRAM image has
+    // the same layout); every page counts as changed.
+    void LoadImage(const std::uint8_t* image) {
+        std::copy(image, image + kSize, mem_.begin());
+        for (auto& g : page_gen_) ++g;
+    }
 
 private:
     void Touch(std::uint32_t addr) { ++page_gen_[(addr >> 13) & 511]; }

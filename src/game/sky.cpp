@@ -128,6 +128,16 @@ void func_00111950() {
     func_00113750(RenderSettings());
 }
 
+// EE: 0x00110070
+// Dead (no reference): the colour between render-settings colours +0x48 and +0x4C at the blend
+// factor func_00110170 gives for (yaw, angles).
+u64 func_00110070(f32 yaw, u32 angles) {
+    const f32 t = func_00110170(yaw, angles);
+    const u32 rs = RenderSettings();
+    return LerpColor(t, static_cast<u64>(static_cast<s64>(GRef<s32>(rs + 0x48))),
+                     static_cast<u64>(static_cast<s64>(GRef<s32>(rs + 0x4C))));
+}
+
 // EE: 0x00110170
 // Horizon blend factor toward yaw (docs/subsystems/sky.md): M = RotY(d) · RotX(angles.x) ·
 // RotZ(angles.z), d = angles.y − yaw wrapped once by the limits at 0x0040DBD4..0x0040DBE0;
@@ -724,7 +734,7 @@ void func_00110630(f32 t, f32 p, u32 out, u32 g, u32 s) {
         glow = 0.0f;
     if ((GRef<u32>(g_pMainContext().addr) & 0x100) == 0 && (GRef<u32>(ksky) & 1) != 0) {
         const f32 cover = fpu::Sub(1.0f, GRef<f32>(ksky + 0x14));
-        const s32 u = (rand() >> 8) & 0xFFF;
+        const s32 u = (ee::rand() >> 8) & 0xFFF;
         if (u > 0x800) glow = fpu::Add(glow, cover * (fpu::IntToFloat(u) * GRef<f32>(0x0040DC10)));
     }
     if (GRef<f32>(0x0040DC14) < glow) AdjustColours(out, ByteVec(0x00606060, glow), true, 1.0f);
@@ -1507,7 +1517,7 @@ void func_001145E8(u32 w, u32 cam, u32 s) {
     GRef<u32>(w + 0xCC) = static_cast<u32>(GRef<u16>(s + 0x4C) >> 1) << 8;
     u64 c1 = SignedWord(s + 0x44), c0 = SignedWord(s + 0x48);
     if ((GRef<u32>(g_pMainContext().addr) & 0x100) == 0 && (GRef<u32>(GRef<u32>(0x004104D0)) & 1) != 0) {
-        const s32 u = (rand() >> 8) & 0xFFF;
+        const s32 u = (ee::rand() >> 8) & 0xFFF;
         if (u > 0x800) {
             const f32 f = fpu::IntToFloat(u) * GRef<f32>(0x0040DC64);
             c0 = LerpColor(f, c0, 0x00FFFFFF);

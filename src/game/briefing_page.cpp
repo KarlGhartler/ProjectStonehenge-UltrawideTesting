@@ -79,6 +79,14 @@ u8 GetCampaignMissionNumber(u64 id) {
     return GRef<u8>(0x003847A8 + static_cast<u32>(id) * 2);
 }
 
+// EE: 0x00226348
+// Dead (no reference): signed high byte of the mission-id table entry (0x003847A8, u16 per id; the
+// low byte is the campaign mission number); -1 above 0x28.
+s32 func_00226348(u32 id) {
+    if (id >= 0x29) return -1;
+    return static_cast<s8>(GRef<u16>(0x003847A8 + id * 2) >> 8);
+}
+
 // EE: 0x002363C8
 // Shows subtitle `entry` ({u32 message, f32 time}) in message box `mb`.
 void SetBriefingSubtitle(u32 mb, u32 entry) { SetMessageBoxText(mb, GRef<s32>(entry)); }
@@ -839,6 +847,34 @@ void InitTerrainMap(u32 map, u32 data) {
     GRef<u32>(map + 0x210) = data + 0x70;
     GRef<u32>(map + 0x200) = 0;
     GRef<u32>(map + 0x204) = 0;
+}
+
+// EE: 0x0023ECD8
+// Dead (no reference): terrain height at (x, z) from the 256 x 256 byte height map `heights`
+// (2048 units per cell, centred: + 262144), bilinear; cells outside the map count as 0.
+f32 SampleTerrainMapHeight(u32 heights, f32 x, f32 z) {
+    const s32 iz = fpu::FloatToInt(fpu::Add(z, 262144.0f));
+    const s32 ix = fpu::FloatToInt(fpu::Add(x, 262144.0f));
+    const f32 fz = static_cast<f32>(iz & 0x7FF) * 0.00048828125f;
+    const f32 fx = static_cast<f32>(ix & 0x7FF) * 0.00048828125f;
+    const f32 gz = fpu::Sub(1.0f, fz);
+    const f32 gx = fpu::Sub(1.0f, fx);
+    const s32 x0 = ix >> 11, z0 = iz >> 11, x1 = x0 + 1, z1 = z0 + 1;
+    auto at = [heights](s32 cx, s32 cz) {
+        return static_cast<f32>(GRef<u8>(heights + static_cast<u32>(cx + (cz << 8))));
+    };
+    f32 h00 = 0.0f, h01 = 0.0f, h10 = 0.0f, h11 = 0.0f;
+    if ((x0 >> 8) == 0) {
+        if ((z0 >> 8) == 0) h00 = at(x0, z0);
+        if ((z1 >> 8) == 0) h01 = at(x0, z1);
+    }
+    if ((x1 >> 8) == 0) {
+        if ((z0 >> 8) == 0) h10 = at(x1, z0);
+        if ((z1 >> 8) == 0) h11 = at(x1, z1);
+    }
+    f32 r = fpu::Add(gx * gz * h00, fx * gz * h10);
+    r = fpu::Add(r, gx * fz * h01);
+    return fpu::Add(r, fx * fz * h11);
 }
 
 // EE: 0x0023EE20

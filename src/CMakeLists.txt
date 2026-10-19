@@ -32,6 +32,7 @@ add_library(ac04_core STATIC
     platform/render/test_pattern.cpp
     platform/render/vu1/vif1.cpp
     platform/render/vu1/vu1_programs.cpp
+    platform/vu0/vu0_hle.cpp
     platform/win32/crash_win32.cpp
     platform/win32/file_reader_win32.cpp
     platform/win32/paths_win32.cpp
@@ -47,6 +48,7 @@ add_library(ac04_platform STATIC
     platform/render/gs/gs_vulkan.cpp
     platform/render/movie_upscaler.cpp
     platform/render/renderer.cpp
+    platform/render/gs_dump.cpp
     platform/render/vk_context.cpp
     platform/render/vma_impl.cpp)
 target_link_libraries(ac04_platform PUBLIC ac04_core SDL3::SDL3-static ac04_volk ac04_vma ac04_imgui)
@@ -55,9 +57,12 @@ ac04_add_shaders(ac04_platform
     "${CMAKE_SOURCE_DIR}/shaders/output.frag"
     "${CMAKE_SOURCE_DIR}/shaders/gs.vert"
     "${CMAKE_SOURCE_DIR}/shaders/gs.frag"
+    "${CMAKE_SOURCE_DIR}/shaders/gs_conv.comp"
     "${CMAKE_SOURCE_DIR}/shaders/fsr1_easu.comp")
 
 add_library(ac04_game OBJECT
+    game/ai_aircraft.cpp
+    game/ai_ground.cpp
     game/aircraft_data.cpp
     game/aircraft_models.cpp
     game/aircraft_viewer.cpp
@@ -74,15 +79,20 @@ add_library(ac04_game OBJECT
     game/display.cpp
     game/effect_pools.cpp
     game/engine_sound.cpp
+    game/flight_frame.cpp
     game/flight_load.cpp
+    game/flight_sequences.cpp
     game/flight_systems.cpp
     game/flight_units.cpp
     game/hangar.cpp
     game/hdd.cpp
+    game/hdd_install_page.cpp
+    game/perf_counter.cpp
     game/interlude_page.cpp
     game/heap.cpp
     game/math.cpp
     game/menu.cpp
+    game/mission_misc.cpp
     game/menu_object.cpp
     game/menu_widgets.cpp
     game/mission_select.cpp
@@ -95,21 +105,41 @@ add_library(ac04_game OBJECT
     game/options.cpp
     game/options_page.cpp
     game/pad.cpp
+    game/pending_stubs.cpp
+    game/player_collision.cpp
+    game/player_flight.cpp
+    game/player_weapons.cpp
+    game/projectile_draw.cpp
+    game/projectiles.cpp
+    game/effect_update.cpp
+    game/effect_spawn.cpp
+    game/hud.cpp
+    game/mission_sound.cpp
+    game/effect_draw.cpp
     game/radio.cpp
+    game/radio_chatter.cpp
     game/random.cpp
     game/records_page.cpp
+    game/replay.cpp
+    game/replay_camera.cpp
+    game/replay_record.cpp
     game/render2d.cpp
     game/results.cpp
+    game/results_scene.cpp
+    game/post_mission_page.cpp
     game/save_mc.cpp
     game/save_page.cpp
     game/save_init.cpp
     game/scene.cpp
+    game/sequence.cpp
+    game/sequence_model.cpp
     game/sound_rpc.cpp
     game/startup.cpp
     game/static_objects.cpp
     game/static_init.cpp
     game/terrain_query.cpp
     game/unit_models.cpp
+    game/unit_states.cpp
     game/usbjoy.cpp
     game/vag_stream.cpp
     game/view_camera.cpp

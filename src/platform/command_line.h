@@ -35,6 +35,16 @@ struct CommandLine {
     bool dump_audio = false;              // --dump-audio (development builds only): mixer output to a WAV file
     std::optional<unsigned> dump_dma_at;  // --dump-dma-at <vblank> (development builds only): VIF1/GIF capture of one step
     bool freeze_sim = false;              // --freeze-sim (development builds only): missions draw the world, no step
+    // --mission <1-18> / --mission-id <id> / --mission-mode campaign|free (development builds only):
+    // start that mission with the default aircraft instead of the intro or the title.
+    int mission = 0;
+    int mission_id = -1;
+    bool mission_free = false;
+    int heap_fill = -1;                   // --heap-fill <byte> (development builds only): fill the freed work heap
+    std::string play_gsdump;              // --play-gsdump <file> (development builds only): draw a PCSX2 GS dump, then exit
+    bool dump_vram = false;               // --dump-vram (development builds only): screenshots also write GS memory
+    bool log_allocs = false;              // --log-allocs (development builds only): work-heap allocation log
+    std::optional<unsigned> fast_until;   // --fast-until <vblank> (development builds only): run uncapped up to that vblank
     std::optional<unsigned> exit_at;      // --exit-at <vblank> (development builds only): normal exit after that vblank
     std::optional<unsigned> movie_upscale;  // --movie-upscale <2-4> (development builds only): run the movie upscaling stage alone
 };

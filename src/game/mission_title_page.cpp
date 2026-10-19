@@ -31,7 +31,7 @@ f32 K(u32 address) { return GRef<f32>(address); }
 }  // namespace
 
 // EE: 0x0022A478
-// One textured sprite from a descriptor {u64 TEX0, u32 UV0 (+8), XY0 (+0xC), UV1 (+0x10), XY1
+// One textured sprite from a descriptor {u64 TEX0, u32 UV0 (+8), UV1 (+0xC), XY0 (+0x10), XY1
 // (+0x14), RGBA (+0x18)}: a REGLIST tag (TEX0_2, RGBAQ, UV, XYZ3, UV, XYZ2) and its 6 registers.
 // Returns the end of the data.
 u32 WriteDescriptorSprite(u32 p, u32 desc) {
@@ -43,6 +43,26 @@ u32 WriteDescriptorSprite(u32 p, u32 desc) {
     GRef<u64>(p + 0x28) = GRef<u32>(desc + 0x10);
     GRef<u64>(p + 0x30) = GRef<u32>(desc + 0xC);
     GRef<u64>(p + 0x38) = GRef<u32>(desc + 0x14);
+    return p + 0x40;
+}
+
+// EE: 0x0022A4D0
+// Dead (no reference): one textured sprite of descriptor `desc` (TEX0 +0, UV0 +8, UV1 +0xC, width
+// +0x1C, height +0x1E) centred on (x, y) with colour `rgba`. Returns the end of the data.
+u32 WriteCentredDescriptorSprite(u32 p, u32 desc, s32 x, s32 y, u32 rgba) {
+    GRef<u64>(p) = 0x6400000000008001ull;
+    GRef<u64>(p + 8) = 0x53D317;
+    const u16 h = GRef<u16>(desc + 0x1E);
+    const u16 w = GRef<u16>(desc + 0x1C);
+    GRef<u64>(p + 0x10) = GRef<u64>(desc);
+    GRef<u64>(p + 0x18) = rgba;
+    const s32 y0 = y - (h >> 1);
+    const s32 x0 = x - (w >> 1);
+    GRef<u64>(p + 0x28) = static_cast<u64>(static_cast<s64>(x0)) | static_cast<u64>(static_cast<s64>(y0)) << 16;
+    GRef<u64>(p + 0x20) = GRef<u32>(desc + 8);
+    const s32 y1 = y0 + h, x1 = x0 + w;
+    GRef<u64>(p + 0x38) = static_cast<u64>(static_cast<s64>(x1)) | static_cast<u64>(static_cast<s64>(y1)) << 16;
+    GRef<u64>(p + 0x30) = GRef<u32>(desc + 0xC);
     return p + 0x40;
 }
 

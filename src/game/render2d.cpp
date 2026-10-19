@@ -10,6 +10,7 @@
 #include "game/game.h"
 
 #include "common/ee_math.h"
+#include "common/guest_stack.h"
 #include "sce/sce.h"
 
 namespace ac04::game {
@@ -732,7 +733,12 @@ u32 WriteDmaCallTag(u32 p, u32 target) {
 // f = (s16)(int)(t * 4096); pmulth: p = (b - a) * f per halfword (32-bit product); psraw 12 and
 // pinteh keep the low halfword; paddsh: saturating 16-bit add to a; clamped to 0..255; ppacb.
 u64 LerpColor(f32 t, u64 a, u64 b) {
-    const s16 f = static_cast<s16>(fpu::FloatToInt(t * 4096.0f));
+    return LerpColorFactor(static_cast<s16>(fpu::FloatToInt(t * 4096.0f)), a, b);
+}
+
+// The blend of LerpColor with the 4.12 factor given directly (the same MMI sequence is inlined in
+// several effect drawers with constant or precomputed factors).
+u64 LerpColorFactor(s16 f, u64 a, u64 b) {
     u64 out = 0;
     for (u32 i = 0; i < 8; ++i) {
         const s16 ah = static_cast<s16>((a >> (8 * i)) & 0xFF);
@@ -863,6 +869,272 @@ u32 BuildClippedSpriteStripsUv(u32 p, u64 xy0, u64 xy1, u64 uv0, u64 uv1, u64 cl
         p = q;
     }
     return p;
+}
+
+namespace {
+
+void Pw2(u32 p, u32 v) { GRef<u32>(p) = v; }
+
+// A sign-extended value as the 32-bit register pattern (shifts then wrap as on the EE).
+u32 Sx32(s32 v) { return static_cast<u32>(v); }
+
+// Quadwords of `bytes`, rounded up (as the original's (n + 15) >> 4 with the negative fix-up).
+u32 BytesToQwc(s32 bytes) {
+    const s32 t = bytes + 0xF;
+    return static_cast<u32>((-1 < t ? t : bytes + 0x1E) >> 4);
+}
+
+}  // namespace
+
+// EE: 0x00104418
+// Dead (no reference): closes packet list `list` with a DMA next tag to the head of chain `chain`
+// and takes over the chain's tail.
+void func_00104418(u32 list, u32 chain) {
+    const u32 tail = GRef<u32>(list + 4);
+    Pw2(tail, 0x20000000);
+    Pw2(tail + 4, GRef<u32>(chain));
+    GRef<u32>(list + 4) = GRef<u32>(chain + 4);
+}
+
+// EE: 0x00106468
+// Dead (no reference): texture packet of GIM record `tex` (with a CLUT, +8): TEX0 from the CLUT
+// record, TEX1, and a 2-loop sprite with fixed coordinates; nothing without a CLUT. Returns the end.
+u32 func_00106468(u32 tex, u32 p) {
+    const u32 clut = GRef<u32>(tex + 8);
+    if (clut == 0) return p;
+    Pw2(p + 4, 0);
+    Pw2(p, 0x10000003);
+    Pw2(p + 8, 0);
+    Pw2(p + 0xC, 0x50000003);
+    Pw2(p + 0x10, 0x8002);
+    Pw2(p + 0x14, 0x10000000);
+    Pw2(p + 0x18, 0xE);
+    Pw2(p + 0x24, 5);
+    Pw2(p + 0x28, 6);
+    Pw2(p + 0x2C, 0);
+    Pw2(p + 0x20, (static_cast<u32>(GRef<u16>(clut)) | 0x4000u | static_cast<u32>(GRef<u8>(clut + 3)) << 20) | 0x10000000u);
+    Pw2(p + 0x30, 0);
+    Pw2(p + 0x34, 0);
+    Pw2(p + 0x38, 0x14);
+    Pw2(p + 0x40, 0x10000007);
+    Pw2(p + 0x44, 0);
+    Pw2(p + 0x48, 0);
+    Pw2(p + 0x4C, 0x50000007);
+    Pw2(p + 0x50, 0x8002);
+    Pw2(p + 0x54, 0x300F4000);
+    Pw2(p + 0x58, 0x412);
+    Pw2(p + 0x60, 0);
+    Pw2(p + 0x64, 0);
+    GRef<f32>(p + 0x68) = 1.0f;
+    Pw2(p + 0x70, 0x80);
+    Pw2(p + 0x74, 0x80);
+    Pw2(p + 0x78, 0x80);
+    Pw2(p + 0x7C, 0x80);
+    Pw2(p + 0x84, 0x7800);
+    Pw2(p + 0x80, 0x7800);
+    Pw2(p + 0x88, 0x0FFFFFFF);
+    Pw2(p + 0x8C, 0);
+    GRef<f32>(p + 0x98) = 1.0f;
+    GRef<f32>(p + 0x90) = 1.0f;
+    GRef<f32>(p + 0x94) = 1.0f;
+    Pw2(p + 0xAC, 0x80);
+    Pw2(p + 0xA0, 0x80);
+    Pw2(p + 0xA4, 0x80);
+    Pw2(p + 0xA8, 0x80);
+    Pw2(p + 0xB4, 0x8800);
+    Pw2(p + 0xB8, 0x0FFFFFFF);
+    Pw2(p + 0xB0, 0x8800);
+    Pw2(p + 0xBC, 0);
+    return p + 0xC0;
+}
+
+// EE: 0x00106810
+// Dead (no reference): development dump of a w x h RGBA32 image to "host0:<name>" as a GIM file:
+// a 0x10-byte header "GIM", then {(w + 63) / 64 << 16, 0, 0, w | h << 16} and the pixels. Returns 1
+// on success, 0 when a call fails (a failed write leaves the file open, as in the original). The
+// host file calls are stubs in the port.
+s32 func_00106810(u32 unused, u32 name, u32 data, s32 w, s32 h) {
+    (void)unused;
+    guest::GuestFrame frame(0x120);
+    const u32 hdr = frame.Address(), path = hdr + 0x20;
+    const u64 args[1] = {name};
+    ee::sprintf(path, 0x00403B10, args, 1);  // "host0:%s"
+    ee::sprintf(hdr, 0x004104B8, nullptr, 0);  // "GIM"
+    const s32 blocks = (w + 0x3F) / 0x40;
+    GRef<u32>(hdr + 0x10) = static_cast<u32>(blocks) << 16;
+    GRef<u32>(hdr + 0x1C) = static_cast<u32>(w) | static_cast<u32>(h) << 16;
+    GRef<u32>(hdr + 4) = 0;
+    GRef<u32>(hdr + 8) = 0;
+    GRef<u32>(hdr + 0xC) = 0;
+    GRef<u32>(hdr + 0x14) = 0;
+    GRef<u32>(hdr + 0x18) = 0;
+    const s32 fd = sceOpen(path, 0x602);
+    if (fd == -1) return 0;
+    if (sceWrite(fd, hdr, 0x10) == -1) return 0;
+    if (sceWrite(fd, hdr + 0x10, 0x10) == -1) return 0;
+    if (sceWrite(fd, data, w * h * 4) == -1) return 0;
+    sceClose(fd);
+    return 1;
+}
+
+// EE: 0x00107238
+// Dead (no reference): sets up 2D sprite record `rec`: colour (the bytes of `rgba` sign-extended and
+// ORed, as the original), Q 1.0, scale (sx, sy), centre (x, y) + 0x800, frame `frame` and the half
+// sizes (texture size x scale, halved toward zero).
+void func_00107238(u32 rec, u32 rgba, s16 x, s16 y, u32 frame, f32 sx, f32 sy) {
+    const s32 c = static_cast<s32>(rgba);
+    const s32 b0 = static_cast<s8>(c & 0xFF);
+    const s32 b1 = static_cast<s8>((c >> 8) & 0xFF);
+    const s32 b2 = static_cast<s8>((c >> 16) & 0xFF);
+    const s32 b3 = static_cast<s8>((c >> 24) & 0xFF);
+    GRef<s32>(rec + 0x18) = (b0 | static_cast<s32>(static_cast<u32>(b3) << 24)) |
+                            (static_cast<s32>(static_cast<u32>(b2) << 16) | static_cast<s32>(static_cast<u32>(b1) << 8));
+    GRef<f32>(rec + 0x1C) = 1.0f;
+    GRef<s32>(rec + 0x28) = x + 0x800;
+    GRef<s32>(rec + 0x2C) = y + 0x800;
+    GRef<f32>(rec + 0x20) = sx;
+    GRef<f32>(rec + 0x24) = sy;
+    const u32 tex = GRef<u32>(rec + 4);
+    const s32 w = static_cast<s16>(fpu::FloatToInt(fpu::IntToFloat(GRef<s16>(tex + 0xC)) * sx));
+    GRef<s32>(rec + 0x30) = w / 2;
+    GRef<u32>(rec + 0x38) = frame;
+    const s32 h = static_cast<s16>(fpu::FloatToInt(fpu::IntToFloat(GRef<s16>(tex + 0xE)) * sy));
+    GRef<s32>(rec + 0x34) = h / 2;
+}
+
+// EE: 0x00107668
+// Dead (no reference): draws 2D sprite record `rec` into bucket `index` of `list`: uploads frame
+// (+0x38 mod the frame count) of its image (IMAGE transfer by a DMA ref to the frame table +0xC) and
+// its CLUT (+0x10), then TEXFLUSH, TEST_1, ZBUF_1 (ZMSK), ALPHA_1, CLAMP_1 and one sprite (PRIM
+// 0x156) at the record's centre and half sizes, then TEST_1 and ZBUF_1 again.
+void func_00107668(u32 rec, u32 list, s32 index) {
+    const u32 p = BeginPacket();
+    const u32 frames = GRef<u32>(rec);
+    const s32 frame = static_cast<s32>(GRef<u32>(rec + 0x38)) % static_cast<s32>(GRef<u32>(frames + 4));
+    const auto upload = [&](u32 at, u32 img, u32 data_addr) {
+        Pw2(at, 0x10000006);
+        Pw2(at + 4, 0);
+        Pw2(at + 8, 0);
+        Pw2(at + 0xC, 0x50000006);
+        Pw2(at + 0x10, 4);
+        Pw2(at + 0x14, 0x10000000);
+        Pw2(at + 0x18, 0xE);
+        Pw2(at + 0x20, 0);
+        Pw2(at + 0x28, 0x50);
+        Pw2(at + 0x24, Sx32(GRef<s16>(img)) | Sx32(GRef<s8>(img + 2)) << 16 | Sx32(GRef<s8>(img + 3)) << 24);
+        Pw2(at + 0x30, 0);
+        Pw2(at + 0x38, 0x51);
+        Pw2(at + 0x34, 0);
+        Pw2(at + 0x40, static_cast<u32>(static_cast<s32>(GRef<s16>(img + 0xC))));
+        Pw2(at + 0x48, 0x52);
+        Pw2(at + 0x44, static_cast<u32>(static_cast<s32>(GRef<s16>(img + 0xE))));
+        Pw2(at + 0x50, 0);
+        Pw2(at + 0x58, 0x53);
+        const u32 qwc = BytesToQwc(GRef<s32>(img + 4));
+        Pw2(at + 0x64, 0x08000000);
+        Pw2(at + 0x68, 0);
+        Pw2(at + 0x60, qwc);
+        Pw2(at + 0x74, data_addr);
+        Pw2(at + 0x70, qwc | 0x30000000);
+        Pw2(at + 0x78, 0);
+        Pw2(at + 0x7C, qwc | 0x50000000);
+    };
+    const u32 tex = GRef<u32>(rec + 4);
+    upload(p, tex, GRef<u32>(static_cast<u32>(frame) * 4 + GRef<u32>(rec + 0xC)));
+    const u32 clut = GRef<u32>(rec + 8);
+    upload(p + 0x80, clut, GRef<u32>(rec + 0x10));
+    const u32 ctx = g_pMainContext().addr;
+    Pw2(p + 0x100, 0x10000006);
+    Pw2(p + 0x104, 0);
+    Pw2(p + 0x108, 0);
+    Pw2(p + 0x10C, 0x50000006);
+    Pw2(p + 0x118, 0xE);
+    Pw2(p + 0x110, 5);
+    Pw2(p + 0x114, 0x10000000);
+    Pw2(p + 0x128, 0x3F);
+    Pw2(p + 0x130, 0x30000);
+    Pw2(p + 0x138, 0x47);
+    GRef<u128>(p + 0x140) = GRef<u128>(ctx + 0xE0);
+    Pw2(p + 0x144, 1);
+    Pw2(p + 0x150, 0x44);
+    Pw2(p + 0x154, 0);
+    Pw2(p + 0x158, 0x42);
+    Pw2(p + 0x15C, 0);
+    const u32 t = GRef<u32>(rec + 4);
+    const s32 tw = GRef<s16>(t + 0xC);
+    const s32 th = GRef<s16>(t + 0xE);
+    Pw2(p + 0x160, Sx32(tw - 1) << 14 | 0xA);
+    Pw2(p + 0x168, 8);
+    Pw2(p + 0x164, Sx32(th - 1) << 2);
+    const u32 uv1 = Sx32(tw) << 4 | Sx32(th) << 20;
+    Pw2(p + 0x170, 0x10000005);
+    Pw2(p + 0x174, 0);
+    Pw2(p + 0x178, 0);
+    Pw2(p + 0x17C, 0x50000005);
+    Pw2(p + 0x180, 1);
+    Pw2(p + 0x184, 0x84000000);
+    Pw2(p + 0x188, 0x4343F610);
+    GRef<u64>(p + 0x190) = 0x156;
+    GRef<u64>(p + 0x198) = GRef<u64>(rec + 0x18);
+    Pw2(p + 0x1A0, (Sx32(GRef<s16>(t)) | 0x80000000u) | (Sx32(GRef<s8>(t + 3)) << 20 | Sx32(GRef<s8>(t + 2)) << 14) |
+                       0x28000000u);
+    const u32 cl = GRef<u32>(rec + 8);
+    Pw2(p + 0x1A4, ((Sx32(GRef<s16>(cl)) << 5 | 0x20000000u) | (Sx32(GRef<s8>(cl + 2)) << 19 | 6u)) |
+                       Sx32(GRef<s8>(cl + 3)) << 23);
+    Pw2(p + 0x1B0, 0);
+    Pw2(p + 0x1B8, static_cast<u32>(GRef<s32>(rec + 0x28) - GRef<s32>(rec + 0x30)) << 4 |
+                       static_cast<u32>(GRef<s32>(rec + 0x2C) - GRef<s32>(rec + 0x34)) << 20);
+    Pw2(p + 0x1BC, 0);
+    Pw2(p + 0x1C0, uv1);
+    Pw2(p + 0x1CC, 0);
+    Pw2(p + 0x1C8, static_cast<u32>(GRef<s32>(rec + 0x28) + GRef<s32>(rec + 0x30)) << 4 |
+                       static_cast<u32>(GRef<s32>(rec + 0x2C) + GRef<s32>(rec + 0x34)) << 20);
+    Pw2(p + 0x1D0, 0x10000003);
+    Pw2(p + 0x1D4, 0);
+    Pw2(p + 0x1D8, 0);
+    Pw2(p + 0x1DC, 0x50000003);
+    Pw2(p + 0x1E0, 0x8002);
+    Pw2(p + 0x1E8, 0xE);
+    Pw2(p + 0x1E4, 0x10000000);
+    Pw2(p + 0x1F0, 0x50000);
+    Pw2(p + 0x1F8, 0x47);
+    GRef<u128>(p + 0x200) = GRef<u128>(ctx + 0xE0);
+    EndPacket(list, index, p + 0x210);
+}
+
+// EE: 0x001083A0
+// Dead (no reference): turns the offset table of container `c` (count, then offsets) into absolute
+// addresses in place; returns the table.
+u32 func_001083A0(u32 unused, u32 c) {
+    (void)unused;
+    const u32 table = c + 4;
+    const u32 n = GRef<u32>(c);
+    for (u32 i = 0; i < n; ++i) GRef<u32>(table + 4 * i) += c;
+    return table;
+}
+
+// EE: 0x00113010
+// Dead (no reference): splits an IMAGE source of `qwc` quadwords at `addr` into pieces that do not
+// cross a 1024-quadword page; one REGLIST pair per piece after the GIF tag at p (NLOOP = pieces, EOP,
+// NREG 2, registers 0x5D): {addr | hi << 16, end | lo << 16}. Returns the end (p when qwc is 0).
+u32 func_00113010(u32 p, u32 addr, u32 qwc, u32 hi, u32 lo) {
+    u32 room = 0x400 - (addr & 0x3FF);
+    u32 count = 0;
+    u32 at = p + 0x10;
+    while (qwc != 0) {
+        const u32 n = static_cast<s32>(qwc) < static_cast<s32>(room) ? qwc : room;
+        GRef<u64>(at) = static_cast<u64>(addr) | (static_cast<u64>(hi) << 16);
+        addr += n;
+        GRef<u64>(at + 8) = static_cast<u64>(addr) | (static_cast<u64>(lo) << 16);
+        qwc -= n;
+        room = 0x400;
+        ++count;
+        at += 0x10;
+    }
+    if (static_cast<s32>(count) <= 0) return p;
+    GRef<u64>(p + 8) = 0x5D;
+    GRef<u64>(p) = static_cast<u64>(count | 0x8000) | 0x2400000000000000ull;
+    return at;
 }
 
 }  // namespace ac04::game

@@ -9,6 +9,7 @@
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
 #include "sce/sce.h"
+#include "common/vu0_math.h"
 
 namespace ac04::game {
 
@@ -447,9 +448,103 @@ void func_0013EC38(u32 l, u32 models, u32 count) {
 }
 
 // EE: 0x00144228
-// Model data: texture / packet base (header +0x34 -> +0xC).
-u32 func_00144228(u32 model) {
-    return GRef<u32>(GRef<u32>(model + 0x34) + 0xC);
+// Model data: float at header +0x34 -> +0xC (returned in f0; the bounding radius, used by
+// 0x0011D580 for the wingtip vapour offsets).
+f32 func_00144228(u32 model) {
+    return GRef<f32>(GRef<u32>(model + 0x34) + 0xC);
+}
+
+// EE: 0x00137608
+// Dead (only callers unreferenced): 3D gradient noise at point p: lattice cell from vftoi0, the
+// permutation table 0x002A2B60 and gradients 0x002A2D00 gathered into scratchpad 0x70000000, then
+// three VU0 lerps by the fractional parts (vmuli with I = fx, fy, fz). The second lerp only updates
+// the y / w lanes of the difference (vsub.yw), as the original. Returns the w lane of the result
+// (scratchpad +0xC).
+f32 func_00137608(u32 p) {
+    using vu0::Vec4;
+    const Vec4 v{GRef<f32>(p), GRef<f32>(p + 4), GRef<f32>(p + 8), GRef<f32>(p + 12)};
+    const s32 ix = vu0::FloatToInt0(v.x), iy = vu0::FloatToInt0(v.y), iz = vu0::FloatToInt0(v.z);
+    const s32 iw = vu0::FloatToInt0(v.w);
+    constexpr u32 perm = 0x002A2B60;
+    constexpr u32 grad = 0x002A2D00;
+    constexpr u32 spr = 0x70000000;
+    const u32 pa = perm + static_cast<u32>(ix & 0xFF);
+    const auto gather = [&](u32 row, u32 lo, u32 hi) {
+        const u32 g0 = grad + (static_cast<u32>((iz + GRef<u8>(row)) & 0xFF) << 2);
+        GRef<u32>(spr + lo) = GRef<u32>(g0);
+        GRef<u32>(spr + lo + 8) = GRef<u32>(g0 + 4);
+        const u32 g1 = grad + (static_cast<u32>((iz + GRef<u8>(row + 1)) & 0xFF) << 2);
+        GRef<u32>(spr + hi) = GRef<u32>(g1);
+        GRef<u32>(spr + hi + 8) = GRef<u32>(g1 + 4);
+    };
+    gather(perm + static_cast<u32>((iy + GRef<u8>(pa)) & 0xFF), 0, 4);
+    gather(perm + static_cast<u32>((iy + GRef<u8>(pa + 1)) & 0xFF), 0x10, 0x14);
+    const Vec4 f{vu0::Sub(v.x, vu0::IntToFloat(ix)), vu0::Sub(v.y, vu0::IntToFloat(iy)), vu0::Sub(v.z, vu0::IntToFloat(iz)),
+                 vu0::Sub(v.w, vu0::IntToFloat(iw))};
+    const auto ld = [](u32 a) { return Vec4{GRef<f32>(a), GRef<f32>(a + 4), GRef<f32>(a + 8), GRef<f32>(a + 12)}; };
+    const auto lerp = [](f32 a, f32 b, f32 t) { return vu0::Add(vu0::Mul(vu0::Sub(b, a), t), a); };
+    const Vec4 q0 = ld(spr), q1 = ld(spr + 0x10);
+    const Vec4 l{lerp(q0.x, q1.x, f.x), lerp(q0.y, q1.y, f.x), lerp(q0.z, q1.z, f.x), lerp(q0.w, q1.w, f.x)};
+    // vf5 = (l.x, l.x, l.z, l.z); vf3 = (fx, l.y - l.x, fz, l.w - l.z); vf3 = vf3 * fy + vf5.
+    const Vec4 d{f.x, vu0::Sub(l.y, l.x), f.z, vu0::Sub(l.w, l.z)};
+    const Vec4 m{vu0::Add(vu0::Mul(d.x, f.y), l.x), vu0::Add(vu0::Mul(d.y, f.y), l.x), vu0::Add(vu0::Mul(d.z, f.y), l.z),
+                 vu0::Add(vu0::Mul(d.w, f.y), l.z)};
+    // vf5 = (m.x, m.x, m.y, m.y); result = (m - vf5) * fz + vf5.
+    const Vec4 r{lerp(m.x, m.x, f.z), lerp(m.x, m.y, f.z), lerp(m.y, m.z, f.z), lerp(m.y, m.w, f.z)};
+    GRef<f32>(spr) = r.x;
+    GRef<f32>(spr + 4) = r.y;
+    GRef<f32>(spr + 8) = r.z;
+    GRef<f32>(spr + 12) = r.w;
+    return GRef<f32>(spr + 0xC);
+}
+
+// EE: 0x00137778
+// Dead (no reference): fractal sum of `octaves` noise samples at (x, y, z) * freq + offset; the
+// frequency grows by 2.1 (k 0x0040E4E8) and the amplitude (from 1) shrinks by 0.2 (k 0x0040E4EC)
+// per octave.
+// fpucheck: verified 4 (3 for the sample point, 1 for the sum)
+f32 func_00137778(s32 octaves, f32 x, f32 y, f32 z, f32 freq, f32 offset) {
+    f32 amp = 1.0f, sum = 0.0f;
+    if (octaves <= 0) return sum;
+    const f32 lacunarity = GRef<f32>(0x0040E4E8), gain = GRef<f32>(0x0040E4EC);
+    guest::GuestFrame frame(0x10);
+    const u32 p = frame.Address();
+    for (s32 n = octaves; n != 0; --n) {
+        ee::memset(p, 0, 0x10);
+        GRef<f32>(p) = fpu::Add(x * freq, offset);
+        GRef<f32>(p + 4) = fpu::Add(y * freq, offset);
+        GRef<f32>(p + 8) = fpu::Add(z * freq, offset);
+        freq = freq * lacunarity;
+        const f32 v = func_00137608(p) * amp;
+        amp = amp * gain;
+        sum = fpu::Add(sum, v);
+    }
+    return sum;
+}
+
+// EE: 0x00137868
+// Dead (no reference): product over `octaves` of (offset + noise(x, y, z)), the point scaled by
+// `scale` after each sample; the product in double precision (libgcc __extendsfdf2 / __muldf3 /
+// __truncdfsf2: IEEE double, the host gives the same bits).
+// fpucheck: verified 1
+f32 func_00137868(s32 octaves, f32 x, f32 y, f32 z, f32 scale, f32 offset) {
+    double prod = 1.0;
+    if (octaves > 0) {
+        guest::GuestFrame frame(0x10);
+        const u32 p = frame.Address();
+        for (s32 n = octaves; n != 0; --n) {
+            ee::memset(p, 0, 0x10);
+            GRef<f32>(p) = x;
+            GRef<f32>(p + 4) = y;
+            GRef<f32>(p + 8) = z;
+            x = x * scale;
+            y = y * scale;
+            const f32 v = func_00137608(p);
+            z = z * scale;
+            prod = prod * static_cast<double>(fpu::Add(offset, v));
+        }
+    }
+    return static_cast<f32>(prod);
 }
 
 }  // namespace ac04::game

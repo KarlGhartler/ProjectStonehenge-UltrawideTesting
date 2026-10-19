@@ -24,7 +24,7 @@ for path in sorted(glob.glob(os.path.join(ROOT, "src", "game", "*.cpp"))):
         if not m:
             continue
         name = "?"
-        for nxt in lines[i + 1:i + 6]:
+        for nxt in lines[i + 1:i + 40]:
             if nxt.startswith("//"):
                 continue
             d = DEF.match(nxt)

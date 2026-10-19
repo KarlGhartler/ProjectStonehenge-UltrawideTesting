@@ -29,11 +29,6 @@ u32 S() { return g_FlightScene(); }
 
 void Put64(u32 p, u64 v) { GRef<u64>(p) = v; }
 
-// Sub-state init / exit functions of later blocks: logged once until translated.
-void NotYet(const char* name) {
-    log::WriteOnce(name, log::Level::Info, "game", "scene 2: %s not translated yet", name);
-}
-
 }  // namespace
 
 // ---- Frame dispatcher -------------------------------------------------------------------------
@@ -63,6 +58,54 @@ void FreezeSimFrame(bool play_frame) {
     func_0013EC38(GRef<u32>(0x00410698), GRef<u32>(e + 0x44), GRef<u32>(e + 0x50));
     UpdateViewCameras();
     BuildFlightDrawLists();
+}
+
+// --freeze-sim, sub 0x13: the skip pass of UpdateInEngineSequence 0x00177058 (EE 0x00178C30-
+// 0x00178DA4) without the keyframe player, so a frozen opening can still be left the original
+// way: a Start press (game button 6, +0x2B4 bit 0x40) starts a 32-frame countdown, then the
+// sequence ends as at its last frame (mission id 0x25 -> mission 1, 0x24 -> mission 0xF, 0x23 ->
+// menu, sub 0xE -> sub 0xF). The end on reaching the sequence length is not taken: the frame
+// counter +0x114 does not advance.
+void FreezeSimSequenceSkip() {
+    const u32 seq = GRef<u32>(0x00410B18);
+    bool end = false;
+    if ((Ctx()->pad_buttons[0][1] & 0x40) != 0 && (GRef<u8>(seq + 0x119) & 8) == 0) {
+        GRef<u8>(seq + 0x119) = static_cast<u8>(GRef<u8>(seq + 0x119) | 8);
+        GRef<u8>(seq + 0x11B) = 0;
+    }
+    if ((GRef<u8>(seq + 0x119) & 8) != 0) {
+        const u8 n = GRef<u8>(seq + 0x11B);
+        if (n < 0x1F)
+            GRef<u8>(seq + 0x11B) = static_cast<u8>(n + 1);
+        else
+            end = true;
+    }
+    if (!end) return;
+    if (Ctx()->sub == 0xE) {
+        RequestSubState(0xF);
+        func_0021F190(0.5f, 0, 0, 0, 2);
+    } else {
+        ps2ptr<u8> game = g_GameState();
+        const u8 id = game[0x27];
+        if (id == 0x23) {
+            EnterMenu(0);
+        } else if (id == 0x24) {
+            game[0x27] = 0xF;
+            game[0x2A] = 0;
+            RequestScene(2);
+            GRef<u32>(GRef<u32>(0x00410E90)) = 0;
+            func_0021F190(1.0f, 0, 0, 0, 2);
+        } else if (id == 0x25) {
+            game[0] = 2;
+            game[0x27] = 1;
+            game[0x2A] = 0;
+            RequestScene(2);
+            GRef<u32>(GRef<u32>(0x00410E90)) = 0;
+            func_0021F190(1.0f, 0, 0, 0, 2);
+        }
+    }
+    GRef<u32>(GRef<u32>(0x00410B18) + 0x110) = 0;
+    GRef<u8>(GRef<u32>(0x004106B4) + 0x62451) = 1;
 }
 
 }  // namespace
@@ -167,33 +210,38 @@ void EnterFlightSubState() {
         case 2: case 3: case 4: case 5: LoadFlightDataEntry(); break;
         case 6: func_0010FDD8(); break;
         case 0xA: func_0010A230(); break;
-        case 0xB: NotYet("func_0010A2D8"); break;
-        case 0xC: NotYet("thunk_func_00118C88"); break;
-        case 0xD: NotYet("func_0010A388"); break;
-        case 0x10: NotYet("func_0010A3C0"); break;
-        case 0x13: NotYet("func_0010A3E0"); break;
-        case 0x14: NotYet("func_0010A400"); break;
-        case 0x19: NotYet("thunk_func_0017ABD8"); break;
-        case 0x1C: NotYet("func_0010A440"); break;
-        case 0x1D: NotYet("thunk_func_0017A7C8"); break;
+        case 0xB: func_0010A2D8(); break;
+        case 0xC: thunk_func_00118C88(); break;
+        case 0xD: func_0010A388(); break;
+        case 0x10: func_0010A3C0(); break;
+        case 0x13: func_0010A3E0(); break;
+        case 0x14: func_0010A400(); break;
+        case 0x19: thunk_func_0017ABD8(); break;
+        case 0x1C: func_0010A440(); break;
+        case 0x1D: thunk_func_0017A7C8(); break;
         default: break;
     }
 }
 
+// EE: 0x0010A4A0
+// Sub-state 0xC exit hook: empty (`jr ra`; not a function in the Ghidra database before S5e).
+void func_0010A4A0() {}
+
 // EE: 0x0010A5D0
-// Sub-state exit hooks (scene change or sub change) of subs 0xF, 0x12, 0x1B, 0x1D.
+// Sub-state exit hooks (scene change or sub change) of subs 0xC, 0xF, 0x12, 0x1B, 0x1D.
 void func_0010A5D0() {
     MainContext* ctx = Ctx();
     if ((ctx->req & 1) != 0) {
-        if (ctx->sub == 0x12) NotYet("thunk_func_0016E1D0");
+        if (ctx->sub == 0x12) thunk_func_0016E1D0();
         return;
     }
     if ((ctx->req & 2) == 0) return;
     switch (ctx->sub) {
-        case 0xF: NotYet("func_0010A4A8"); break;
-        case 0x12: NotYet("thunk_func_0016E1D0"); break;
-        case 0x1B: NotYet("func_0010A478"); break;
-        case 0x1D: NotYet("thunk_func_0017A8D0"); break;
+        case 0xC: func_0010A4A0(); break;
+        case 0xF: func_0010A4A8(); break;
+        case 0x12: thunk_func_0016E1D0(); break;
+        case 0x1B: func_0010A478(); break;
+        case 0x1D: thunk_func_0017A8D0(); break;
         default: break;
     }
 }
@@ -213,9 +261,10 @@ void SceneFlight() {
         ctx->flags |= 0x800;
     }
     const u16 cur = Ctx()->sub;
-    if (debug::FreezeSim() && ((cur >= 0xA && cur <= 0xC) || cur == 0x13))
+    if (debug::FreezeSim() && ((cur >= 0xA && cur <= 0xC) || cur == 0x13)) {
         FreezeSimFrame(cur != 0x13);
-    else
+        if (cur == 0x13) FreezeSimSequenceSkip();
+    } else
         guest::CallGuest<void>(GRef<u32>(0x002A1620 + 4u * cur));
     func_0010A158();
     const u32 s = S();

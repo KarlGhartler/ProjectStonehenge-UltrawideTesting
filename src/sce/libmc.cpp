@@ -410,3 +410,15 @@ s32 sceMcSync(s32 mode, u32 cmd, u32 result) {
     if (result != 0) GRef<s32>(result) = g_request.result;
     return 1;
 }
+
+// Reached only from dead game code (UnformatMcCard 0x0025EB58, ChangeMcDir 0x0025F170): log once and
+// fail the request like a libmc call that could not be issued.
+s32 sceMcUnformat(s32, s32) {
+    AC04_SCE_STUB("sceMcUnformat");
+    return -1;
+}
+
+s32 sceMcChdir(s32, s32, u32, u32) {
+    AC04_SCE_STUB("sceMcChdir");
+    return -1;
+}

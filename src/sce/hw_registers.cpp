@@ -2,10 +2,15 @@
 
 #include <cstring>
 
+#include "platform/vu0/vu0_hle.h"
+
 namespace ac04::sce {
 namespace {
 
 constexpr u32 kT0Count = 0x10000000u;
+constexpr u32 kD0Chcr = 0x10008000u;
+constexpr u32 kD0Qwc = 0x10008020u;
+constexpr u32 kD0Tadr = 0x10008030u;
 
 }  // namespace
 
@@ -58,6 +63,13 @@ void EeRegisters::Write(u32 address, const void* src, u32 size) {
         return;
     }
     std::memcpy(regs_ + off, src, size);
+    if (address == kD0Chcr && size >= 4 && (Word(kD0Chcr) & 0x100u) != 0) {
+        // VIF0 chain (VU0 microcode upload and the sequence engine's vertex unpacks): run it now.
+        const u32 end = vu0hle::RunVif0Chain(Word(kD0Tadr));
+        SetWord(kD0Tadr, end);
+        SetWord(kD0Qwc, 0);
+        SetWord(kD0Chcr, Word(kD0Chcr) & ~0x100u);
+    }
 }
 
 u32 EeRegisters::Word(u32 address) const {
@@ -82,12 +94,21 @@ u32 Address(EeReg reg) {
     switch (reg) {
         case EeReg::kT0Count: return 0x10000000u;
         case EeReg::kT0Mode: return 0x10000010u;
+        case EeReg::kD0Chcr: return 0x10008000u;
+        case EeReg::kD0Qwc: return 0x10008020u;
+        case EeReg::kD0Tadr: return 0x10008030u;
+        case EeReg::kD2Chcr: return 0x1000A000u;
         case EeReg::kD2Tadr: return 0x1000A030u;
         case EeReg::kD8Chcr: return 0x1000D000u;
         case EeReg::kD8Madr: return 0x1000D010u;
         case EeReg::kD8Qwc: return 0x1000D020u;
         case EeReg::kD8Sadr: return 0x1000D080u;
+        case EeReg::kD9Chcr: return 0x1000D400u;
+        case EeReg::kD9Madr: return 0x1000D410u;
+        case EeReg::kD9Qwc: return 0x1000D420u;
+        case EeReg::kD9Sadr: return 0x1000D480u;
         case EeReg::kDmacCtrl: return 0x1000E000u;
+        case EeReg::kDmacStat: return 0x1000E010u;
         case EeReg::kDmacRbsr: return 0x1000E040u;
         case EeReg::kDmacRbor: return 0x1000E050u;
     }
@@ -115,6 +136,14 @@ u32 EeDmaReadChcr(u32 chan) {
 
 void EeDmaWriteChcr(u32 chan, u32 value) {
     if (IsChannelBlock(chan)) EeRegisters::Get().Write(chan, &value, 4);
+}
+
+void EeDmaWriteTadr(u32 chan, u32 value) {
+    if (IsChannelBlock(chan)) EeRegisters::Get().Write(chan + 0x30, &value, 4);
+}
+
+void EeDmaWriteQwc(u32 chan, u32 value) {
+    if (IsChannelBlock(chan)) EeRegisters::Get().Write(chan + 0x20, &value, 4);
 }
 
 }  // namespace ac04::sce

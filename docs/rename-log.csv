@@ -1513,3 +1513,49 @@ CdFileEntry.*,pPath / dwLsn,(not applied),same as above
 0x0022AB20,FUN_0022ab20,BuildFilledBox,translated in S4 from the disassembly (docs/port/s4-inventory.md)
 0x0022A868,FUN_0022a868,BuildIconBox,translated in S4 from the disassembly (docs/port/s4-inventory.md)
 0x00226430,FUN_00226430,GetAircraftAtListPosition,translated in S4 from the disassembly (docs/port/s4-inventory.md)
+0x00142460,FUN_00142460,DrawGlowPass,translated 2026-10-18 from the disassembly (half-resolution glow pass with VU1 program D; docs/subsystems/rendering.md)
+0x00141EE0,FUN_00141ee0,BuildGlowCompositePacket,translated 2026-10-18 from the disassembly (composite packet of the glow pass)
+0x001AD510,FUN_001ad510,"plate: HYPOTHESIS: DrawSearchlight",translated 2026-10-18 (special object kinds 12/13)
+0x001AFDF8,FUN_001afdf8,"plate: HYPOTHESIS: DrawGroundFire",translated 2026-10-18 (special object kind 20)
+0x001B1BD8,FUN_001b1bd8,"plate: HYPOTHESIS: DrawBurningWreck",translated 2026-10-18 (special object kind 21)
+0x001B3C58,FUN_001b3c58,"plate: HYPOTHESIS: DrawOilFire",translated 2026-10-18 (special objects 23-25)
+0x001B5AC8,FUN_001b5ac8,"plate: HYPOTHESIS: DrawSmokeColumn",translated 2026-10-18 (special object 37)
+0x001B9C90,FUN_001b9c90,"plate: HYPOTHESIS: DrawRocketLaunch",translated 2026-10-18 (special object 36)
+0x0024C328,FUN_0024c328,InitResultsScene,"translated 2026-10-18 (S7): results sub 0: display, result state, kill tally setup"
+0x0024C700,FUN_0024c700,LoadResultsData,"translated 2026-10-18 (S7): results sub 1: loads DATA 0x14E+mission / 0x161 / 0x162"
+0x0024C758,FUN_0024c758,SetupResultsData,"translated 2026-10-18 (S7): results sub 2: container item addresses"
+0x0024C7C8,FUN_0024c7c8,InitResultsWindow,"translated 2026-10-18 (S7): results sub 3: debriefing window, BGM 0x26"
+0x0024C850,FUN_0024c850,RunResultsScene,"translated 2026-10-18 (S7): results sub 4: ResultsUpdate + draw"
+0x0024C918,FUN_0024c918,FadeInResultsScene,"translated 2026-10-18 (S7): results sub 5: fade in"
+0x00235C68,FUN_00235c68,UpdatePostMissionHelp,"translated 2026-10-18 (S7): post-mission help line (table 0x0039E268)"
+0x00235D20,FUN_00235d20,CreatePostMissionMenu,"translated 2026-10-18 (S7): page object 0x680, menu tree 0x0039E220"
+0x00235DE8,FUN_00235de8,LeavePostMissionMenu,"translated 2026-10-18 (S7): state 3, both fades, MenuGoTo target"
+0x00235E68,FUN_00235e68,LeavePostMissionMenuToSubPage,"translated 2026-10-18 (S7): state 2, MenuGoTo kind 1"
+0x00235EC0,FUN_00235ec0,PostMissionMenuBack,"translated 2026-10-18 (S7): triangle closes open column"
+0x00236090,FUN_00236090,PostMissionMenuUpdate,"translated 2026-10-18 (S7): page state machine"
+0x00236210,FUN_00236210,DrawPostMissionMenuPage,"translated 2026-10-18 (S7): page draw"
+0x002362A0,FUN_002362a0,EnterPostMissionMenuPage,"translated 2026-10-18 (S7): menu subs 0x25/0x26 (table 0x00384640)"
+0x00236340,FUN_00236340,LoadPostMissionMenu,"translated 2026-10-18 (S7): menu sub 0x27"
+0x00236390,FUN_00236390,PostMissionMenuRun,"translated 2026-10-18 (S7): menu sub 0x28"
+0x00211D48,FUN_00211d48,SceneMovieSetup,"translated 2026-10-19 (S8): scene 3 sub 0: work buffer + display setup"
+0x00211E68,FUN_00211e68,SceneMovieStart,"translated 2026-10-19 (S8): scene 3 sub 1: movie display, StartMovie"
+0x00211FB0,FUN_00211fb0,SceneMoviePlay,"translated 2026-10-19 (S8): scene 3 sub 2: one iteration + frame swap"
+0x002120D8,FUN_002120d8,SceneMovieEnd,"translated 2026-10-19 (S8): scene 3 sub 3: clear request, pop heap mark"
+0x002124B8,FUN_002124b8,SetMovieRequestId,"translated 2026-10-19 (S8): dead: request +0 = id"
+0x002124E8,FUN_002124e8,GetMoviePicturesDrawn,"translated 2026-10-19 (S8): dead: reader +0x94"
+0x00108400,FUN_00108400,InitPcCon,"translated 2026-10-19 (S8): C_PCCON constructor (class name from error strings)"
+0x00108458,FUN_00108458,StartPcCon,"translated 2026-10-19 (S8): C_PCCON::start (string 0x00403B20)"
+0x001084F8,FUN_001084f8,StopPcCon,"translated 2026-10-19 (S8): C_PCCON::stop (string 0x00403B70)"
+0x001085A8,FUN_001085a8,GetPcConTime,"translated 2026-10-19 (S8): C_PCCON::get counter / 4.8e6"
+0x00108678,FUN_00108678,GetPcConCount,"translated 2026-10-19 (S8): C_PCCON::get measurement count"
+0x001086D8,FUN_001086d8,SetPcCon,"translated 2026-10-19 (S8): C_PCCON::set (string 0x00403C18)"
+0x0025EB58,FUN_0025eb58,UnformatMcCard,"translated 2026-10-19 (S8): sceMcUnformat request state machine"
+0x0025F170,FUN_0025f170,ChangeMcDir,"translated 2026-10-19 (S8): sceMcChdir request state machine"
+0x00102870,FUN_00102870,SetCameraScreenCentre,"translated 2026-10-19 (S8): camera +0x178/+0x17C"
+0x00102880,FUN_00102880,SetCameraScale,"translated 2026-10-19 (S8): camera scale +0x180/+0x184, screen size = viewport / scale"
+0x0014B568,FUN_0014b568,SetMenuObjectAlpha,"translated 2026-10-19 (S8): menu object +0xAC"
+0x0014B570,FUN_0014b570,SetMenuObjectClipping,"translated 2026-10-19 (S8): menu object flags +0xB0 bit 0"
+0x0023ECD8,FUN_0023ecd8,SampleTerrainMapHeight,"translated 2026-10-19 (S8): bilinear height of the 256x256 map"
+0x0022A4D0,FUN_0022a4d0,WriteCentredDescriptorSprite,"translated 2026-10-19 (S8): sprite centred on x/y from descriptor"
+0x00251FF8,FUN_00251ff8,GetMessageWidth,"translated 2026-10-19 (S8): sum of glyph widths of a message"
+0x00102798,FUN_00102798,GetCameraDiagonalFov,"translated 2026-10-19 (S8): 2 atan2(|half screen|, distance)"

@@ -34,6 +34,10 @@ namespace {
 
 vu0::Vec4 LoadV(u32 a) { return {GRef<f32>(a), GRef<f32>(a + 4), GRef<f32>(a + 8), GRef<f32>(a + 12)}; }
 
+void CopyQword(u32 dst, u32 src) {
+    for (u32 o = 0; o < 16; o += 4) GRef<u32>(dst + o) = GRef<u32>(src + o);
+}
+
 void StoreV(u32 a, const vu0::Vec4& v) {
     GRef<f32>(a) = v.x;
     GRef<f32>(a + 4) = v.y;
@@ -714,6 +718,66 @@ u32 EmitModelInstance(u32 inst, u32 p, u32 cam, u32 world, u32 light, u32 mode) 
     return p;
 }
 
+// EE: 0x001400A0
+// Dead (no reference): segment from -> to against every triangle strip of model instance `inst`
+// placed by `world`. Per node: node matrix (world x node matrix +0x10[i]) and its mesh packets
+// (inst +0x2C[i]) up to the end tag 0x60000000; per packet (qword count = tag & 0xFFFF): vertex
+// count q = ((count - 1) * 4) / 9, vertices (one qword each) from +0x1C + r * 4 + q * 12 (r the
+// remainder), winding flag = the byte 14 bytes before the MSCNT word (0x17000000). Each strip
+// triangle goes to func_0017C4E8; the nearest hit (hit.w = t, from 1.0) goes to `hit` and its normal
+// to `normal` (negated on odd-winding triangles). Returns 1 when something was hit.
+s32 func_001400A0(u32 inst, u32 hit, u32 from, u32 to, u32 world, u32 normal) {
+    guest::GuestFrame frame(0xB0);
+    const u32 base = frame.Address();
+    const u32 v2 = base + 0x20, v1 = base + 0x30, v0 = base + 0x40, cand = base + 0x50, cn = base + 0x60;
+    const u32 m = base + 0x70;
+    f32 best = 1.0f;
+    GRef<f32>(hit + 0xC) = 1.0f;
+    for (s32 i = 0; i < GRef<s32>(GRef<u32>(inst + 0x30) + 8); ++i) {
+        MulMatrixVu0(m, world, GRef<u32>(inst + 0x10) + static_cast<u32>(i) * 0x40);
+        u32 pk = GRef<u32>(GRef<u32>(inst + 0x2C) + static_cast<u32>(i) * 4);
+        u32 tag = GRef<u32>(pk);
+        while (tag != 0x60000000) {
+            const s32 count = static_cast<s32>(tag & 0xFFFF);
+            const s32 words = (count - 1) * 4;
+            const s32 q = words / 9;
+            const s32 r = words % 9;
+            u32 v = pk + 0x1C + static_cast<u32>(r) * 4 + static_cast<u32>(q * 12);
+            u32 idx = 0;
+            if (tag != 0x17000000) {
+                do {
+                    ++idx;
+                } while (GRef<u32>(pk + idx * 4) != 0x17000000);
+            }
+            u8 odd = GRef<u8>(pk + idx * 4 - 0xE);
+            const s32 stride = count + 6;
+            CopyQword(v1, v);
+            CopyQword(v0, v + 0x10);
+            v += 0x20;
+            sceVu0ApplyMatrix(v1, m, v1);
+            sceVu0ApplyMatrix(v0, m, v0);
+            for (s32 k = 2; k < q; ++k) {
+                CopyQword(v2, v1);
+                CopyQword(v1, v0);
+                CopyQword(v0, v);
+                v += 0x10;
+                sceVu0ApplyMatrix(v0, m, v0);
+                if (func_0017C4E8(v0, v1, v2, from, to, cand, cn) == 1 &&
+                    GRef<f32>(cand + 0xC) < GRef<f32>(hit + 0xC)) {
+                    CopyQword(hit, cand);
+                    CopyQword(normal, cn);
+                    if (odd == 1) sceVu0ScaleVector(normal, normal, -1.0f);
+                    best = GRef<f32>(hit + 0xC);
+                }
+                odd = odd == 1 ? 0 : 1;
+            }
+            pk += static_cast<u32>(stride) * 0x10;
+            tag = GRef<u32>(pk);
+        }
+    }
+    return best == 1.0f ? 0 : 1;
+}
+
 // EE: 0x00140408
 // Hides (flag 2) the nodes of class 0x10 when mask bit 0 is set and of class 0x20 when bit 1 is
 // set (node flags +0x38 of the model's node records); shows the others.
@@ -729,11 +793,158 @@ void func_00140408(u32 inst, u64 mask) {
 }
 
 // EE: 0x00141000
-// Animation track n time of a model instance (0 without tracks or out of range).
-u32 func_00141000(u32 inst, s32 n) {
+// Animation track n time of a model instance (0 without tracks or out of range; float in f0).
+f32 func_00141000(u32 inst, s32 n) {
     if (GRef<u32>(inst + 4) != 0 && GRef<u32>(inst + 0x30) != 0 && n < GRef<s32>(GRef<u32>(inst + 0x30) + 4))
-        return GRef<u32>(GRef<u32>(inst + 4) + 4 * static_cast<u32>(n));
-    return 0;
+        return GRef<f32>(GRef<u32>(inst + 4) + 4 * static_cast<u32>(n));
+    return 0.0f;
+}
+
+// EE: 0x00140998
+// Dead (no reference): renders model instance `inst` as a mask. Pass 1 clears the buffer at `zaddr`
+// (as FRAME, FBW from the viewport width +0x18C) with 64-pixel-wide black sprites; pass 2 clears
+// the frame at `faddr` the same way with Z buffer `zaddr` (PSMZ24, Z write off), sets TEST_1
+// 0x7000D (alpha test, Z test GREATER) and CLAMP_1 0, emits the model (EmitModelInstance mode 0x20),
+// then TEXFLUSH and restores FRAME_1, SCISSOR (scissor_cam +0x1A0), ZBUF_1, TEST_1 and the
+// context's +0x110 register from the main context's draw environment. Words the original leaves
+// unwritten stay unwritten.
+void func_00140998(u32 inst, u32 cam, u32 scissor_cam, u32 list, s32 index, s32 faddr, s32 zaddr, u32 world,
+                   u32 light) {
+    const s32 vw = GRef<s16>(cam + 0x18C);
+    const s32 fbw = (vw + 0x3F) / 0x40;
+    const u32 fbw16 = static_cast<u32>(fbw) << 16;
+    const u16 vw_u = GRef<u16>(cam + 0x18C);
+    u32 p = BeginPacket();
+    auto put = [&p](u32 off, u32 v) { GRef<u32>(p + off) = v; };
+    const u32 qwc = static_cast<u32>(fbw + 3);
+    // Pass 1: clear the Z buffer area as a frame buffer.
+    put(0x00, 0x10000006);
+    put(0x04, 0);
+    put(0x08, 0);
+    put(0x0C, 0x50000006);
+    put(0x10, 0x8005);
+    put(0x14, 0x10000000);
+    put(0x18, 0xE);
+    put(0x20, static_cast<u32>(zaddr / 32) | fbw16);
+    put(0x24, 0);
+    put(0x28, 0x4C);
+    put(0x2C, 0);
+    put(0x30, static_cast<u32>(GRef<s16>(cam + 0x18C) - 1) << 16);
+    const u16 vh = GRef<u16>(cam + 0x18E);
+    put(0x34, static_cast<u32>(GRef<s16>(cam + 0x18E) - 1) << 16);
+    put(0x38, 0x40);
+    put(0x40, 0);
+    put(0x44, 0);
+    put(0x48, 0x18);
+    put(0x50, 0x01000000);
+    put(0x54, 1);
+    put(0x58, 0x4E);
+    put(0x5C, 0);
+    put(0x60, 0x30000);
+    put(0x68, 0x47);
+    put(0x70, qwc | 0x10000000);
+    put(0x74, 0);
+    put(0x78, 0);
+    put(0x7C, qwc | 0x50000000);
+    put(0x80, 1);
+    put(0x84, 0x24000000);
+    put(0x88, 0x10);
+    GRef<u64>(p + 0x90) = 6;
+    put(0x98, 0);
+    GRef<f32>(p + 0x9C) = 1.0f;
+    put(0xA4, 0x24000000);
+    put(0xA8, 0x44);
+    put(0xA0, static_cast<u32>(fbw));
+    p += 0xB0;
+    u32 x = 0;
+    for (s32 i = 0; i < fbw; ++i) {
+        put(0, x);
+        put(4, 0);
+        put(8, (x + 0x400) | static_cast<u32>(vh) << 20);
+        put(0xC, 0);
+        x += 0x400;
+        p += 0x10;
+    }
+    // Pass 2: clear the frame with the Z buffer attached, then the model.
+    put(0x04, 0);
+    put(0x00, 0x10000006);
+    put(0x08, 0);
+    put(0x0C, 0x50000006);
+    put(0x18, 0xE);
+    put(0x10, 0x8005);
+    put(0x14, 0x10000000);
+    put(0x20, static_cast<u32>(faddr / 32) | fbw16);
+    put(0x28, 0x4C);
+    put(0x24, 0);
+    put(0x2C, 0);
+    const s32 vh_s = static_cast<s16>(vh);
+    put(0x30, (static_cast<u32>(vw_u) << 16) + 0xFFFF0000u);
+    put(0x34, static_cast<u32>(vh_s - 1) << 16);
+    put(0x38, 0x40);
+    put(0x48, 0x18);
+    put(0x40, 0);
+    put(0x44, 0);
+    put(0x50, static_cast<u32>(zaddr / 32) | 0x01000000u);
+    put(0x58, 0x4E);
+    put(0x54, 1);
+    put(0x5C, 0);
+    put(0x60, 0x30000);
+    put(0x68, 0x47);
+    put(0x70, qwc | 0x10000000);
+    put(0x74, 0);
+    put(0x78, 0);
+    put(0x7C, qwc | 0x50000000);
+    put(0x80, 1);
+    put(0x88, 0x10);
+    put(0x84, 0x24000000);
+    GRef<u64>(p + 0x90) = 6;
+    GRef<f32>(p + 0x9C) = 1.0f;
+    put(0x98, 0);
+    put(0xA0, static_cast<u32>(fbw));
+    put(0xA4, 0x24000000);
+    put(0xA8, 0x44);
+    p += 0xB0;
+    x = 0;
+    for (s32 i = fbw; i > 0; --i) {
+        put(0, x);
+        put(4, 0);
+        put(8, (x + 0x400) | static_cast<u32>(vh_s) << 20);
+        put(0xC, 0);
+        x += 0x400;
+        p += 0x10;
+    }
+    put(0x04, 0);
+    put(0x00, 0x10000003);
+    put(0x08, 0);
+    put(0x0C, 0x50000003);
+    put(0x10, 0x8002);
+    put(0x18, 0xE);
+    put(0x14, 0x10000000);
+    put(0x20, 0x7000D);
+    put(0x28, 0x47);
+    put(0x38, 8);
+    put(0x30, 0);
+    put(0x34, 0);
+    p = EmitModelInstance(inst, p + 0x40, cam, world, light, 0x20);
+    put(0x04, 0);
+    put(0x00, 0x10000002);
+    put(0x08, 0x11000000);
+    put(0x0C, 0x50000002);
+    put(0x10, 0x8001);
+    put(0x14, 0x10000000);
+    put(0x18, 0xE);
+    put(0x28, 0x3F);
+    put(0x30, 0x10000006);
+    put(0x34, 0);
+    put(0x38, 0);
+    put(0x3C, 0x50000006);
+    put(0x40, 0x8005);
+    put(0x44, 0x10000000);
+    put(0x48, 0xE);
+    const u32 ctx = g_pMainContext().addr;
+    const u32 regs[5] = {ctx + 0xD0, scissor_cam + 0x1A0, ctx + 0xF0, ctx + 0xE0, ctx + 0x110};
+    for (u32 i = 0; i < 5; ++i) CopyQword(p + 0x50 + i * 0x10, regs[i]);
+    EndPacket(list, index, p + 0xA0);
 }
 
 // EE: 0x00141040
@@ -746,6 +957,220 @@ void func_00141040(u32 inst, s32 id, s32 on) {
         if (on == 0) GRef<u32>(GRef<u32>(inst) + o) &= 0xFFFFFFFEu;
         else if (on == 1) GRef<u32>(GRef<u32>(inst) + o) |= 1;
     }
+}
+
+// EE: 0x001410D0
+// Dead (no reference): soft drop shadow at the ground under `pos`. The light direction is (0, 0, 1)
+// rotated by X / Y angles map +0x88 / +0x8C (map 0x00410694); the segment pos -> pos - 2048 dir
+// finds the ground (func_0013D698; none: returns p unchanged). The hit moves back towards pos by
+// distance / 128 (distance clamped to 2048); alpha = (2048 - distance) / 2048 x 127 x 0.325 x 1/8.
+// Eight copies of a quad of half size 69.19 / sqrt(1 - d^2) (d = |dir.x| resp. |dir.z|, through
+// double precision) are drawn at the hit, each offset by one of the eight unit-circle steps
+// 0x004046C8 / 0x004046E8: TEST_1 Z GEQUAL, ALPHA_1 0x46 (darken), ZBUF without Z write, TEX1 0x60,
+// per triangle the clipped polygon (func_00108FC0, camera clip matrix +0x120) projected with fog
+// {map +0xA4, alpha / (map +0xA4 - map +0xA8), -1, alpha} (func_00109500) as a fan, Z raised by
+// 0x800 per vertex. Restores ZBUF_1 at the end. Returns the end of the packet data at `p`.
+// fpucheck: verified 14 (2 distance, 1 alpha, 2 x (1 - d^2), 8 corners, 1 fog range)
+u32 func_001410D0(u32 unused, u32 p, u32 cam, u32 pos) {
+    (void)unused;
+    guest::GuestFrame frame(0x3E0);
+    const u32 sp = frame.Address();
+    const u32 rot = sp, dir = sp + 0x40, end = sp + 0x50, hit = sp + 0x60, nrm = sp + 0x70, wm = sp + 0x80;
+    const u32 tm = sp + 0xC0, d = sp + 0x100, off = sp + 0x110, rgba = sp + 0x120, col = sp + 0x130;
+    const u32 uv = sp + 0x170, ring_x = sp + 0x1B0, ring_z = sp + 0x1D0, vtx = sp + 0x1F0, fog = sp + 0x230;
+    const u32 clip = sp + 0x240, attr = sp + 0x3C0;
+    ee::memset(dir, 0, 0x10);
+    GRef<f32>(dir + 8) = 1.0f;
+    sceVu0UnitMatrix(rot);
+    sceVu0RotMatrixX(rot, rot, GRef<f32>(GRef<u32>(0x00410694) + 0x88));
+    sceVu0RotMatrixY(rot, rot, GRef<f32>(GRef<u32>(0x00410694) + 0x8C));
+    sceVu0ApplyMatrix(dir, rot, dir);
+    sceVu0Normalize(dir, dir);
+    sceVu0ScaleVector(end, dir, -2048.0f);
+    sceVu0AddVector(end, end, pos);
+    if (func_0013D698(GRef<u32>(0x00410694), hit, attr, pos, end, nrm) == 0) return p;
+    sceVu0SubVector(d, hit, pos);
+    sceVu0MulVector(d, d, d);
+    // sqrt.s (the NaN fallback to sqrtf never triggers on the EE).
+    f32 dist = fpu::Sqrt(fpu::Add(fpu::Add(GRef<f32>(d), GRef<f32>(d + 4)), GRef<f32>(d + 8)));
+    if (2048.0f < dist) dist = 2048.0f;
+    const u32 world_screen = cam + 0xE0, world_clip = cam + 0x120;
+    sceVu0ScaleVector(off, dir, dist * 0.0078125f);
+    const f32 half = GRef<f32>(0x0040E508);
+    sceVu0AddVector(hit, hit, off);
+    f32 alpha = fpu::Sub(2048.0f, dist) * 0.00048828125f * 127.0f;
+    alpha = alpha * GRef<f32>(0x0040E50C);
+    alpha = alpha * 0.125f;
+    GRef<f32>(col + 8) = 128.0f;
+    GRef<f32>(col) = 128.0f;
+    GRef<f32>(col + 4) = 128.0f;
+    GRef<s32>(rgba) = 0x80;
+    GRef<s32>(rgba + 8) = 0x80;
+    GRef<s32>(rgba + 4) = 0x80;
+    GRef<f32>(col + 0xC) = alpha;
+    GRef<s32>(rgba + 0xC) = fpu::FloatToInt(alpha);
+    sceVu0CopyVector(col + 0x10, col);
+    sceVu0CopyVector(col + 0x20, col);
+    sceVu0CopyVector(col + 0x30, col);
+    sceVu0UnitMatrix(tm);
+    sceVu0TransMatrix(tm, tm, hit);
+    MulMatrixVu0(wm, world_screen, tm);
+    // Texture coordinates of the quad corners (STQ, Q = 1).
+    const f32 uvs[16] = {0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f,
+                         0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 0.0f};
+    for (u32 i = 0; i < 16; ++i) GRef<f32>(uv + i * 4) = uvs[i];
+    for (u32 o = 0; o < 0x20; o += 4) {
+        GRef<u32>(ring_x + o) = GRef<u32>(0x004046C8 + o);
+        GRef<u32>(ring_z + o) = GRef<u32>(0x004046E8 + o);
+    }
+    u32 q = p + 8;  // the cursor after the next DMA tag's first word pair
+    u32 s = p;
+    for (s32 ring = 0; ring < 8; ++ring) {
+        // |dir.x|, |dir.z| through libgcc double (__extendsfdf2, __cmpdf2, __subdf3, __truncdfsf2).
+        double ax = static_cast<double>(GRef<f32>(dir));
+        if (ax < 0.0) ax = 0.0 - ax;
+        const f32 dx = static_cast<f32>(ax);
+        double az = static_cast<double>(GRef<f32>(dir + 8));
+        if (az < 0.0) az = 0.0 - az;
+        const f32 dz = static_cast<f32>(az);
+        const f32 sx = fpu::Sqrt(fpu::Sub(1.0f, dx * dx));
+        const f32 sz = fpu::Sqrt(fpu::Sub(1.0f, dz * dz));
+        const f32 hx = fpu::Div(half, sx);
+        const f32 hz = fpu::Div(half, sz);
+        const f32 cx = GRef<f32>(ring_x + static_cast<u32>(ring) * 4);
+        const f32 cz = GRef<f32>(ring_z + static_cast<u32>(ring) * 4);
+        const f32 nhx = -hx, nhz = -hz;
+        GRef<u32>(vtx + 4) = 0;
+        GRef<f32>(vtx) = fpu::Add(nhx, cx);
+        GRef<f32>(vtx + 0xC) = 1.0f;
+        GRef<f32>(vtx + 8) = fpu::Add(hz, cz);
+        GRef<u32>(vtx + 0x14) = 0;
+        GRef<f32>(vtx + 0x10) = fpu::Add(hx, cx);
+        GRef<f32>(vtx + 0x1C) = 1.0f;
+        GRef<f32>(vtx + 0x18) = fpu::Add(hz, cz);
+        GRef<u32>(vtx + 0x34) = 0;
+        GRef<f32>(vtx + 0x30) = fpu::Add(hx, cx);
+        GRef<f32>(vtx + 0x3C) = 1.0f;
+        GRef<f32>(vtx + 0x38) = fpu::Add(nhz, cz);
+        GRef<u32>(vtx + 0x24) = 0;
+        GRef<f32>(vtx + 0x20) = fpu::Add(nhx, cx);
+        GRef<f32>(vtx + 0x2C) = 1.0f;
+        GRef<f32>(vtx + 0x28) = fpu::Add(nhz, cz);
+        for (u32 k = 0; k < 4; ++k) sceVu0ApplyMatrix(vtx + k * 0x10, tm, vtx + k * 0x10);
+        // State: TEST_1 Z GEQUAL, ALPHA_1 0x46, ZBUF_1 without Z write, TEX1_1 0x60.
+        GRef<u32>(s + 4) = 0;
+        GRef<u32>(s) = 0x10000005;
+        s = q;
+        GRef<u32>(s) = 0;
+        s += 4;
+        GRef<u32>(s) = 0x50000005;
+        s += 4;
+        GRef<u32>(s) = 0x8004;
+        GRef<u32>(s + 8) = 0xE;
+        GRef<u32>(s + 4) = 0x10000000;
+        s += 0x10;
+        GRef<u32>(s) = 0x50000;
+        GRef<u32>(s + 8) = 0x47;
+        s += 0x10;
+        GRef<u32>(s) = 0x46;
+        GRef<u32>(s + 8) = 0x42;
+        GRef<u32>(s + 4) = 0;
+        GRef<u32>(s + 0xC) = 0;
+        s += 0x10;
+        CopyQword(s, g_pMainContext().addr + 0xE0);
+        GRef<u32>(s + 4) = 1;
+        const f32 fa = GRef<f32>(GRef<u32>(0x00410694) + 0xA8);
+        s += 0x10;
+        const f32 fz = GRef<f32>(GRef<u32>(0x00410694) + 0xA4);
+        const f32 range = fpu::Sub(fz, fa);
+        GRef<u32>(s) = 0x60;
+        GRef<u32>(s + 8) = 0x14;
+        GRef<u32>(s + 4) = 0;
+        const f32 fscale = fpu::Div(alpha, range);
+        s += 0x10;
+        GRef<f32>(fog + 8) = -1.0f;
+        GRef<f32>(fog) = fz;
+        q = s + 8;
+        GRef<f32>(fog + 0xC) = alpha;
+        GRef<f32>(fog + 4) = fscale;
+        for (u32 tri = 0; tri < 2; ++tri) {
+            const s32 n = func_00108FC0(clip, world_clip, uv + tri * 0x10, col + tri * 0x10, vtx + tri * 0x10);
+            if (n == 0) continue;
+            const u32 qwc = static_cast<u32>(n * 3 + 1);
+            GRef<u32>(s + 4) = 0;
+            GRef<u32>(s) = qwc | 0x10000000;
+            s = q;
+            GRef<u32>(s) = 0;
+            s += 4;
+            GRef<u32>(s) = qwc | 0x50000000;
+            s += 4;
+            GRef<u32>(s + 4) = 0x302EC000;
+            GRef<u32>(s) = static_cast<u32>(n) | 0x8000;
+            GRef<u32>(s + 8) = 0x412;
+            s += 0x10;
+            u32 v = s;
+            s = func_00109500(v, clip, world_screen, fog, n);
+            for (s32 k = 0; k < n; ++k, v += 0x30) GRef<u32>(v + 0x28) += 0x800;
+            q = s + 8;
+        }
+    }
+    GRef<u32>(s + 4) = 0;
+    GRef<u32>(s) = 0x10000002;
+    s = q;
+    GRef<u32>(s) = 0;
+    s += 4;
+    GRef<u32>(s) = 0x50000002;
+    s += 4;
+    GRef<u32>(s) = 0x8001;
+    GRef<u32>(s + 4) = 0x10000000;
+    GRef<u32>(s + 8) = 0xE;
+    s += 0x10;
+    CopyQword(s, g_pMainContext().addr + 0xE0);
+    return s + 0x10;
+}
+
+// EE: 0x00108718
+// Dead (no reference): out = m * Rz * Ry * Rx of the angles at `rot` (VU0 polynomial sin/cos).
+void func_00108718(u32 out, u32 m_in, u32 rot) {
+    vu0::Vec4 s, c;
+    PolySinCos(LoadV(rot), s, c);
+    vu0::Vec4 m[4] = {LoadV(m_in), LoadV(m_in + 0x10), LoadV(m_in + 0x20), LoadV(m_in + 0x30)};
+    vu0::Vec4 r[4];
+    RotZ(r, s.z, c.z);
+    ApplyRotation(m, r);
+    RotY(r, s.y, c.y);
+    ApplyRotation(m, r);
+    RotX(r, s.x, c.x);
+    ApplyRotation(m, r);
+    for (u32 i = 0; i < 4; ++i) StoreV(out + 16 * i, m[i]);
+}
+
+// EE: 0x00108F78
+// Dead (no reference): out = vftoi12(v).
+void func_00108F78(u32 out, u32 v) {
+    const vu0::Vec4 a = LoadV(v);
+    GRef<s32>(out) = vu0::FloatToInt12(a.x);
+    GRef<s32>(out + 4) = vu0::FloatToInt12(a.y);
+    GRef<s32>(out + 8) = vu0::FloatToInt12(a.z);
+    GRef<s32>(out + 12) = vu0::FloatToInt12(a.w);
+}
+
+// EE: 0x00108F90
+// Dead (no reference): |v.xyz| on VU0 (vmul, vaddy, vaddz, vsqrt; Q read back).
+f32 func_00108F90(u32 v) {
+    const vu0::Vec4 a = LoadV(v);
+    const f32 sum = vu0::Add(vu0::Add(vu0::Mul(a.x, a.x), vu0::Mul(a.y, a.y)), vu0::Mul(a.z, a.z));
+    return vu0::Sqrt(sum);
+}
+
+// EE: 0x00144710
+// Dead (no reference): 1.0.
+f32 func_00144710() { return 1.0f; }
+
+// EE: 0x001446F0
+// Dead (no reference): radius (+0x28) of node `n` of model record `rec`.
+f32 func_001446F0(u32 rec, s32 n) {
+    return GRef<f32>(GRef<u32>(GRef<u32>(rec + 0x20) + static_cast<u32>(n) * 0x50) + 0x28);
 }
 
 }  // namespace ac04::game

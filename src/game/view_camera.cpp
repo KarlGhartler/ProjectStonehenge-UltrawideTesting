@@ -7,7 +7,6 @@
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
 #include "game/main_context.h"
-#include "platform/log.h"
 #include "sce/sce.h"
 
 namespace ac04::game {
@@ -92,6 +91,19 @@ void func_0010C9D0() {
         func_00102838(copy, cam);
         func_00102990(copy, cam);
     }
+}
+
+// EE: 0x0010D590
+// Dead (no reference): sets a view record in one call: flags (+8), eye (+0x10), target (+0x20),
+// attach (+0x30), up (+0x40), follow offset (+0x50) and look-at (+0x70).
+void func_0010D590(u32 view, u8 flags, u32 eye, u32 target, u32 attach, u32 up, u32 follow, u32 look) {
+    GRef<u8>(view + 8) = flags;
+    CopyQword(view + 0x10, eye);
+    CopyQword(view + 0x20, target);
+    CopyQword(view + 0x30, attach);
+    CopyQword(view + 0x40, up);
+    CopyQword(view + 0x50, follow);
+    CopyQword(view + 0x70, look);
 }
 
 // EE: 0x0010D5E8
@@ -351,29 +363,20 @@ void func_0010D760(u32 v) {
     func_00103070(c1, c1, ang1, o);
 }
 
-namespace {
-
-// Replay cameras of block C (weapon / kill events): logged once until translated.
-void ReplayCameraNotYet(const char* name) {
-    log::WriteOnce(name, log::Level::Info, "game", "view camera: %s not translated yet (block C)", name);
-}
-
-}  // namespace
-
 // EE: 0x00175B08
-// Replay camera for the followed projectile of view V's player: special weapon (flag 2 and a slot)
-// or missile; V+7 = 0x43 (0x41 in mission kind 2).
+// Replay camera for the followed projectile of view V's player: special weapon (flag 2 and a slot,
+// 0x001748A8) or missile (0x00174640); V+7 = 0x43 (0x41 in mission kind 2).
 void func_00175B08(u32 v) {
     const u32 f = GRef<u32>(0x00410680 + 4 * static_cast<u32>(GRef<u8>(v + 6)));
     const u8 mode = GRef<s8>(g_FlightScene() + 0x1653) == 2 ? 0x41 : 0x43;
     if ((GRef<u32>(f + 0xC) & 2) != 0 && GRef<s32>(f + 0x14) != -1) {
         GRef<u8>(v + 7) = mode;
-        ReplayCameraNotYet("func_001748A8");
+        func_001748A8(v);
         return;
     }
     if (GRef<s32>(f + 0x10) != -1) {
         GRef<u8>(v + 7) = mode;
-        ReplayCameraNotYet("func_00174640");
+        func_00174640(v);
     }
 }
 

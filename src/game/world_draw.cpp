@@ -7,9 +7,11 @@
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
 #include "common/vu0_math.h"
+#include "game/game_flight.h"
 #include "game/main_context.h"
-#include "platform/log.h"
+#include "sce/ee_hw.h"
 #include "sce/sce.h"
+#include "platform/vu0/vu0_hle.h"
 
 namespace ac04::game {
 
@@ -1191,16 +1193,12 @@ void DrawTerrain(u32 cam, u32 ot, u32 ot2) {
 }
 
 // EE: 0x0013EC60
-// Sequence-model lists: DrawSpecialObject (0x001E0A98, slice S5f) for every model of every entry.
+// Sequence-model lists: DrawSpecialObject (0x001E0A98) for every model of every entry.
 void func_0013EC60(u32 list, u32 cam, u32 ot) {
-    (void)cam;
-    (void)ot;
     for (s32 k = 0; k < GRef<s32>(list + 0x118); ++k) {
         for (s32 j = 0; j < GRef<s32>(list + 0x98 + 4 * static_cast<u32>(k)); ++j) {
             const u32 model = GRef<u32>(GRef<u32>(list + 0x18 + 4 * static_cast<u32>(k)) + 4 * static_cast<u32>(j));
-            (void)model;
-            log::WriteOnce("func_001E0A98", log::Level::Info, "game",
-                           "world draw: DrawSpecialObject (0x001E0A98) not translated yet (slice S5f)");
+            func_001E0A98(cam, ot, model);
         }
     }
 }
@@ -1218,10 +1216,6 @@ u32 NextFlightTable() {
     return s + 0x1540 + static_cast<u32>(i) * 16;
 }
 
-void DrawListNotYet(const char* name, const char* what) {
-    log::WriteOnce(name, log::Level::Info, "game", "flight draw lists: %s (%s) not translated yet", name, what);
-}
-
 }  // namespace
 
 // EE: 0x00155AF0
@@ -1231,9 +1225,7 @@ void func_00155AF0(u32 ot) { (void)ot; }
 // EE: 0x0010BD68
 // Builds the frame's ordering tables: per active view the 3D tables (main, terrain, ground
 // objects, effects, optional sequence) and the 2D overlay with fade, HUD and menus; then the
-// replay HUD and the shared table +0x1640. Calls into blocks B/C (effects, projectiles, HUD,
-// radio, menus, sequences) are logged once and skipped until translated; the packets the skipped
-// radio/subtitle drawers would open with BeginPacket/EndPacket are skipped with them.
+// replay HUD and the shared table +0x1640.
 void BuildFlightDrawLists() {
     debug::OnGuestCheckpoint(0x0010BD68);
     MainContext* ctx = Ctx();
@@ -1266,21 +1258,21 @@ void BuildFlightDrawLists() {
             func_00138C28(ground);
             func_00138C58(cam, main);
             if ((GRef<u32>(view) & 0x40000000) != 0) func_00138DB0(cam, main);
-            DrawListNotYet("func_001558C8", "effect sub-table setup, slice S5f");
+            func_001558C8(cam, effects, GRef<u32>(g_FlightScene() + 0x1660));
             func_00111B28(cam, main);
-            DrawListNotYet("func_001D3318", "per-view effect pass, slice S5f");
+            func_001D3318(cam, main);
             DrawTerrain(cam, terrain, view);
             DrawMapObjects(cam, ground);
             func_00118330(cam, main, 5);
             func_0011E0D8(view, main, effects);
-            DrawListNotYet("DrawProjectiles", "0x0014BB88, slice S5d");
-            DrawListNotYet("DrawEffects", "0x00155330, slice S5f");
+            DrawProjectiles(cam, main);
+            DrawEffects(view, effects);
             if (ctx->sub == 0x13 || GRef<s32>(g_FlightScene() + 0x1688) == 1) {
                 const u32 seq = NextFlightTable();
                 InitBucketList(seq, 1);
                 func_00104090(main, 9, seq);
-                DrawListNotYet("func_00179008", "sequence characters, slice S5i");
-                DrawListNotYet("func_00179298", "sequence overlays, slice S5i");
+                func_00179008(cam, seq, effects);
+                func_00179298(cam, main);
             }
             func_00138D18(main);
         }
@@ -1294,37 +1286,104 @@ void BuildFlightDrawLists() {
             InitBucketList(hud, 8);
             func_00104090(ov, 1, hud);
             func_00138C58(cam, hud);
-            DrawListNotYet("func_0015F560", "full-screen mission image, slice S5g");
-            if ((GRef<u32>(view) & 2) != 0) DrawListNotYet("DrawHud", "0x0015EAE0, slice S5g");
+            func_0015F560(hud);
+            if ((GRef<u32>(view) & 2) != 0) DrawHud(cam, GRef<u8>(view + 5), hud);
             if ((GRef<u32>(view) & 4) != 0) {
                 const s8 type = GRef<s8>(g_FlightScene() + 0x1653);
                 if (type == 0 || type == 3) {
                     if (GRef<u8>(g_GameState().addr + 0x29) != 3)
-                        DrawListNotYet("func_002512B8", "radio window, slice S5e");
+                        EndPacket(hud, 7, func_002512B8(BeginPacket()));
                     if (GRef<s8>(g_FlightScene() + 0x1653) == 3)
-                        DrawListNotYet("func_00258690", "tutorial control hints, slice S5e");
+                        EndPacket(hud, 7, func_00258690(BeginPacket()));
                 }
             }
             if (ctx->sub == 0x1C)
-                DrawListNotYet("func_0017E210", "game-over menu, slice S5j");
+                func_0017E210(hud);
             else if (ctx->sub == 0x1D)
-                DrawListNotYet("func_0017E460", "carrier rearm menu, slice S5j");
+                func_0017E460(hud);
             else if ((ctx->flags & 0x100) != 0)
-                DrawListNotYet("func_0017E118", "pause menu, slice S5e");
+                func_0017E118(hud);
             else if ((GRef<u32>(view) & 8) != 0)
-                DrawListNotYet("func_0016DC08", "centre messages, slice S5g");
+                func_0016DC08(cam, GRef<u8>(view + 5), hud);
             func_00138D18(hud);
         }
         if (ctx->sub == 0xE) {
             const u32 sub = NextFlightTable();
             InitBucketList(sub, 1);
             func_00104090(ov, 1, sub);
-            DrawListNotYet("func_002593A0", "subtitle timeline, slice S5e");
+            EndPacket(sub, 0, func_002593A0(BeginPacket()));
         }
     }
-    DrawListNotYet("func_0017D8F0", "replay HUD, slice S5j");
+    func_0017D8F0(ov, 2);
     func_00155AF0(ov);
     func_001043E8(vif1, g_FlightScene() + 0x1640);
+}
+
+// EE: 0x001368C0
+// Dead (no reference): sends a VIF0 chain {call 0x00403290 (.vudata), end} with sceDmaSend and
+// waits for the channel. (The port's sceDmaSend only walks VIF0 chains; never runs.)
+void func_001368C0() {
+    const u32 chan = sceDmaGetChan(0);
+    guest::GuestFrame frame(0x20);
+    const u32 tag = frame.Address();
+    GRef<u32>(tag) = 0x50000000;
+    GRef<u32>(tag + 4) = 0x00403290 & 0x0FFFFFFF;
+    GRef<u32>(tag + 8) = 0;
+    GRef<u32>(tag + 0xC) = 0;
+    GRef<u32>(tag + 0x10) = 0x70000000;
+    GRef<u32>(tag + 0x14) = 0;
+    GRef<u32>(tag + 0x18) = 0;
+    GRef<u32>(tag + 0x1C) = 0;
+    FlushCache(0);
+    sceDmaSend(chan, tag);
+    while ((sce::EeHwRead(sce::EeReg::kD0Chcr) & 0x100) != 0) {
+    }
+}
+
+// EE: 0x00136968
+// Dead (no reference): runs VU0 micro entry 0 with vf12-vf14 loaded from a, b, c; stores vf12 to out
+// and returns VI1 (H: an unused VU0 micro clip test; the port's VU0 holds program S only).
+u32 func_00136968(u32 a, u32 b, u32 c, u32 out) {
+    vu0hle::LoadVf(12, a);
+    vu0hle::LoadVf(13, b);
+    vu0hle::LoadVf(14, c);
+    vu0hle::CallMs(0);
+    const u32 vi1 = vu0hle::GetVi(1);
+    vu0hle::StoreVf(12, out);
+    return vi1;
+}
+
+// EE: 0x00138C40
+// Dead (no reference): references VU1 program A (.vutext 0x00297C00: qword count, then code) into
+// bucket 6 of `list` only.
+void func_00138C40(u32 list) { AddBucketRef(list, 6, 0x00297C10, GRef<u16>(0x00297C00)); }
+
+// EE: 0x0013B068
+// Dead (no reference): DMA tag writer: mode 0 (and other modes) a ref tag to `addr` of `qwc`
+// quadwords with DIRECT; modes 1-3 a cnt tag followed by an n x n byte block copied from `addr`
+// flipped vertically (1), horizontally (2) or both (3). Returns the end.
+u32 func_0013B068(u32 p, u32 addr, u32 qwc, s32 n, s32 mode) {
+    if (mode != 1 && mode != 2 && mode != 3) {
+        GRef<u32>(p + 4) = addr;
+        GRef<u32>(p) = qwc | 0x30000000;
+        GRef<u32>(p + 8) = 0;
+        GRef<u32>(p + 0xC) = qwc | 0x50000000;
+        return p + 0x10;
+    }
+    GRef<u32>(p) = qwc | 0x10000000;
+    GRef<u32>(p + 4) = 0;
+    GRef<u32>(p + 8) = 0;
+    GRef<u32>(p + 0xC) = qwc | 0x50000000;
+    u32 out = p + 0x10;
+    if (!(0 < n)) return out;
+    const u32 un = static_cast<u32>(n);
+    u32 src = mode == 2 ? addr : addr + static_cast<u32>(n * (n - 1));
+    for (s32 row = 0; row < n; ++row) {
+        for (u32 i = 0; i < un; ++i) GRef<u8>(out + i) = mode == 1 ? GRef<u8>(src + i) : GRef<u8>(src + un - i - 1);
+        out += un;
+        src = mode == 2 ? src + un : src - un;
+    }
+    return out;
 }
 
 }  // namespace ac04::game

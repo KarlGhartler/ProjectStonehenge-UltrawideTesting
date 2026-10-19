@@ -54,3 +54,18 @@ TEST_CASE("command line: determinism options (development builds only)") {
     CHECK(r.errors.size() == 4);
 #endif
 }
+
+TEST_CASE("command line: --mission options (development builds only)") {
+    const char* argv[] = {"ac04port", "--mission", "4", "--mission-id", "0x25", "--mission-mode", "free"};
+    auto r = ParseCommandLine(7, argv);
+#if AC04_DEV_BUILD
+    CHECK(r.errors.empty());
+    CHECK(r.options.mission == 4);
+    CHECK(r.options.mission_id == 0x25);
+    CHECK(r.options.mission_free);
+    const char* bad[] = {"ac04port", "--mission", "19", "--mission-id", "300", "--mission-mode", "vs"};
+    CHECK(ParseCommandLine(7, bad).errors.size() == 3);
+#else
+    CHECK(r.errors.size() == 3);
+#endif
+}

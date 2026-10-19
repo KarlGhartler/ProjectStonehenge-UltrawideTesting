@@ -47,6 +47,34 @@ void SetCheckpointHook(u32 address, u32 hit, std::function<void()> hook);
 bool FreezeSim();
 void SetFreezeSim(bool on);
 
+// --mission / --mission-id / --mission-mode (development builds, debug layer category 3): when the
+// startup scene (6) would request the intro or enter the title, the flight scene starts instead with
+// the game's own default selection (docs/port/command-line.md). Off by default; never set in
+// Release builds. `number` 1-18 (0 = not given), `id` a raw mission id (-1 = not given).
+struct BootMission {
+    bool active = false;
+    s32 number = 0;
+    s32 id = -1;
+    bool free = false;
+};
+const BootMission& GetBootMission();
+void SetBootMission(const BootMission& m);
+
+// Work-heap allocation log (--log-allocs, development builds): WorkHeapAlloc 0x00101000 reports
+// every call (aligned guest address, size, alignment) with the host return address of its caller,
+// made relative to the executable image so tools/research/heapdiff.py can name the caller from
+// the PDB. Nothing is recorded unless a hook is set.
+using AllocHook = void (*)(u32 address, s32 size, u32 align, u64 caller_rva);
+void SetAllocHook(AllocHook hook);
+AllocHook GetAllocHook();
+u64 ImageRelative(const void* host_address);
+
+// --heap-fill <byte> (development builds): ResetWorkHeapToMark 0x001010F0 fills the freed part of
+// the work heap with this byte, so two runs with different bytes show which heap bytes the game has
+// not written since (leftovers of the previous scene). -1 = off (the original leaves them).
+int HeapFill();
+void SetHeapFill(int value);
+
 // The runtime sets this so hooks can stamp the vblank without depending on src/sce.
 void SetVBlankSource(u64 (*source)());
 

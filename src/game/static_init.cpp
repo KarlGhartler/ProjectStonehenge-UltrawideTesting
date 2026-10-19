@@ -21,6 +21,12 @@ void func_001E0A20() { func_001E0A80(0x00410BB0, 0x1A99); }
 // EE: 0x001E94C0
 void func_001E94C0() { func_001E0A80(0x00410BE0, 0x1A99); }
 
+// EE: 0x001E94E0
+// Dead (no reference): copy of func_001E0A80.
+void func_001E94E0(u32 state, s32 seed) {
+    GRef<s32>(state) = static_cast<s32>(static_cast<u32>(seed) * 0xEE29u + 1u);
+}
+
 // EE: 0x001FF608
 void func_001FF608() {
     for (u32 i = 0; i < 6; ++i) func_001E0A80(0x00410BF8 + 8 * i, 0x1A99);

@@ -494,6 +494,20 @@ void MainMenuExit(u32 obj, u32 sub) {
     StoreMenuTreeCursors(kMainMenuColumns, 6, obj + 0x250);
 }
 
+// EE: 0x0022D030
+// Dead (no reference): one player; players 1 and 2 aircraft id 2, colour variant 0; game state +3
+// and +0x13 cleared.
+void func_0022D030() {
+    const u32 game = g_GameState().addr;
+    GRef<u8>(game + 0x25) = 1;
+    GRef<u8>(g_GameState().addr + 0) = 2;
+    GRef<u8>(g_GameState().addr + 1) = 0;
+    GRef<u8>(g_GameState().addr + 3) = 0;
+    GRef<u8>(g_GameState().addr + 0x10) = 2;
+    GRef<u8>(g_GameState().addr + 0x11) = 0;
+    GRef<u8>(g_GameState().addr + 0x13) = 0;
+}
+
 // EE: 0x0022D078
 // Back (pad 0x20): from the first column back to the title (state 1); from a sub-column the tree
 // returns to column 0 and that sub-column closes. SE 3.
@@ -883,6 +897,15 @@ void RunTitle() {
     DrawMainMenu(obj);
 }
 
+// EE: 0x0022DF38
+// Dead (no reference): 0 while a - b (unsigned) <= 0x20, else (a - b)^3 * k (0x00410160).
+f32 func_0022DF38(u32 a, u32 b) {
+    const u32 d = a - b;
+    if (d < 0x21) return 0.0f;
+    const f32 f = static_cast<f32>(static_cast<s32>(d));
+    return f * f * f * GRef<f32>(0x00410160);
+}
+
 // EE: 0x0023C7B0
 // Space a save needs on the card, in KB (75).
 s32 GetSaveSizeKb() { return 0x4B; }
@@ -911,12 +934,6 @@ AC04_GUEST_FUNCTION(0x0022DEA0, LoadTitle);
 AC04_GUEST_FUNCTION(0x0022DF00, RunTitle);
 
 #define AC04_MENU_STUB(addr) AC04_GUEST_FUNCTION(addr, MenuSubStub<addr>);
-AC04_MENU_STUB(0x002362A0)
-AC04_MENU_STUB(0x00236340)
-AC04_MENU_STUB(0x00236390)
-AC04_MENU_STUB(0x00246960)
-AC04_MENU_STUB(0x00246A08)
-AC04_MENU_STUB(0x00246A58)
 #undef AC04_MENU_STUB
 
 }  // namespace ac04::game

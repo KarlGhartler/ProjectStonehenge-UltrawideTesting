@@ -220,6 +220,18 @@ void LoadBootData() {
     func_0021F8B8();  // link the 21 stream header sub-blocks
 }
 
+// EE: 0x00100CB8
+// Dead (no reference): uploads image `src` to VRAM (dbp, dbw, dpsm, x, y, w, h) with
+// sceGsSetDefLoadImage / sceGsExecLoadImage after a cache flush, and waits for PATH 2.
+void func_00100CB8(s16 dbp, s16 dbw, s16 dpsm, s16 x, s16 y, s16 w, s16 h, u32 src) {
+    guest::GuestFrame frame(0x60);
+    const u32 lp = frame.Address();
+    sceGsSetDefLoadImage(lp, dbp, dbw, dpsm, x, y, w, h);
+    FlushCache(0);
+    sceGsExecLoadImage(lp, src);
+    sceGsSyncPath(0, 0);
+}
+
 // EE: 0x00100D38
 void InitRandomTable() {
     ee::srand(1);
@@ -229,6 +241,21 @@ void InitRandomTable() {
         GRef<f32>(0x00411998 + 4 * i) = fpu::Mul(fpu::IntToFloat(ee::rand()), 4.656613e-10f);
     }
     GRef<u32>(0x00411780) = 0;  // random table cursor
+}
+
+// EE: 0x00100DF0
+// Dead (no reference): splits a frame count into minutes (out[0]), seconds (out[1]) and hundredths
+// (out[2]) at 60 frames per second (k 0x0040DA00 = 1/60); returns min * 6000 + sec * 100 + hundredths.
+u32 func_00100DF0(u32 frames, u32 out) {
+    const f32 t = fpu::UnsignedToFloat(frames) * GRef<f32>(0x0040DA00);
+    const u32 secs = fpu::FixUnsSfSi(t);
+    const u32 min = secs / 60;
+    const u32 sec = secs % 60;
+    GRef<u32>(out) = min;
+    GRef<u32>(out + 4) = sec;
+    const u32 hund = fpu::FixUnsSfSi(t * 100.0f) % 100;
+    GRef<u32>(out + 8) = hund;
+    return min * 6000 + sec * 100 + hund;
 }
 
 }  // namespace ac04::game

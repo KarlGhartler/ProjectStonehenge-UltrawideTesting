@@ -33,11 +33,42 @@ Each `.vutext` block is a ready DMA packet: a `ret` (or `cnt`) tag holding the q
 
 ## VU0 micro mode
 
-Used only by the sequence character engine: entries 0x00/0x10/0x30/0x40/0x50/0x70/0x80/0x90/0xB0 called with `vcallms` (`func_002250E8`…`func_00225270`), data moved through scratchpad 0x70002200 by DMA channels 8/9. All other VU0 use is macro mode (`vu0_math.h`).
+Used only by the sequence character engine: entries (micro pairs) 0x00/0x02/0x06/0x08/0x0A/0x0E/0x10/0x12/0x16 called with `vcallms` (`func_002250E8`…`func_00225270`); the vertex data reaches VU0 data memory through VIF0 DMA chains whose tags sit in scratchpad 0x70002200 (`rendering.md` "Sequence character engine"). All other VU0 use is macro mode (`vu0_math.h`).
 
 Which entry runs depends on the part type (+0x140) in `FUN_002236A0`: type 0 (from the character data) → `FUN_00224180` → loop 0x002250E8 (entry 0x00); type 1 → `FUN_00224410` → loop 0x00225110 (entry 0x10); type 3 (morph track active, set by `FUN_00223F58`) → `FUN_00224848` → loop 0x00225140 (entry 0x30). The rigid path `FUN_00223830` → `FUN_00224D50` also uses 0x00225110. Each loop: `ctc2` a1 → VI01 and a2 → VI03 (VU0 data-memory pointers), then a3 times `vcallms`, `qmfc2.I`/`sqc2 vf1` to the buffer in a0 (one quadword per call).
 
 Test vectors: path 0x00225110 captured in PCSX2 (`../pcsx2/sessions-05.md`, states `vu0_00225110_before/after`); inputs are the VU0 registers (`tools/p2s_read.py STATE vu0`), `vu0Memory.bin`, scratchpad and EE RAM, output the a0 buffer. Paths 0x002250E8 and 0x00225140 are pending (`../pcsx2/procedures.md` check 1).
+
+### Skinning program S (`.vutext` 0x0029C200, VU0 micro, 216 pairs)
+
+Analysed 2026-10-18 (`tools/research/vu_disasm.py 0x0029C200`, listing `out/vu/S.txt`). Uploaded by `UploadVu0Microcode` 0x00225408 (VIF0 DMA). `vcallms n` takes a **pair index**: the jump table at pairs 0x00–0x17 branches to nine entries; each run ends at an E bit and returns one quadword in vf1, which the EE loops read with `qmfc2.I` (interlocked: waits for the micro program) and store (`func_002250E8`…`func_00225270`).
+
+Registers set by the EE (`func_00225048`, `func_00225088`, `func_002250A0`): vf12–vf15 colour matrix (a0 of 0x00225048, 4 qw), vf11 colour scale (a1), vf10 scales (a2: x position, y weights, z/w morph factors), vf9 clip bounds (a3), vf7 fog (t0: x max, y min, z scale, w far), vf8 (t1, not read by the program), VI04 (t2 & 0xFFFF) and VI05 (t3 & 0xFFFF); vf16–vf19 matrix 0, vf20–vf31 matrices 1–3 (`0x002250A0`). Per call VI01 (and VI02, VI03) point into VU0 data memory and are post-incremented by `lqi`.
+
+| Pair entry (EE loop) | Inputs (VU0 memory, post-increment) | Work | Ends at |
+|---|---|---|---|
+| 0x00 (0x002250E8) | VI01: position (int xyz) | p = itof0(xyz) × vf10.x, w 1; v = M0 × p | tail P |
+| 0x02 (0x00225110) | VI01 position, VI03 weights (int xyzw) | I := 1/255 (`loi` at 0x04A); weights := itof0 × I; p as above; v = Σ Mk × p × weight k (ACC chain M0..M3 in x, y, z, w order) | tail P |
+| 0x06 (0x00225140) | VI01 position A, VI02 position B, VI03 weights | p = itof0(A) × vf10.z + itof0(B) × vf10.w (the add sits in the branch delay slot), then joins entry 0x02 at pair 0x04B: **the weights are scaled by the current I register**, which only entry 0x02 sets | tail P |
+| 0x08 (0x00225178) | VI01 normal (int, 12-bit fraction) | n = M0 (3 columns, `maddz` so w = Σ col.w × n) × itof12(n) | tail L |
+| 0x0A (0x002251A8) | VI01 normal, VI03 weights | weights = itof0 × vf10.y; n_k = Mk × n for k = 0..3, blend by the weights. **Original quirk:** for matrix 2 the `mulax` is missing (pair 0x091 is `madday`), so n_2 = (vf20·x + vf21·y) + vf25·y + vf26·z (the accumulator still holds matrix 1's partial sum) | tail L |
+| 0x0E (0x002251D8) | VI01 normal A, VI02 normal B, VI03 weights | n = itof12(A) × vf10.z + itof12(B) × vf10.w, joins 0x0A at pair 0x08A | tail L |
+| 0x10 (0x00225210) | VI01 vector (12-bit fraction, w raw) | u = M0 × xyz + (0, 0, 0, w raw bits) | tail E |
+| 0x12 (0x00225240) | VI01 vector, VI03 weights | weights = itof0 × vf10.y; u = Σ (Mk × xyz + vf00 × w) × weight k | tail E |
+| 0x16 (0x00225270) | VI01 A, VI02 B, VI03 weights | A × vf10.z + B × vf10.w, joins 0x12 at pair 0x0B6 | tail E |
+
+- **Tail P** (pairs 0x028–0x042): Q = 1/v.w; fog = clamp((vf7.w − v.w) × vf7.z, max vf7.x, min vf7.y) (`subw`, `mulz`, `minix`, `maxy` in that order); flags from `sub.xyw vf00, vf00, v` (sign of −x, −y, −w) and `sub.xyw vf00, v, vf9` (v − bounds); the `fmand` pair reads them four pairs after each `sub` (MAC flag latency): vi06 = MAC₁ & VI05, then vi06 = MAC₂ & vi06. Result vf1 = (ftoi4(x·Q, y·Q, z·Q), ftoi4(fog)) when vi06 = VI05, else (the same xyz, w = VI04 as an integer, `mfir`): the out-of-bounds vertex gets VI04 in w (the ADC/kick word).
+- **Tail L** (pairs 0x079–0x084): n.xyz = max(n, 0); c = colour matrix vf12–vf14 × n + vf15 (`maddw` with vf00.w = 1); c = c × vf11 per component; xyz clamped to 0…vf11.z, w = max(w, vf11.z); vf1 = ftoi0(c).
+- **Tail E** (pairs 0x0AC–0x0B0): u = (u + 1.0 in all four components) × vf9.z, vf1 = ftoi4(u).
+- Port (implemented 2026-10-18, `src/platform/vu0/vu0_hle.cpp`): a C++ rewrite of the nine entries with a VU0 register file (vf0–vf31, ACC, I, Q, VI01–VI06) and the 4 KB VU0 data memory, using `vu0::micro` arithmetic (chop) and the MAC-flag model above; I persists between calls as on the hardware. VU max / min order the float bit patterns (so -0 < +0). Verification against the PCSX2 vectors still to do (entry 0x02 captured, `../pcsx2/sessions-05.md`; 0x00 and 0x06 pending, `../pcsx2/procedures.md` section 1).
+
+### VIF0 path
+
+- Upload: `UploadVu0Microcode` 0x00225408 sends the chain at .vutext 0x0029C200 (`cnt` 0x6C qwords with MPG of 216 pairs at 0, then `end`) with D0_CHCR = 0x145 (TTE on), every sequence frame unless the sequence has no models.
+- Vertex chains (tags in scratchpad, TADR with bit 31): `ref` / `refe` tags with the VIF code in the tag's upper word (TTE stays on from the upload): UNPACK 0x69 (V3-16, signed) with NUM = vertices at VU 0 or 0x40, UNPACK 0x6E with USN and address 0x80 (V4-8 weights).
+- VIF0 CYCLE is 0x404 (CL = WL = 4, linear unpack) in the reference state `vu0_00225110_before` (eeHwRegs 0x10003840); nothing in the game writes it.
+- V3-16 W lane: PCSX2 writes the next element's x at most vertices but 0 at some (vertices 11, 13, 14 of the captured batch); no program output depends on it (positions overwrite w, normals use xyz, the environment UV keeps 8 bytes). The port writes the next halfword (HYPOTHESIS, harmless).
+- Port: a write of D0_CHCR with STR runs the chain at once (`src/sce/hw_registers.cpp`, `vu0hle::RunVif0Chain`) and leaves the channel idle.
 
 ## Model programs B (0x00298AC0) and C (0x00299820)
 
@@ -119,5 +150,6 @@ Uploaded by `DrawGlowPass` 0x00142460 (MPG of 242 pairs at address 0). The packe
 
 ## Open points
 
+- Program D: implemented 2026-10-18 as CPU HLE (`RunGlowFins` in `vu1_programs.cpp`; strips start at pair 2 or 0xDE, entry 0xE0 is refused and logged by the VIF); the MAC test of the edge facing is modelled as "z < 0 and not overflowed". Not yet compared with a PCSX2 GS dump of the glow pass.
 - Programs A (0x00297C00) and E (0x0029B0F0): analysed by diff (section above) and implemented 2026-10-16 as variants of the B/C HLE (`src/platform/render/vu1/vu1_programs.cpp`); the terrain program T is implemented there too. A, E and T are not yet compared with a PCSX2 GS dump (batch S5-A). B, C, D: analysed 2026-10-15 (sections above); their exact float behaviour (VU rounding) is not needed for RAM state (GS output only) but matters for pixel-exact screenshots.
 - VIF1 BASE = OFST = TOPS = 0 in the S4 PCSX2 states (`eeHwRegs.bin` at 0x3CA0/0x3CB0/0x3CC0): no double buffering, TOP is always 0. The model programs' clipper scratch at absolute 0x20/0x48 therefore overlaps the strip's own vertices (later triangles of a clipped strip read overwritten data); the HLE keeps this by working on a VU1 memory image.

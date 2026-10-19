@@ -1,4 +1,5 @@
-// CPU reimplementations of the VU1 model programs B (0x00298AC0) and C (0x00299820) and of the terrain
+// CPU reimplementations of the VU1 model programs B (0x00298AC0) and C (0x00299820), the glow fin
+// program D (0x0029A930) and the terrain
 // program T (.vudata 0x00402200), following
 // their microcode pair by pair (docs/subsystems/vu-programs.md "Model programs B and C"; listings:
 // tools/research/vu_disasm.py). Arithmetic uses the VU helpers (src/common/vu0_math.h); the results
@@ -13,6 +14,7 @@
 #include "platform/render/vu1/vu1_programs.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstring>
 
@@ -709,8 +711,150 @@ void Xgkick(const Vu1State& vu, std::uint32_t addr, std::vector<std::uint8_t>& g
     }
 }
 
+// ---- Glow fin program D (0x0029A930; docs/subsystems/vu-programs.md "Glow fin program D") ----
+
+namespace {
+
+// One strip (pairs 0x002-0x0DA): pass 1 transforms every vertex (q2 := node x q2, q3 := q2 + offset
+// with w 1, q0 / q1 := both projected and divided by their w); pass 2 walks the strip's triangles
+// and emits the silhouette quads (edges whose facing differs from mode 49.x) and, in mode 0, the cap.
+void RunGlowFins(Vu1State& vu, std::vector<std::uint8_t>& gif) {
+    const std::uint32_t top = vu.top;
+    const std::uint16_t n = static_cast<std::uint16_t>(vu.I(top + 23, 0));
+    Mat proj, node;
+    proj.Load(vu, 32);
+    node.Load(vu, top);
+    const Vec4 offset = LoadF(vu, 45);
+    // Pass 1 (0x011-0x034).
+    {
+        Vec4 ext{0.0f, 0.0f, 0.0f, 1.0f};  // vf19 = vf00 x vf00: only xyz are rewritten below
+        std::uint32_t v = top + 0x20;
+        Vec4 pos = LoadF(vu, v + 2);
+        std::uint16_t i = 0;
+        do {
+            const Vec4 p = node.Mul(pos);
+            pos = LoadF(vu, v + 6);  // the next vertex's q2, read before this vertex is stored
+            ++i;
+            ext.x = vu0::Add(p.x, offset.x);
+            ext.y = vu0::Add(p.y, offset.y);
+            ext.z = vu0::Add(p.z, offset.z);
+            StoreF(vu, v + 2, p);
+            Vec4 s0 = proj.Mul(p);
+            StoreF(vu, v + 3, ext);
+            Vec4 s1 = proj.Mul(ext);
+            s0 = Mul4(s0, vu0::Div(1.0f, s0.w));
+            const float q1 = vu0::Div(1.0f, s1.w);
+            StoreF(vu, v, s0);
+            s1 = Mul4(s1, q1);
+            StoreF(vu, v + 1, s1);
+            v += 4;
+        } while (i != n);
+    }
+    // Pass 2 (0x035-0x0D6).
+    std::uint32_t t46[4], t47[4], t48[4];
+    std::memcpy(t46, vu.Qword(46), 16);
+    std::memcpy(t47, vu.Qword(47), 16);
+    std::memcpy(t48, vu.Qword(48), 16);
+    const Vec4 light = LoadF(vu, 44);
+    const std::uint16_t mode = static_cast<std::uint16_t>(vu.I(49, 0));
+    std::uint16_t winding = static_cast<std::uint16_t>(vu.I(top + 23, 2));
+    const std::uint32_t colour[4] = {1, 1, 1, 128};  // ftoi0 of (1, 1, 1, 128)
+    struct V {
+        Vec4 q[4];
+    };
+    const auto load = [&](std::uint32_t a) {
+        V r;
+        for (std::uint32_t k = 0; k < 4; ++k) r.q[k] = LoadF(vu, a + k);
+        return r;
+    };
+    // add.xyzw with vf17 = 0: -0 becomes +0.
+    const auto plus0 = [](const V& x) {
+        V r;
+        for (int k = 0; k < 4; ++k) r.q[k] = Add4(x.q[k], Vec4{0.0f, 0.0f, 0.0f, 0.0f});
+        return r;
+    };
+    std::uint32_t src = top + 0x20;
+    std::uint32_t out = top + 0x7E;
+    V va = load(src), vb = load(src + 4);
+    src += 8;
+    std::uint16_t i = 2;
+    do {
+        ++i;
+        const V a = plus0(va), b = plus0(vb);
+        const V c = load(src);
+        src += 4;
+        float s;
+        if (winding == 0) {
+            winding = 1;
+            s = 1.0f;
+        } else {
+            winding = 0;
+            s = -1.0f;
+        }
+        // Face normal from the world points (opmula / opmsub), normalised, signed, dotted with the light.
+        const Vec4 e1 = Sub4(a.q[2], b.q[2]), e2 = Sub4(c.q[2], b.q[2]);
+        Vec4 nrm{vu0::Sub(vu0::Mul(e1.y, e2.z), vu0::Mul(e2.y, e1.z)), vu0::Sub(vu0::Mul(e1.z, e2.x), vu0::Mul(e2.z, e1.x)),
+                 vu0::Sub(vu0::Mul(e1.x, e2.y), vu0::Mul(e2.x, e1.y)), 0.0f};
+        const float len2 = vu0::Add(vu0::Add(vu0::Mul(nrm.x, nrm.x), vu0::Mul(nrm.y, nrm.y)), vu0::Mul(nrm.z, nrm.z));
+        const float inv = vu0::Div(1.0f, vu0::Mul(1.0f, vu0::Sqrt(len2)));
+        nrm.x = vu0::Mul(vu0::Mul(vu0::Mul(nrm.x, s), inv), light.x);
+        nrm.y = vu0::Mul(vu0::Mul(vu0::Mul(nrm.y, s), inv), light.y);
+        nrm.z = vu0::Mul(vu0::Mul(vu0::Mul(nrm.z, s), inv), light.z);
+        const float d = vu0::Add(0.0f, vu0::Add(vu0::Add(nrm.x, nrm.y), nrm.z));
+        // Edge facing: z of (p - p') x (q - p') for the projected points, x s x d; the flag is the
+        // MAC test "fmeq 0x20" (sign set, zero, underflow and overflow clear).
+        const auto facing = [&](const Vec4& p, const Vec4& pe, const Vec4& qp) {
+            const Vec4 u = Sub4(p, pe), w = Sub4(qp, pe);
+            float z = vu0::Sub(vu0::Mul(u.x, w.y), vu0::Mul(w.x, u.y));
+            z = vu0::Mul(vu0::Mul(z, s), d);
+            return static_cast<std::uint16_t>(z < 0.0f && z > -FLT_MAX ? 1 : 0);
+        };
+        const std::uint16_t f1 = facing(a.q[0], a.q[1], b.q[0]);
+        const std::uint16_t f2 = facing(b.q[0], b.q[1], c.q[0]);
+        const std::uint16_t f3 = facing(c.q[0], c.q[1], a.q[0]);
+        const auto put = [&](const Vec4& p) { StoreFtoi(vu, out++, p, 4); };
+        const auto quad = [&](const Vec4& p, const Vec4& pe, const Vec4& q, const Vec4& qe) {
+            StoreRaw(vu, out++, t46);
+            StoreRaw(vu, out++, colour);
+            put(p);
+            put(pe);
+            put(q);
+            put(qe);
+        };
+        if (f1 != mode) quad(a.q[0], a.q[1], b.q[0], b.q[1]);
+        if (f2 != mode) quad(b.q[0], b.q[1], c.q[0], c.q[1]);
+        if (f3 != mode) quad(c.q[0], c.q[1], a.q[0], a.q[1]);
+        if (mode == 0) {
+            StoreRaw(vu, out++, t47);
+            StoreRaw(vu, out++, colour);
+            put(a.q[1]);
+            put(b.q[1]);
+            put(c.q[1]);
+        }
+        va = b;
+        vb = c;
+    } while (i != n);
+    StoreRaw(vu, out, t48);
+    Xgkick(vu, top + 0x7E, gif);
+}
+
+}  // namespace
+
 bool RunVu1Program(Vu1State& vu, std::uint32_t source, std::uint32_t pc, std::vector<std::uint8_t>& gif,
                    std::uint32_t& next_pc) {
+    if (source == kProgramD) {
+        // Pair 0 holds an E bit; a strip runs from pair 2 (or from 0xDE, which branches to 2) to the
+        // E bit at 0xDC. Entry 0xE0 is not reached by the game's packets (vu-programs.md).
+        if (pc == 0) {
+            next_pc = 2;
+            return true;
+        }
+        if (pc != 2 && pc != 0xDE) return false;
+        const vu0::ChopScope chop;
+        RunGlowFins(vu, gif);
+        next_pc = 0xDE;
+        return true;
+    }
     if (source == kProgramT) {
         // Pair 0 holds an E bit; every cell's MSCNT runs from pair 2 to the E bit at 0x208.
         if (pc != 0) {

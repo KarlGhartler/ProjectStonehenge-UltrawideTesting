@@ -1317,4 +1317,370 @@ void func_0021B030() {
     func_0021A8D8(0x10, 5, 600);
 }
 
+// ---- Dead sound-library functions (slice S8; dead-code.md: no callers in the shipped game) ------
+
+// EE: 0x00215978
+// Reverb depth in percent (0-100 -> 0-0x7FFF, both sides) for core `core` (command 7).
+void func_00215978(u8 core, u8 percent) {
+    const s16 depth = static_cast<s16>((static_cast<s32>(percent) * 0x7FFF) / 100);
+    func_0021CFA0(core, depth, depth);
+}
+
+// EE: 0x00217748
+// Client word 6 (init parameter).
+u32 func_00217748() { return Cw(6); }
+
+// EE: 0x00217788
+// Current send buffer.
+u32 func_00217788() { return Cw(Cw(7) + 1); }
+
+// EE: 0x002177A0
+// Current write pointer (send buffer + write offset).
+u32 func_002177A0() { return func_00217788() + Cw(5); }
+
+// EE: 0x00217B28
+// Status byte of voice `v`.
+u8 func_00217B28(u8 v) { return GRef<u8>(kVoiceStatus + v); }
+
+// EE: 0x00217BC0
+// Copies the 48 voice status bytes to `dst`.
+void func_00217BC0(u32 dst) {
+    for (u32 i = 0; i < 0x30; ++i) GRef<u8>(dst + i) = GRef<u8>(kVoiceStatus + i);
+}
+
+// EE: 0x00218118
+// Copies the voice table record of voice `v` (0x48 bytes) to `dst`.
+void func_00218118(u8 v, u32 dst) {
+    for (u32 i = 0; i < 0x48; ++i) GRef<u8>(dst + i) = GRef<u8>(Voice(v) + i);
+}
+
+// EE: 0x00218768
+// Clears the +0x1C flag byte of every voice record and frees the voices in state 3.
+void func_00218768() {
+    for (u32 v = 0; v < 0x30; ++v) {
+        GRef<u8>(Voice(static_cast<s32>(v)) + 0x1C) = 0;
+        if (GRef<u8>(kVoiceStatus + v) == 3) GRef<u8>(kVoiceStatus + v) = 0;
+    }
+}
+
+// EE: 0x00218BF8
+// Registers bank `header` at the next free index (0x00218B00 with index -1, SPU address 0).
+void func_00218BF8(u32 header) { func_00218B00(-1, header, 0); }
+
+// EE: 0x00218C98
+// SPU address of bank `n`.
+u32 func_00218C98(s32 n) { return GRef<u32>(kBankSpu + 4u * static_cast<u32>(n)); }
+
+// EE: 0x00218D68
+// Patches field `field` (jump table 0x00406920, 26 entries) of sample `sample` of bank `n` to `value`:
+// 0 the bank's sample count word (header +0x14), else a field of the sample record (header + 0x10 +
+// sample x 0x30).
+void func_00218D68(s32 n, s16 sample, u32 field, u32 value) {
+    const u32 h = func_00218C80(n);
+    const u32 r = h + 0x10 + static_cast<u32>(sample * 0x30);
+    switch (field) {
+        case 0: GRef<u16>(h + 0x14) = static_cast<u16>(value); break;
+        case 1: GRef<u16>(r) = static_cast<u16>(value); break;
+        case 2: GRef<u8>(r + 2) = static_cast<u8>(value); break;
+        case 3: GRef<u8>(r + 3) = static_cast<u8>(value); break;
+        case 4: GRef<u8>(r + 4) = static_cast<u8>(value); break;
+        case 5: GRef<u8>(r + 5) = static_cast<u8>(value); break;
+        case 6: GRef<u8>(r + 8) = static_cast<u8>(value); break;
+        case 7: GRef<u8>(r + 0xA) = static_cast<u8>(value); break;
+        case 8: GRef<u8>(r + 0x10) = static_cast<u8>(value); break;
+        case 9: GRef<u8>(r + 0x11) = static_cast<u8>(value); break;
+        case 10: GRef<u16>(r + 0x12) = static_cast<u16>(value); break;
+        case 11: GRef<u16>(r + 0x14) = static_cast<u16>(value); break;
+        case 12: GRef<u16>(r + 0x16) = static_cast<u16>(value); break;
+        case 13: GRef<u8>(r + 0x18) = static_cast<u8>(value); break;
+        case 14: GRef<u8>(r + 0x19) = static_cast<u8>(value); break;
+        case 15: GRef<u8>(r + 0x1A) = static_cast<u8>(value); break;
+        case 16: GRef<u8>(r + 0x1B) = static_cast<u8>(value); break;
+        case 17: GRef<u8>(r + 0x1C) = static_cast<u8>(value); break;
+        case 18: GRef<u8>(r + 0x1D) = static_cast<u8>(value); break;
+        case 19: GRef<u16>(r + 0x1E) = static_cast<u16>(value); break;
+        case 20: GRef<u16>(r + 0x20) = static_cast<u16>(value); break;
+        case 21: GRef<u16>(r + 0x22) = static_cast<u16>(value); break;
+        case 22: GRef<u16>(r + 0xC) = static_cast<u16>(value); break;
+        case 23: GRef<u16>(r + 0xE) = static_cast<u16>(value); break;
+        case 24: GRef<u32>(r + 0x28) = value; break;
+        case 25: GRef<u32>(r + 0x2C) = value; break;
+        default: break;
+    }
+}
+
+// EE: 0x00218EB0
+// Reads the header of bank `n` and discards it.
+s32 func_00218EB0(s32 n) {
+    func_00218C80(n);
+    return 0;
+}
+
+// EE: 0x00218EE0
+void func_00218EE0(u32 v) { GRef<u32>(0x00410D04) = v; }
+
+// EE: 0x00219640
+void func_00219640(s32 n, u32 v) { GRef<u32>(0x0034E774 + 4u * static_cast<u32>(n)) = v; }
+
+// EE: 0x00219658
+void func_00219658(u32 v) { GRef<u32>(0x0034E780) = v; }
+
+// EE: 0x00219758
+// PlaySound returning 1 instead of 0 on success.
+s32 func_00219758(s16 bank, s16 sound, s16 left, s16 right, u32 rec) {
+    const s32 r = PlaySound(bank, sound, left, right, rec);
+    return r == 0 ? 1 : r;
+}
+
+// EE: 0x002197C0
+// Stops voice `v` (0x0021E0A0); 1 instead of 0 on success.
+s32 func_002197C0(u8 v) {
+    const s32 r = func_0021E0A0(v);
+    return r == 0 ? 1 : r;
+}
+
+// EE: 0x0021A080
+// A second 15-bit LFSR (state 0x00410D1C), separate from the sound random generator.
+u16 func_0021A080() {
+    const u16 s = GRef<u16>(0x00410D1C);
+    const u32 b = s & 1u;
+    const u16 n = static_cast<u16>(((s >> 1) | (b << 14)) ^ (b << 7));
+    GRef<u16>(0x00410D1C) = n;
+    return n;
+}
+
+// EE: 0x0021A0A8
+// Shifts the voice of `rec` by `notes` semitones from its base note (+0x30, clamped to 0-127).
+void func_0021A0A8(u32 rec, s32 notes) {
+    s32 note = GRef<u8>(rec + 0x30) + notes;
+    if (!(note < 0x80))
+        note = 0x7F;
+    else if (!(-1 < note))
+        note = 0;
+    SetSoundPitch(static_cast<u8>(note), GRef<s8>(rec + 0x33), rec);
+}
+
+// EE: 0x0021A5C0
+// Scales the category volumes of the five categories listed at 0x00406A70 from their base values
+// (0x0034F580 + n x 4) by `scale` / 255.
+void func_0021A5C0(f32 scale) {
+    for (u32 k = 0; k < 5; ++k) {
+        const s32 n = GRef<s32>(0x00406A70 + k * 4);
+        func_0021CCF0(GRef<f32>(0x0034F580 + static_cast<u32>(n) * 4) * scale / 255.0f, n);
+    }
+}
+
+// EE: 0x0021A6E8
+// Computes the distance and the angles from `from` to `to` (with rotation to+0x10) and the stereo
+// pair of that angle, and discards them all.
+void func_0021A6E8(u32 unused, u32 from, u32 to) {
+    (void)unused;
+    guest::GuestFrame frame(0x10);
+    func_00104F10(from, to);
+    const f32 angle = func_00219850(from, to, to + 0x10);
+    func_00219900(angle, frame.Address(), frame.Address() | 4);
+}
+
+// EE: 0x0021AD88
+// Positional voice slot `n`: value `v` (0x0042A868) and the two position words (0x0042A7A8,
+// 0x0042A6E8) set to `pos`.
+void func_0021AD88(u8 n, u32 v, f32 pos) {
+    GRef<u32>(0x0042A868 + n * 4u) = v;
+    GRef<f32>(0x0042A7A8 + n * 4u) = pos;
+    GRef<f32>(0x0042A6E8 + n * 4u) = pos;
+}
+
+// EE: 0x0021ADC8
+// An empty loop of 48 iterations.
+void func_0021ADC8() {}
+
+// EE: 0x0021CEA0
+// Command 0xC: volume pair of core `core` scaled to 0x7FFF (no IOP handler writes it).
+void func_0021CEA0(u8 core, s16 left, s16 right) {
+    QueueSmallCommand(12, [core, left, right](u32 c) {
+        GRef<u32>(c) = 0xC;
+        GRef<u8>(c + 4) = core;
+        GRef<s16>(c + 6) = func_0021A800(1, 0x7FFF, left);
+        GRef<s16>(c + 8) = func_0021A800(1, 0x7FFF, right);
+    }, QueueSoundCmd12);
+}
+
+// EE: 0x0021D048
+// Plays sound `sound` of bank `bank` on voice `voice` at the record's own volume and pan.
+s32 func_0021D048(s16 bank, s16 sound, u32 rec, s8 voice) {
+    GRef<s16>(rec + 0xC) = bank;
+    GRef<s16>(rec + 0x18) = sound;
+    GRef<s8>(rec + 0x1A) = -1;
+    GRef<s8>(rec + 0xE) = voice;
+    if (func_002174D0(1, rec) == -1) return -1;
+    func_0021A988(GRef<s16>(rec + 0x2A), GRef<s8>(rec + 0x21), rec);
+    func_00218318(rec);
+    QueueSoundVoiceCmd(rec);
+    return 0;
+}
+
+// EE: 0x0021D208
+// Plays sound `sound` of bank `bank` at the volumes (left, right) as given (no category or record
+// volume); a linked sound (+0x1E) the same way into a stack record, its voice kept in rec+8.
+s32 func_0021D208(s16 bank, s16 sound, s16 left, s16 right, u32 rec) {
+    GRef<s16>(rec + 0x18) = sound;
+    GRef<s16>(rec + 0xC) = bank;
+    GRef<s8>(rec + 0x1A) = -1;
+    GRef<u32>(rec + 8) = 0;
+    GRef<s8>(rec + 0xE) = -1;
+    if (func_002174D0(1, rec) == -1) return -1;
+    GRef<s16>(rec + 0x2C) = left;
+    GRef<s16>(rec + 0x2E) = right;
+    GRef<s32>(rec + 0x14) = func_0021AD48(left, right);
+    func_0021D0C8(rec);
+    const s16 linked = GRef<s16>(rec + 0x1E);
+    if (!(linked < 0)) {
+        guest::GuestFrame frame(0x50);
+        func_0021D208(bank, linked, left, right, frame.Address());
+        GRef<u32>(rec + 8) = GRef<u32>(frame.Address() + 4);
+    }
+    return 0;
+}
+
+// EE: 0x0021D4B8
+// 0x0021D500 with priority -1; 0, or -1 when no voice was free.
+s32 func_0021D4B8(s16 bank, s16 sound, s16 volume, s16 pan, u32 rec) {
+    return func_0021D500(bank, sound, volume, pan, rec, -1) != -1 ? 0 : -1;
+}
+
+// EE: 0x0021DA68
+// New volume and pan offset for the voice of `rec` (category and record volume, pan law as in
+// 0x0021D500); a pan-mode change on a voice flagged +0x1C bit 0 restarts it. The linked voice gets
+// the same.
+s32 func_0021DA68(s16 pan, s16 volume, u32 rec) {
+    const f32 fv = fpu::IntToFloat(volume);
+    const f32 cat = func_0021CD08(GRef<u8>(rec + 0x28));
+    const s16 scaled = static_cast<s16>(fpu::FloatToInt(fv * cat));
+    const s16 v = static_cast<s16>(GRef<s16>(rec + 0x2A) * 129);
+    const s16 level = func_0021A800(GRef<u8>(rec + 0x20), v, scaled);
+    const s8 p = func_0021AAC8(GRef<s8>(rec + 0x21), pan);
+    func_0021A988(level, p, rec);
+    const s32 pm = func_0021AD48(GRef<s16>(rec + 0x2C), GRef<s16>(rec + 0x2E));
+    if (GRef<s32>(rec + 0x14) == pm || (GRef<u8>(rec + 0x1C) & 1) == 0) {
+        GRef<s32>(rec + 0x14) = pm;
+        GRef<u32>(rec + 0x10) = 1;
+        if (func_002174D0(2, rec) == -1) return -1;
+        QueueSoundVoiceCmd(rec);
+    } else {
+        GRef<s32>(rec + 0x14) = pm;
+        guest::GuestFrame old(0x50);
+        Copy(old.Address(), rec, 0x48);
+        func_0021D138(rec);
+        StopSound(old.Address());
+    }
+    const u32 linked = GRef<u32>(rec + 8);
+    if (linked != 0) {
+        guest::GuestFrame lr(0x50);
+        if (func_00218008(linked, lr.Address()) != -1) func_0021DA68(pan, volume, lr.Address());
+    }
+    return 0;
+}
+
+// EE: 0x0021DC88
+// SetSoundVolume for every voice of channel `channel` (voice record +0x1A).
+s32 func_0021DC88(s16 left, s16 right, u8 channel) {
+    guest::GuestFrame frame(0x50);
+    for (u32 v = 0; v < 0x30; ++v) {
+        func_00218118(static_cast<u8>(v), frame.Address());
+        if (GRef<s8>(frame.Address() + 0x1A) == static_cast<s8>(channel)) SetSoundVolume(left, right, frame.Address());
+    }
+    return 0;
+}
+
+// EE: 0x0021DD18
+// 0x0021DA68 for every voice of channel `channel`.
+s32 func_0021DD18(s16 pan, s16 volume, u8 channel) {
+    guest::GuestFrame frame(0x50);
+    for (u32 v = 0; v < 0x30; ++v) {
+        func_00218118(static_cast<u8>(v), frame.Address());
+        if (GRef<s8>(frame.Address() + 0x1A) == static_cast<s8>(channel)) func_0021DA68(pan, volume, frame.Address());
+    }
+    return 0;
+}
+
+// EE: 0x0021DDA8
+// Sets voice parameter +0x38 (request mode 2) on the voice of `rec` and its linked voice.
+s32 func_0021DDA8(u16 value, u32 rec) {
+    GRef<u16>(rec + 0x38) = value;
+    GRef<u32>(rec + 0x10) = 2;
+    if (func_002174D0(2, rec) == -1) return -1;
+    QueueSoundVoiceCmd(rec);
+    const u32 linked = GRef<u32>(rec + 8);
+    if (linked == 0) return 0;
+    guest::GuestFrame lr(0x50);
+    if (func_00218008(linked, lr.Address()) != -1) func_0021DDA8(value, lr.Address());
+    return 0;
+}
+
+// EE: 0x0021DED8
+// SetSoundPitch from the record's base pitch with `fine` added to the fine offset (and its linked
+// voice).
+s32 func_0021DED8(s16 fine, u32 rec) {
+    const u32 pair = ((GRef<u8>(rec + 0x30) + static_cast<u32>(GRef<s8>(rec + 0x34))) << 8) & 0xFF00;
+    const s16 off = static_cast<s16>(GRef<s8>(rec + 0x35) + (static_cast<u16>(fine) + GRef<u8>(rec + 0x31)));
+    const u16 v = func_0021CD70(pair, off);
+    GRef<u8>(rec + 0x33) = static_cast<u8>(v & 0x7F);
+    GRef<u8>(rec + 0x32) = static_cast<u8>((v & 0x7F00) >> 8);
+    GRef<u32>(rec + 0x10) = 4;
+    if (func_002174D0(2, rec) == -1) return -1;
+    QueueSoundVoiceCmd(rec);
+    const u32 linked = GRef<u32>(rec + 8);
+    if (linked == 0) return 0;
+    guest::GuestFrame lr(0x50);
+    if (func_00218008(linked, lr.Address()) != -1) func_0021DED8(fine, lr.Address());
+    return 0;
+}
+
+// EE: 0x0021E0A0
+// Stops voice `v` (its record copied from the voice table).
+s32 func_0021E0A0(u8 v) {
+    guest::GuestFrame frame(0x50);
+    func_00218118(v, frame.Address());
+    GRef<u8>(frame.Address() + 0xE) = v;
+    return StopSound(frame.Address()) != -1 ? 0 : -1;
+}
+
+// EE: 0x0021E120
+// Keys off all voices (command 5 with both masks full).
+s32 func_0021E120() {
+    func_0021E0E8(0xFFFFFF, 0xFFFFFF);
+    return 0;
+}
+
+// EE: 0x0021E150
+// Queues the voice request `rec` as it is (type 2).
+s32 func_0021E150(u32 rec) {
+    func_002174D0(2, rec);
+    return QueueSoundVoiceCmd(rec);
+}
+
+// EE: 0x0021E188
+// Raw volumes for voice `v` (0x0021D680 on a stack record with only +0xE set).
+s32 func_0021E188(u8 v, s16 left, s16 right) {
+    guest::GuestFrame frame(0x50);
+    GRef<u8>(frame.Address() + 0xE) = v;
+    return func_0021D680(left, right, frame.Address()) != -1 ? 0 : -1;
+}
+
+// EE: 0x0021E1C8
+// Parameter +0x38 for voice `v`.
+s32 func_0021E1C8(u8 v, u16 value) {
+    guest::GuestFrame frame(0x50);
+    GRef<u8>(frame.Address() + 0xE) = v;
+    return func_0021DDA8(value, frame.Address()) != -1 ? 0 : -1;
+}
+
+// EE: 0x0021E200
+// SetSoundPitch for voice `v`.
+s32 func_0021E200(u8 v, u8 note, s8 fine) {
+    guest::GuestFrame frame(0x50);
+    GRef<u8>(frame.Address() + 0xE) = v;
+    return SetSoundPitch(note, fine, frame.Address()) != -1 ? 0 : -1;
+}
+
 }  // namespace ac04::game

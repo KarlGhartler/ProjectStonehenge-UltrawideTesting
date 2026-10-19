@@ -37,6 +37,7 @@
 #include "platform/paths.h"
 #include "platform/png_writer.h"
 #include "platform/audio/spu_mixer.h"
+#include "platform/render/gs_dump.h"
 #include "platform/render/renderer.h"
 #include "platform/settings.h"
 #include "platform/system_info.h"
@@ -136,11 +137,53 @@ void DumpGuestRam(const Paths& paths, const char* name) {
         std::fwrite(guest::Mem().Ram(), 1, guest::kRamSize, f);
         std::fwrite(guest::Mem().Scratchpad(), 1, guest::kScratchpadSize, f);
         std::fclose(f);
-        AC04_LOG_INFO("loader", "guest RAM dumped to %s", PathToUtf8(file).c_str());
+        AC04_LOG_INFO("loader", "guest RAM dumped to %s (vblank %llu)", PathToUtf8(file).c_str(),
+                      static_cast<unsigned long long>(sce::GameRuntime::Get().VBlankCount()));
     } else {
         AC04_LOG_ERROR("loader", "cannot write %s", PathToUtf8(file).c_str());
     }
 }
+
+#if AC04_DEV_BUILD
+// --play-gsdump (development builds): draws a PCSX2 single-frame GS dump with the port's renderer and
+// writes the native picture and PCSX2's own screenshot side by side, then the port exits. Checks the
+// renderer on exactly the input PCSX2 drew, without the game (docs/port/command-line.md).
+int PlayGsDump(const CommandLine& cl, const Paths& paths, render::Renderer& renderer) {
+    render::GsDump dump;
+    std::string error;
+    if (!render::LoadGsDump(PathFromUtf8(cl.play_gsdump), dump, error)) {
+        AC04_LOG_ERROR("renderer", "--play-gsdump: %s", error.c_str());
+        return 1;
+    }
+    u64 dispfb = 0, display = 0;
+    std::memcpy(&dispfb, dump.privileged.data() + 0x90, 8);
+    std::memcpy(&display, dump.privileged.data() + 0xA0, 8);
+    AC04_LOG_INFO("renderer", "GS dump: %zu frame(s), DISPFB2 %016llX", dump.frames.size(),
+                  static_cast<unsigned long long>(dispfb));
+    // Twice: the native image takes the presented size one frame late.
+    for (int pass = 0; pass < 2; ++pass) {
+        renderer.LoadGsLocalMemory(dump.memory.data());
+        for (const auto& frame : dump.frames) {
+            std::vector<std::vector<u8>> steps{frame};
+            std::vector<std::vector<render::gs::SourceMark>> marks;
+            std::vector<std::vector<u8>> pool;
+            renderer.SubmitGsSteps(steps, marks, pool);
+            renderer.SetDisplay(dispfb, display);
+            if (!renderer.DrawFrame()) return 1;
+        }
+    }
+    const auto dir = paths.user_data / "screenshots";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    std::vector<uint8_t> rgba;
+    int w = 0, h = 0;
+    if (renderer.CaptureNative(rgba, w, h)) WritePng(dir / "gsdump_native.png", rgba.data(), w, h);
+    if (!dump.shot_rgba.empty())
+        WritePng(dir / "gsdump_pcsx2.png", dump.shot_rgba.data(), dump.shot_width, dump.shot_height);
+    AC04_LOG_INFO("renderer", "GS dump drawn: screenshots/gsdump_native.png (%dx%d), gsdump_pcsx2.png", w, h);
+    return 0;
+}
+#endif
 
 bool PrepareDisc(const CommandLine& cl, const Paths& paths, const Settings& settings, Window& window,
                  render::Renderer& renderer, IsoImage& image, LoadedExecutable& exe, bool& unverified) {
@@ -335,6 +378,16 @@ int Run(int argc, char** argv) {
         return 1;
     }
 
+#if AC04_DEV_BUILD
+    if (!cl.options.play_gsdump.empty()) {
+        const int rc = PlayGsDump(cl.options, paths, renderer);
+        renderer.Shutdown();
+        window.Destroy();
+        SDL_Quit();
+        log::Close();
+        return rc;
+    }
+#endif
     IsoImage disc;
     LoadedExecutable executable;
     bool unverified_disc = false;
@@ -393,6 +446,17 @@ int Run(int argc, char** argv) {
     audio.SetSource(&mixer);
     mixer.SetCapture(cl.options.dump_audio);
     debug::SetFreezeSim(cl.options.freeze_sim);
+    if (cl.options.mission != 0 || cl.options.mission_id >= 0) {
+        debug::BootMission m;
+        m.active = true;
+        m.number = cl.options.mission;
+        m.id = cl.options.mission_id;
+        m.free = cl.options.mission_free;
+        debug::SetBootMission(m);
+        log::Write(log::Level::Info, "debug", "--mission: campaign mission %d, mission id %d, %s mode", m.number,
+                   m.id, m.free ? "free" : "campaign");
+    }
+    debug::SetHeapFill(cl.options.heap_fill);
     sce::EeRegisters::Get().Install(guest::Mem());
     {
         sce::SceHost& host = sce::Host();
@@ -523,6 +587,25 @@ int Run(int argc, char** argv) {
             DumpGuestRam(paths, name);
         });
     }
+    static std::FILE* alloc_log = nullptr;
+    if (cl.options.log_allocs) {
+        // Work-heap allocation log (development builds): one line per WorkHeapAlloc call, for
+        // tools/research/heapdiff.py. Written on the game thread; closed at exit.
+        const auto dir = paths.user_data / "dumps";
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        alloc_log = _wfopen((dir / "allocs.txt").c_str(), L"w");
+        if (alloc_log == nullptr) {
+            AC04_LOG_ERROR("loader", "cannot write the allocation log");
+        } else {
+            std::fprintf(alloc_log, "# vblank address size align caller_rva\n");
+            debug::SetAllocHook([](u32 address, s32 size, u32 align, u64 caller_rva) {
+                std::fprintf(alloc_log, "%llu %08X %X %X %llX\n",
+                             static_cast<unsigned long long>(sce::GameRuntime::Get().VBlankCount()), address,
+                             static_cast<unsigned>(size), align, static_cast<unsigned long long>(caller_rva));
+            });
+        }
+    }
     game.Start([] { game::Entry(); });
     AC04_LOG_INFO("game", "boot reached the first vsync wait (%zu translated functions registered)",
                   guest::RegisteredGuestFunctionCount());
@@ -547,6 +630,8 @@ int Run(int argc, char** argv) {
     std::vector<unsigned> screenshot_due = cl.options.screenshot_at;
     std::sort(screenshot_due.begin(), screenshot_due.end());
     bool take_screenshot = false;
+    const u64 fast_until = cl.options.fast_until ? *cl.options.fast_until : 0;
+    const auto fast_start = std::chrono::steady_clock::now();
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -583,9 +668,33 @@ int Run(int argc, char** argv) {
         const auto now = std::chrono::steady_clock::now();
         const double elapsed = std::chrono::duration<double>(now - last_time).count();
         last_time = now;
-        const u32 ticks = clock.Advance(elapsed);
+        // --fast-until (development builds): ticks run back to back for about 100 ms per frame
+        // until that vblank, and only the last tick's draws are shown; the steps before it update GS
+        // registers and local memory only. The game sees the same ticks and pads as at normal speed
+        // (nothing in the game or the IOP stand-ins reads host time). The last kFastSettle ticks
+        // before a screenshot and before the end run one per frame with all draws, as at normal
+        // speed, because what a frame shows depends on how the ticks were grouped into frames.
+        const bool fast = fast_until != 0 && game.VBlankCount() < fast_until;
+        const u32 ticks = fast ? 0xFFFFFFFFu : clock.Advance(elapsed);
         // One tick at a time: the pads are sampled and latched before each tick (s5-plan.md P1).
+        u32 ticks_run = 0;
         for (u32 t = 0; t < ticks; ++t) {
+            if (fast) {
+                constexpr u64 kFastSettle = 60;
+                const u64 v = game.VBlankCount();
+                if (v >= fast_until) break;
+                const bool settle = v + kFastSettle >= fast_until ||
+                                    (!screenshot_due.empty() && v + kFastSettle >= screenshot_due.front());
+                if (ticks_run > 0 && (settle || (cl.options.exit_at && v >= *cl.options.exit_at) ||
+                                      std::chrono::steady_clock::now() - now > std::chrono::milliseconds(100)))
+                    break;
+                if (!settle) {
+                    // Keep GS memory current step by step without building draws.
+                    renderer.SetGsDrawsEnabled(false);
+                    renderer.SubmitGsSteps(sce::Dma().gs_steps, sce::Dma().gs_steps_marks, sce::Dma().gs_step_pool);
+                }
+            }
+            ++ticks_run;
             if (t > 0) {
                 SDL_PumpEvents();
                 input.Update(/*keyboard_captured=*/overlay.WantsKeyboard());
@@ -600,6 +709,17 @@ int Run(int argc, char** argv) {
                 hash_log.Write(game.VBlankCount(), guest::Mem().Ram(), guest::kRamSize,
                                guest::Mem().Scratchpad(), guest::kScratchpadSize);
         }
+        if (fast) {
+            renderer.SetGsDrawsEnabled(true);
+            if (game.VBlankCount() >= fast_until) {
+                // Back to normal speed: start the clock afresh and drop the sound backlog.
+                last_time = std::chrono::steady_clock::now();
+                mixer.DropQueued();
+                AC04_LOG_INFO("game", "fast-forward reached vblank %llu after %.1f s",
+                              static_cast<unsigned long long>(game.VBlankCount()),
+                              std::chrono::duration<double>(last_time - fast_start).count());
+            }
+        }
         // The game is parked: its GS data and the latest movie picture (side path) can be taken.
         renderer.SubmitGsSteps(sce::Dma().gs_steps, sce::Dma().gs_steps_marks, sce::Dma().gs_step_pool);
         renderer.SetDisplay(sce::Dma().dispenv[2], sce::Dma().dispenv[3]);
@@ -612,7 +732,7 @@ int Run(int argc, char** argv) {
             const sce::DmaStats& dma = sce::Dma();
             OverlayFrameData od;
             od.frame_seconds = elapsed;
-            od.ticks_run = ticks;
+            od.ticks_run = ticks_run;
             od.vblank_count = game.VBlankCount();
             od.dropped_ticks = clock.DroppedTicks();
             od.alpha = clock.Alpha();
@@ -644,6 +764,15 @@ int Run(int argc, char** argv) {
                 std::snprintf(name, sizeof(name), "native_%06llu.png", static_cast<unsigned long long>(game.VBlankCount()));
                 if (!WritePng(dir / name, rgba.data(), w, h))
                     AC04_LOG_ERROR("renderer", "cannot write the screenshot %s", name);
+                // --dump-vram: the GS local memory as well (research only, contains game data).
+                if (cl.options.dump_vram) {
+                    std::filesystem::create_directories(paths.user_data / "dumps", ec);
+                    std::snprintf(name, sizeof(name), "vram_%06llu.bin", static_cast<unsigned long long>(game.VBlankCount()));
+                    if (std::FILE* f = _wfopen((paths.user_data / "dumps" / name).c_str(), L"wb")) {
+                        std::fwrite(renderer.GsLocalMemory(), 1, render::gs::GsMemory::kSize, f);
+                        std::fclose(f);
+                    }
+                }
                 // --movie-upscale: the upscaling stage output of the current movie picture as well.
                 if (renderer.MovieUpscaleFactor() > 1 && renderer.CaptureMovieUpscaled(rgba, w, h)) {
                     std::snprintf(name, sizeof(name), "movie_x%d_%06llu.png", renderer.MovieUpscaleFactor(),
@@ -658,7 +787,7 @@ int Run(int argc, char** argv) {
                                         PathToUtf8(log::FilePath()), &window);
             break;
         }
-        pacer.WaitNextFrame();
+        if (!fast) pacer.WaitNextFrame();
         // --stress-host: random main-thread delays, so catch-up batches vary (determinism check).
         if (cl.options.stress_host)
             std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 40)(stress_rng)));
@@ -682,6 +811,10 @@ int Run(int argc, char** argv) {
     }
 
     game.Stop();
+    if (alloc_log != nullptr) {
+        debug::SetAllocHook(nullptr);
+        std::fclose(alloc_log);
+    }
     if (cl.options.dump_audio) {
         // 48 kHz stereo s16 WAV of everything the mixer produced (research only, contains game audio).
         const auto& pcm = mixer.Capture();

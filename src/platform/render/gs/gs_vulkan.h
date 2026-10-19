@@ -4,6 +4,7 @@
 // copy reads it).
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -67,6 +68,8 @@ private:
         Image depth;  // the GS Z buffer drawn with this frame buffer (D32: Z / 2^bits of the Z format)
         VkFramebuffer fb = VK_NULL_HANDLE;
         std::uint32_t fbp = 0, fbw = 0;
+        std::uint32_t psm = 0;  // layout class: 0 (CT32/CT24), kPsmCt16 or kPsmCt16S
+        std::uint64_t last_write = 0;  // draw clock of the last draw into it (the newest data wins)
         int used_height = 0;
     };
     struct Buffer {
@@ -76,12 +79,30 @@ private:
         std::size_t size = 0;
     };
 
+    // Frame buffer shown when no field copy was drawn (PresentSize and CopyPresent use the same one).
+    const Target* DisplayTarget() const;
     bool CreateImage(Image& img, int w, int h, VkImageUsageFlags usage, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM);
     void DestroyImage(Image& img);
     bool EnsureBuffer(Buffer& b, std::size_t size, VkBufferUsageFlags usage);
     void DestroyBuffer(Buffer& b);
     void Transition(VkCommandBuffer cmd, Image& img, VkImageLayout layout);
-    Target* GetTarget(VkCommandBuffer cmd, std::uint32_t fbp, std::uint32_t fbw);
+    Target* GetTarget(VkCommandBuffer cmd, std::uint32_t fbp, std::uint32_t fbw, std::uint32_t psm);
+    // Builds the texture of draw `d` (TEX0 format, address, width) from target `src`, which holds
+    // that memory in another format or width, into feedback_ (gs_conv.comp).
+    void Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawCommand& d);
+    // One conversion (gs_conv.comp) of `src` into feedback_: texels [u0, u1) x [v0, v1) of the
+    // buffer (psm, tbp, tbw), with TEXA (TA0 bits 0-7, AEM 15, TA1 16-23) and an optional CLUT.
+    struct ConvRequest {
+        std::uint32_t psm = 0, tbp = 0, tbw = 0, texa = 0;
+        std::int32_t u0 = 0, v0 = 0, u1 = 0, v1 = 0;
+        const std::array<std::uint32_t, 256>* clut = nullptr;
+    };
+    bool ConvertCore(VkCommandBuffer cmd, int frame, Target& src, const ConvRequest& r);
+    // The newest other view of `t`'s memory (same base page) drawn after `t`, or null.
+    Target* NewerView(const Target& t);
+    // Before a draw into `t`: converts `newer` into it.
+    void Sync(VkCommandBuffer cmd, int frame, Target& t, Target& newer);
+    bool InitConvert(std::string& error);
     VkPipeline GetPipeline(std::uint64_t key);
     void LogOnce(const char* key, const char* text);
 
@@ -97,6 +118,7 @@ private:
 
     Image atlas_;
     Image feedback_;
+    Image date_;  // destination alpha test: copy of the target region a DATE draw covers
     Image present_;
     bool present_valid_ = false;
     int present_w_ = 0, present_h_ = 0;
@@ -106,6 +128,16 @@ private:
     Buffer staging_[kFrames];
     Buffer vertices_[kFrames];
     std::map<std::uint64_t, Target> targets_;
+    std::uint64_t write_clock_ = 0;
+    // Format conversion (gs_conv.comp): layout tables, per-frame descriptor pools and CLUT buffers.
+    static constexpr std::uint32_t kMaxConversions = 512;  // per frame
+    VkDescriptorSetLayout conv_set_layout_ = VK_NULL_HANDLE;
+    VkPipelineLayout conv_layout_ = VK_NULL_HANDLE;
+    VkPipeline conv_pipeline_ = VK_NULL_HANDLE;
+    VkDescriptorPool conv_pool_[kFrames]{};
+    Buffer conv_tables_;
+    Buffer conv_clut_[kFrames];
+    std::uint32_t conv_count_ = 0;
     // Z buffers seen in draws (ZBUF.ZBP -> target key and the ZBUF value): a later draw whose FRAME
     // points at a Z buffer (the game clears Z by drawing into it as a colour buffer) fills the
     // depth image of that target instead.

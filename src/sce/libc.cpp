@@ -224,6 +224,17 @@ u32 strcat(u32 dst, u32 src) {
     return dst;
 }
 
+// newlib strncmp (0x00292AB0): compares at most n characters as unsigned bytes.
+s32 strncmp(u32 a, u32 b, u32 n) {
+    for (u32 i = 0; i < n; ++i) {
+        const u8 ca = GRef<u8>(a + i);
+        const u8 cb = GRef<u8>(b + i);
+        if (ca != cb) return static_cast<s32>(ca) - static_cast<s32>(cb);
+        if (ca == 0) return 0;
+    }
+    return 0;
+}
+
 s32 strcmp(u32 a, u32 b) {
     for (u32 i = 0;; ++i) {
         const u8 ca = GRef<u8>(a + i);
@@ -246,6 +257,16 @@ u32 strlen(u32 s) {
     u32 n = 0;
     while (GRef<u8>(s + n) != 0) ++n;
     return n;
+}
+
+// newlib strchr (0x0029258C): first `c` (as a char) in `s`, the terminator included; 0 if none.
+u32 strchr(u32 s, s32 c) {
+    const u8 ch = static_cast<u8>(c);
+    for (u32 i = 0;; ++i) {
+        const u8 v = GRef<u8>(s + i);
+        if (v == ch) return s + i;
+        if (v == 0) return 0;
+    }
 }
 
 // sinf, cosf, atan2f, atanf: src/sce/libm.cpp (bit-exact newlib translations).

@@ -86,6 +86,16 @@ f32 ApproachValue(f32 value, f32 target, f32 rate) {
     return fpu::Add(target, fpu::Sub(value, target) * rate);
 }
 
+// EE: 0x00226F48
+// Dead (no reference): 1 / powf(|a - b| x 1000 (k 0x00410060), (1/60) (k 0x0041005C) / t).
+// fpucheck: verified 1
+f32 func_00226F48(f32 a, f32 b, f32 t) {
+    const f32 d = std::fabs(fpu::Sub(a, b));
+    const f32 e = fpu::Div(K(0x0041005C), t);
+    const f32 r = ee::powf(d * K(0x00410060), e);
+    return fpu::Div(1.0f, r);
+}
+
 // EE: 0x00226F98
 // Overlay levels: [0] towards 1 when `master` is set, [1..6] towards 1 for each set bit of `tabs`.
 void UpdateMenuTabLevels(u32 levels, s16 master, u32 tabs) {
@@ -1549,6 +1559,23 @@ void InitMenuTree(u32 tree, u32 count, u32 cols, u32 conns, u32 masks, u32 paren
         }
     }
     ResetMenuTree(tree);
+}
+
+// EE: 0x0022AED0
+// Dead (no reference): menu tree column `col` (below the column count +4): column 0 closes the open
+// column (state 3) and clears the active index; another column opens (state 1) only when none is
+// active.
+void func_0022AED0(u32 tree, u32 col) {
+    if (!(col < GRef<u32>(tree + 4))) return;
+    const s32 active = GRef<s32>(tree);
+    if (col == 0) {
+        if (active != 0) SetListWidgetState(tree + static_cast<u32>(active) * 0x18 + 8, 3);
+        GRef<u32>(tree) = 0;
+        return;
+    }
+    if (active != 0) return;
+    SetListWidgetState(tree + col * 0x18 + 8, 1);
+    GRef<u32>(tree) = col;
 }
 
 // EE: 0x0022AF60

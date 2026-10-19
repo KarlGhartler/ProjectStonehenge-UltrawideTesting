@@ -3,6 +3,8 @@
 // (0x0033D7C0 + p * 0xC0) and the enable flags. docs/subsystems/sound.md "Engine sound".
 #include "game/game.h"
 
+#include "common/ee_math.h"
+
 namespace ac04::game {
 
 using guest::GRef;
@@ -169,5 +171,9 @@ void func_00216728() {
 void func_00216790(u32 mode) {
     func_00216520(mode);
 }
+
+// EE: 0x002159C0
+// Dead (no callers): x x 10 as an integer (curve index helper).
+s32 func_002159C0(f32 x) { return fpu::FloatToInt(x * 10.0f); }
 
 }  // namespace ac04::game

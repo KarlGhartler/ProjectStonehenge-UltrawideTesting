@@ -23,6 +23,7 @@ s32 sceGsExecLoadImage(u32 lp, u32 srcaddr);
 u32 sceDmaGetChan(s32 id);  // guest address of the channel's register block
 s32 sceDmaReset(s32 mode);
 s32 sceDmaSend(u32 chan, u32 tag);
+s32 sceDmaSync(u32 chan, s32 mode, s32 timeout);
 
 // ---- libmpeg (on libmpeg2; sceMpeg* pointers are guest addresses) ---------------------------
 void sceMpegInit();                                  // 0x00270870
@@ -48,6 +49,7 @@ void sceVu0ApplyMatrix(u32 v0, u32 m, u32 v1);
 void sceVu0InversMatrix(u32 m0, u32 m1);
 void sceVu0UnitMatrix(u32 m);
 void sceVu0ScaleVector(u32 v0, u32 v1, f32 t);
+void sceVu0ScaleVectorXYZ(u32 v0, u32 v1, f32 t);
 void sceVu0CopyVector(u32 v0, u32 v1);
 void sceVu0CopyMatrix(u32 m0, u32 m1);
 void sceVu0InterVector(u32 v0, u32 v1, u32 v2, f32 t);
@@ -58,11 +60,16 @@ void sceVu0ViewScreenMatrix(u32 m, f32 scrz, f32 ax, f32 ay, f32 cx, f32 cy, f32
 void sceVu0RotMatrixZ(u32 m0, u32 m1, f32 rz);
 void sceVu0RotMatrixX(u32 m0, u32 m1, f32 rx);
 void sceVu0RotMatrixY(u32 m0, u32 m1, f32 ry);
+void sceVu0RotMatrix(u32 m0, u32 m1, u32 rot);
+void sceVu0CameraMatrix(u32 m, u32 p, u32 zd, u32 yd);
+void sceVu0NormalLightMatrix(u32 m, u32 l0, u32 l1, u32 l2);
+void sceVu0LightColorMatrix(u32 m, u32 c0, u32 c1, u32 c2, u32 a);
 void sceVu0AddVector(u32 out, u32 a, u32 b);
 void sceVu0SubVector(u32 out, u32 a, u32 b);
 void sceVu0MulVector(u32 out, u32 a, u32 b);
 void sceVu0FTOI4Vector(u32 out, u32 v);
 void sceVu0FTOI0Vector(u32 out, u32 v);
+void sceVu0ITOF0Vector(u32 out, u32 v);
 void sceVu0Normalize(u32 out, u32 v);
 void sceVu0RotTransPers(u32 out, u32 m, u32 v, s32 mode);
 void sceVu0DropShadowMatrix(u32 m, u32 lp, f32 a, f32 b, f32 c, s32 mode);
@@ -91,6 +98,7 @@ s32 sceSifCallRpc(u32 client, u32 fno, u32 mode, u32 send, s32 ssize, u32 receiv
 s32 sceSifCheckStatRpc(u32 rpc_data);
 s32 sceSifInitIopHeap();
 s32 sceSifLoadModule(u32 filename, s32 args, u32 argp);
+s32 sceSifLoadIopHeap(u32 filename, u32 addr);
 s32 sceSifSyncIop();
 s32 sceSifRebootIop(u32 imgname);
 
@@ -102,6 +110,7 @@ s32 sceClose(s32 fd);
 s32 sceLseek(s32 fd, s32 offset, s32 whence);
 s32 sceRead(s32 fd, u32 buf, s32 nbyte);
 s32 sceWrite(s32 fd, u32 buf, s32 nbyte);
+s32 sceIoctl(s32 fd, s32 request, u32 arg);  // stub: reached only from dead game code
 s32 sceIoctl2(s32 fd, s32 request, u32 arg, u32 arglen, u32 buf, u32 buflen);  // hypothesis name
 s32 sceRemove(u32 filename);                                                   // hypothesis name
 s32 sceDopen(u32 dirname);                                                     // hypothesis name
@@ -109,6 +118,14 @@ s32 sceDclose(s32 fd);                                                         /
 s32 sceDread(s32 fd, u32 buf);                                                 // hypothesis name
 s32 sceGetstat(u32 name, u32 buf);                                             // hypothesis name
 s32 sceDevctl(u32 devname, s32 cmd, u32 arg, u32 arglen, u32 buf, u32 buflen); // hypothesis name
+s32 sceMkdir(u32 name, s32 mode);                                              // hypothesis name
+s32 sceRmdir(u32 name);                                                        // hypothesis name
+s32 sceFormat(u32 dev, u32 blockdev, u32 arg, s32 arglen);                     // hypothesis name
+s32 sceChstat(u32 name, u32 stat, u32 mask);                                   // hypothesis name
+s32 sceRename(u32 oldname, u32 newname);                                       // hypothesis name
+s32 sceSync(u32 dev, s32 flag);                                                // hypothesis name
+s32 sceMount(u32 fsname, u32 devname, s32 flag, u32 arg, s32 arglen);          // hypothesis name
+s32 sceUmount(u32 fsname);                                                     // hypothesis name
 
 // ---- libpad -----------------------------------------------------------------------------------
 s32 scePadInit(s32 mode);
@@ -138,6 +155,15 @@ s32 sceMcFlush(s32 fd);
 s32 sceMcMkdir(s32 port, s32 slot, u32 name);
 s32 sceMcDelete(s32 port, s32 slot, u32 name);
 s32 sceMcFormat(s32 port, s32 slot);
+s32 sceMcUnformat(s32 port, s32 slot);                    // stub: reached only from dead game code
+s32 sceMcChdir(s32 port, s32 slot, u32 path, u32 pwd);    // stub: reached only from dead game code
+
+// ---- libpc (performance counters; reached only from dead game code: stubs) -------------------
+void scePcStart(s32 control, s32 counter0, s32 counter1);
+void scePcStop();
+// libpc.h inline functions (mfpc PCR0 / PCR1).
+s32 scePcGetCounter0();
+s32 scePcGetCounter1();
 
 // ---- libcdvd ----------------------------------------------------------------------------------
 s32 sceCdSearchFile(u32 fp, u32 name);
@@ -149,6 +175,8 @@ s32 sceCdRead(u32 lsn, u32 sectors, u32 buf, u32 mode);
 s32 sceCdReadIOPm(u32 lsn, u32 sectors, u32 buf, u32 mode);  // hypothesis name
 s32 sceCdGetToc(u32 toc);
 s32 sceCdSeek(u32 lsn);
+s32 sceCdStatus();
+s32 sceCdGetError();
 s32 sceCdGetDiskType();
 s32 sceCdBreak();
 s32 sceCdPOffCallback(u32 func, u32 addr);  // hypothesis name
@@ -173,10 +201,13 @@ void srand(u32 seed);
 s32 rand();
 u32 strcat(u32 dst, u32 src);
 s32 strcmp(u32 a, u32 b);
+s32 strncmp(u32 a, u32 b, u32 n);
 u32 strcpy(u32 dst, u32 src);
 u32 strlen(u32 s);
+u32 strchr(u32 s, s32 c);
 f32 sinf(f32 x);
 f32 cosf(f32 x);
+f32 tanf(f32 x);
 f32 atanf(f32 x);
 f32 asinf(f32 x);
 f32 acosf(f32 x);

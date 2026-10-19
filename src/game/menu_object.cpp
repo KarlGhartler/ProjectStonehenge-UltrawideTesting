@@ -20,6 +20,7 @@
 #include "common/ee_math.h"
 #include "common/guest_call.h"
 #include "common/guest_stack.h"
+#include "game/game_flight.h"
 #include "game/main_context.h"
 #include "sce/sce.h"
 
@@ -248,6 +249,21 @@ void SetMenuObjectPart(f32 v, u32 obj, s32 channel) {
     if (GRef<u32>(obj + 0x94) != 0) SetModelPartValue(v, GRef<u32>(obj + 0x94), channel);
 }
 
+// EE: 0x0014B110
+// Dead (no reference): animation track `n` time of the model (0 without a model).
+f32 func_0014B110(u32 obj, s32 n) {
+    const u32 inst = GRef<u32>(obj + 0x90);
+    if (inst == 0) return 0.0f;
+    return func_00141000(inst, n);
+}
+
+// EE: 0x0014B148
+// Dead (no reference): shows/hides node id `id` of the model (func_00141040).
+void func_0014B148(u32 obj, s32 id, s32 on) {
+    const u32 inst = GRef<u32>(obj + 0x90);
+    if (inst != 0) func_00141040(inst, id, on);
+}
+
 // EE: 0x0014B168
 // Node matrices of the model and the glow model from the identity (only dirty nodes: flag 1).
 void UpdateMenuObject(u32 obj) {
@@ -349,6 +365,17 @@ void WriteMenuObjectCamera(u32 obj, u32 cam, u32 list, s32 index, u32 vec) {
     EndPacket(list, index, p);
 }
 
+// EE: 0x0014B568
+// Dead (no reference): alpha (+0xAC).
+void SetMenuObjectAlpha(u32 obj, u8 alpha) { GRef<u8>(obj + 0xAC) = alpha; }
+
+// EE: 0x0014B570
+// Dead (no reference): clipping on (`on` != 0 clears flag bit 0) or off (sets it).
+void SetMenuObjectClipping(u32 obj, s32 on) {
+    if (on == 0) GRef<u32>(obj + 0xB0) |= 1;
+    else GRef<u32>(obj + 0xB0) &= 0xFFFFFFFEu;
+}
+
 // EE: 0x0014B5A0
 // Draws the object into bucket `index` of `list`: TEST (Z test 0x58... A+D) and the model's
 // opaque parts (mode 8/0xC by the clipping flag); mode 2 also ALPHA (alpha +0xAC) and the
@@ -395,7 +422,7 @@ void DrawMenuObject(u32 obj, u32 cam, u32 list, s32 index, u32 effect_list) {
     Put(p, 3, 0);
     EndPacket(list, index, p + 0x10);
     if (GRef<u32>(obj + 0xA4) != 0) {
-        // Effect list (never set in S4; DrawSpecialObject belongs to S5f).
+        // Effect list (never set in S4).
         p = BeginPacket();
         Put(p, 0, 0x10000002);
         Put(p, 1, 0);
@@ -424,7 +451,7 @@ void DrawMenuObject(u32 obj, u32 cam, u32 list, s32 index, u32 effect_list) {
                 sceVu0ApplyMatrix(axis, rm, axis);
                 func_001456F8(fx + 0x20, axis);
                 sceVu0ApplyMatrix(fx, sm, origin);
-                guest::CallGuest(0x001E0A98, cam, effect_list, fx);
+                func_001E0A98(cam, effect_list, fx);
                 inst = GRef<u32>(obj + 0x90);
                 if (GRef<u32>(GRef<u32>(inst + 0x30) + 0xC) <= i) break;
             }
@@ -441,8 +468,8 @@ void DrawMenuObject(u32 obj, u32 cam, u32 list, s32 index, u32 effect_list) {
         EndPacket(effect_list, 0x3FF, p + 0x30);
     }
     if (GRef<s32>(obj + 0x9C) == 2 && GRef<u32>(obj + 0x94) != 0) {
-        // Glow pass (program D): the glow model is never bound in S4.
-        guest::CallGuest(0x00142460, GRef<u32>(obj + 0x94), cam, list, index, full, 0x2500u, 0x2A00u, rot);
+        // Glow pass (program D); the 9th argument is 0x20 (stored to the stack in the call's delay slot).
+        func_00142460(GRef<u32>(obj + 0x94), cam, list, index, full, 0x2500, 0x2A00, rot, 0x20);
     }
 }
 

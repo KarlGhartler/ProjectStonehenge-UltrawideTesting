@@ -124,6 +124,12 @@ void sceVu0ScaleVector(u32 v0, u32 v1, f32 t) {
     StoreV(v0, {vu0::Mul(a.x, t), vu0::Mul(a.y, t), vu0::Mul(a.z, t), vu0::Mul(a.w, t)});
 }
 
+// PS2 (0x00263AA0): v0.xyz = v1.xyz * t, v0.w = v1.w (vmulx.xyz).
+void sceVu0ScaleVectorXYZ(u32 v0, u32 v1, f32 t) {
+    const vu0::Vec4 a = LoadV(v1);
+    StoreV(v0, {vu0::Mul(a.x, t), vu0::Mul(a.y, t), vu0::Mul(a.z, t), a.w});
+}
+
 // PS2 (0x002631B8): v0 = v1 (128-bit copy).
 void sceVu0CopyVector(u32 v0, u32 v1) {
     for (u32 i = 0; i < 16; i += 4) GRef<u32>(v0 + i) = GRef<u32>(v1 + i);
@@ -253,6 +259,12 @@ void sceVu0FTOI0Vector(u32 out, u32 v) {
     GRef<s32>(out + 12) = FloatToInt0(x.w);
 }
 
+// PS2 (0x00263220): vitof0.xyzw.
+void sceVu0ITOF0Vector(u32 out, u32 v) {
+    StoreV(out, {vu0::IntToFloat(GRef<s32>(v)), vu0::IntToFloat(GRef<s32>(v + 4)), vu0::IntToFloat(GRef<s32>(v + 8)),
+                 vu0::IntToFloat(GRef<s32>(v + 12))});
+}
+
 // PS2 (0x00262FD0): out = v.xyz / |v.xyz|, out.w = 0. s = x^2 + y^2 + z^2 (vmul.xyz, vaddy.x,
 // vaddz.x); t = 0 + sqrt(s) (vaddq.x); Q = 1 / t (vdiv vf0.w); out.xyz = v.xyz * Q.
 void sceVu0Normalize(u32 out, u32 v) {
@@ -330,4 +342,51 @@ void sceVu0OuterProduct(u32 out, u32 a, u32 b) {
 f32 sceVu0InnerProduct(u32 a, u32 b) {
     const vu0::Vec4 x = LoadV(a), y = LoadV(b);
     return vu0::Add(vu0::Add(vu0::Mul(x.x, y.x), vu0::Mul(x.y, y.y)), vu0::Mul(x.z, y.z));
+}
+
+// PS2 (0x002634C8): m0 = RotX(r.x) * RotY(r.y) * RotZ(r.z) * m1 (sceVu0RotMatrixZ, then Y, then X).
+void sceVu0RotMatrix(u32 m0, u32 m1, u32 rot) {
+    sceVu0RotMatrixZ(m0, m1, GRef<f32>(rot + 8));
+    sceVu0RotMatrixY(m0, m0, GRef<f32>(rot + 4));
+    sceVu0RotMatrixX(m0, m0, GRef<f32>(rot));
+}
+
+// PS2 (0x00263540): world-to-camera matrix from the camera position p, the z direction zd and the
+// y direction yd: on the stack a unit matrix w gets w0 = normalize(yd x zd), w2 = normalize(zd),
+// w1 = w2 x w0, then w is translated by p and m = w inverted.
+void sceVu0CameraMatrix(u32 m, u32 p, u32 zd, u32 yd) {
+    ac04::guest::GuestFrame frame(0x50);
+    const u32 w = frame.Address(), t = w + 0x40;
+    sceVu0UnitMatrix(w);
+    sceVu0OuterProduct(t, yd, zd);
+    sceVu0Normalize(w, t);
+    sceVu0Normalize(w + 0x20, zd);
+    sceVu0OuterProduct(w + 0x10, w + 0x20, w);
+    sceVu0TransMatrix(w, w, p);
+    sceVu0InversMatrix(m, w);
+}
+
+// PS2 (0x002635F0): normal light matrix: rows normalize(-l0), normalize(-l1), normalize(-l2) (each
+// scaled by -1.0 on the stack first), row 3 (0, 0, 0, 1), then transposed in place.
+void sceVu0NormalLightMatrix(u32 m, u32 l0, u32 l1, u32 l2) {
+    ac04::guest::GuestFrame frame(0x10);
+    const u32 t = frame.Address();
+    const u32 l[3] = {l0, l1, l2};
+    for (u32 k = 0; k < 3; ++k) {
+        sceVu0ScaleVector(t, l[k], -1.0f);
+        sceVu0Normalize(m + 0x10 * k, t);
+    }
+    GRef<f32>(m + 0x30) = 0.0f;
+    GRef<f32>(m + 0x3C) = 1.0f;
+    GRef<f32>(m + 0x38) = 0.0f;
+    GRef<f32>(m + 0x34) = 0.0f;
+    sceVu0TransposeMatrix(m, m);
+}
+
+// PS2 (0x002636B0): light colour matrix: columns c0, c1, c2 and the ambient a (vector copies).
+void sceVu0LightColorMatrix(u32 m, u32 c0, u32 c1, u32 c2, u32 a) {
+    sceVu0CopyVector(m, c0);
+    sceVu0CopyVector(m + 0x10, c1);
+    sceVu0CopyVector(m + 0x20, c2);
+    sceVu0CopyVector(m + 0x30, a);
 }

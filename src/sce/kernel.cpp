@@ -83,6 +83,10 @@ s32 sceLseek(s32, s32, s32) {
     AC04_SCE_STUB("sceLseek");
     return -1;
 }
+s32 sceIoctl(s32, s32, u32) {
+    AC04_SCE_STUB("sceIoctl");
+    return -1;
+}
 s32 sceRead(s32, u32, s32) {
     AC04_SCE_STUB("sceRead");
     return -1;
@@ -118,6 +122,55 @@ s32 sceGetstat(u32, u32) {
 s32 sceDevctl(u32, s32, u32, u32, u32, u32) {
     AC04_SCE_STUB("sceDevctl");
     return -1;
+}
+// RPC function numbers checked in the executable: sceMkdir 0x00268410 (7), sceRmdir 0x002685C0 (8),
+// sceFormat 0x002685E0 (0xE), sceChstat 0x00268E90 (0xD), sceRename 0x002690D0 (0x11), sceSync
+// 0x002692E0 (0x13), sceMount 0x00269478 (0x14), sceUmount 0x002696E8 (0x15). Reached only from the
+// HDD module (dead in this build).
+s32 sceMkdir(u32, s32) {
+    AC04_SCE_STUB("sceMkdir");
+    return -1;
+}
+s32 sceRmdir(u32) {
+    AC04_SCE_STUB("sceRmdir");
+    return -1;
+}
+s32 sceFormat(u32, u32, u32, s32) {
+    AC04_SCE_STUB("sceFormat");
+    return -1;
+}
+s32 sceChstat(u32, u32, u32) {
+    AC04_SCE_STUB("sceChstat");
+    return -1;
+}
+s32 sceRename(u32, u32) {
+    AC04_SCE_STUB("sceRename");
+    return -1;
+}
+s32 sceSync(u32, s32) {
+    AC04_SCE_STUB("sceSync");
+    return -1;
+}
+s32 sceMount(u32, u32, s32, u32, s32) {
+    AC04_SCE_STUB("sceMount");
+    return -1;
+}
+s32 sceUmount(u32) {
+    AC04_SCE_STUB("sceUmount");
+    return -1;
+}
+
+// libpc: the EE performance counters are not modelled. Reached only from the dead C_PCCON profiler
+// (src/game/perf_counter.cpp); the counters read as 0.
+void scePcStart(s32, s32, s32) { AC04_SCE_STUB("scePcStart"); }
+void scePcStop() { AC04_SCE_STUB("scePcStop"); }
+s32 scePcGetCounter0() {
+    AC04_SCE_STUB("scePcGetCounter0");
+    return 0;
+}
+s32 scePcGetCounter1() {
+    AC04_SCE_STUB("scePcGetCounter1");
+    return 0;
 }
 
 // ---- libmc ------------------------------------------------------------------------------------
@@ -217,6 +270,13 @@ s32 sceSifLoadModule(u32 filename, s32, u32) {
     static s32 next_id = 0x20;
     AC04_LOG_INFO("sif", "IOP module %s replaced by the port", ac04::guest::GStr(filename).c_str());
     return next_id++;
+}
+
+// PS2: loads a file into IOP memory at `addr`. Reached only from the dead loader 0x00215320:
+// logged once, -1.
+s32 sceSifLoadIopHeap(u32, u32) {
+    AC04_SCE_STUB("sceSifLoadIopHeap");
+    return -1;
 }
 
 // PS2: 1 once the IOP finished rebooting.

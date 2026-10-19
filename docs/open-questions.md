@@ -39,6 +39,7 @@ Questions that are still open. Checks that need PCSX2 have their steps in `pcsx2
 
 | Question | Answer | Doc |
 |---|---|---|
+| Effect trail `func_001F3D38` glow-alpha division trap | no trap in practice: the divisor is span x (span x 4) (stack words 0x78 / 0xD8, re-read while translating the dead copy 0x001F5280), not span x 2 - n; span is 6 for every kind, so it is never 0. The earlier translation divided by span x 2 - n and was corrected (S8, 2026-10-19) | `src/game/effect_draw.cpp` |
 | SOUND id-6 reply (0x00410D08, SPU limit for bank registration) | min(ESA0, ESA1) read after the command with libsd's work-area table; core 1 mode 2 = 0x001FE0C0, so the reply is core 0's 0x001DFFF0 (PCSX2 SPU2 state; the old 0x001DB7C0 was core 0 in mode 3), 2026-10-16 | `port/validation.md` S4-7 |
 | VAG.IRX mode 4 vs. mode 8, `VagMain` ring hand-off, fno 1 command fields | command 1 (mode 4) streams while the EE keeps reading; command 2 (mode 8) = all data already read, the channel ends (0x40) or chains (0x80); a ring segment is handed back when 0x10000 bytes per voice are played; command fields {id, slot, bytes per voice, voice count, frequency word} (S2a, 2026-10-14) | `subsystems/iop-sound.md` VAG.IRX |
 | SOUND voice record offsets | voice byte +0x0E, modify flags +0x10 (corrected from +0x12 / +0x14, S2a) | `subsystems/iop-sound.md` |

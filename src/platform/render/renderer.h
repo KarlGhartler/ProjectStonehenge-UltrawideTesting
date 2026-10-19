@@ -51,6 +51,13 @@ public:
     // Processes the steps' GIF data; the emptied step buffers go to `pool` (kept for reuse).
     void SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps, std::vector<std::vector<gs::SourceMark>>& marks,
                        std::vector<std::vector<uint8_t>>& pool);
+    // Off: submitted steps update GS registers and local memory but produce no draws (--fast-until:
+    // steps that are never shown).
+    void SetGsDrawsEnabled(bool on) { gs_state_.SetDrawsEnabled(on); }
+    // GS local memory (4 MiB, gs_memory.h layout) for development dumps (--dump-vram).
+    const std::uint8_t* GsLocalMemory() const { return gs_state_.Memory().Data(); }
+    // Loads a 4 MiB GS memory image (--play-gsdump).
+    void LoadGsLocalMemory(const std::uint8_t* image) { gs_state_.Memory().LoadImage(image); }
 
     // Display registers of the last sceGsPutDispEnv (DISPFB2, DISPLAY2), taken with the GS steps.
     void SetDisplay(uint64_t dispfb, uint64_t display) { gs_backend_.SetDisplay(dispfb, display); }

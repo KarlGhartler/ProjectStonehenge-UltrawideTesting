@@ -91,7 +91,7 @@ Scan of every stretch longer than 16 bytes between Ghidra function bodies in gam
 | What | Addresses | Why unreachable |
 |---|---|---|
 | **HDD module init** | `func_00259910` → `InitHddModule` (H) 0x00259938 (thread/semaphore setup) → worker thread `func_0025E218` → dispatcher `func_0025BF20` | **no caller anywhere** (full reachability pass). The boot scene clears ctx flag 0x80000 ("HDD present") and writes 3 to HDD context +0x4398; nothing in game code sets 0x80000 or the "HDD usable" byte +0x4399. So the HDD features are **unreachable on any hardware in this build**, not only without an HDD (`../subsystems/save.md`) |
-| HDD install / HDD data path | `HddInstallDataCdp` (H) 0x0025A090, HDD read path 0x00215070, `EnterHddErrorScene` (H) 0x002616B8 → scene 7 | HDD module never initialised; the port reads only the ISO |
+| HDD install / HDD data path | `HddInstallDataCdp` (H) 0x0025A090, `EnterHddErrorScene` (H) 0x002616B8 → scene 7 (0x00215070, listed here before, is the unreferenced `host0:` read request of section 2, not an HDD path) | HDD module never initialised; the port reads only the ISO |
 | save/HDD module threads | `func_0025C090` → job worker 0x0025BF70, power-off handler 0x0025C108 | created only by the uncalled HDD module init (confirmed in PCSX2 session 6, `../pcsx2/sessions-02.md`) |
 | scene 7 (HDD read error) | 0x00261680 | only after an HDD read failure (`../subsystems/results-startup.md`) |
 | scene 7 message-window widget copy (resources embedded at 0x003F8730, `../subsystems/results-startup.md`) | 0x0024D470–0x0024EC30 | HDD only |
@@ -120,3 +120,29 @@ Scan of every stretch longer than 16 bytes between Ghidra function bodies in gam
 - **Owner decision (2026-10-10):** the "keep all original code" principle covers **game code only** (0x001000D8–0x002616E7). Sony SDK and C runtime code is not translated: `src/sce/` (and the host C/C++ runtime) implements what the game calls.
 - SDK functions reached **only from dead or runtime-unreachable game code** (e.g. the HDD path: `sceDevctl`, `sceDopen`, `sceDread`, `sceRemove`, `sceCdPowerOff`, the thread/semaphore calls of the HDD module) get **stubs that log the call once and return an error**. The game code that calls them is still translated and stays unreachable by default.
 - Uncalled SDK code (the 92 syscall stubs and the ~265 zero-reference library functions above) is not implemented at all.
+
+## Sequence character engine: morph parts (2026-10-18)
+
+- `func_00224848` (skinning of part type 3, VU0 entries 0x06 / 0x0E / 0x16) is translated but reached only for parts of type 3, which only the dead `func_00223E70` / `func_00223F58` set (their key-shape pointers part +0x118..+0x124 are written nowhere else). Kept unreachable as on the PS2.
+
+## S8 translation (2026-10-19)
+
+Every function of slice S8 is translated (`tools/research/slices.py --list S8` is empty); the default build reaches none of them, as on the PS2. Where they live:
+
+| Area | Functions | File |
+|---|---|---|
+| scenes 1 and 3 | `SceneMenuEntry` 0x00211C58, `SceneMovie` 0x00211CA8 and its subs `SceneMovieSetup` / `SceneMovieStart` / `SceneMoviePlay` / `SceneMovieEnd`, 0x00211C88, `SetMovieRequestId` 0x002124B8, `GetMoviePicturesDrawn` 0x002124E8 | `src/game/movie.cpp` (`SceneStub` removed from `scene.cpp`) |
+| `C_PCCON` profiler | `InitPcCon` 0x00108400, `StartPcCon`, `StopPcCon`, `GetPcConTime` (counter / 4.8e6), `GetPcConCount`, `SetPcCon` 0x001086D8 | `src/game/perf_counter.cpp`; libpc (`scePcStart`, `scePcStop`, the `mfpc` reads as `scePcGetCounter0/1`) are logging stubs in `src/sce/kernel.cpp` |
+| host-file debug I/O | GIM dump 0x00106810, `host0:` read request 0x00215070 (6-state machine: open `O_NOWAIT`, seek, read when `sceIoctl(1)` reports idle, close, SIF DMA) | `render2d.cpp`, `cd_file.cpp`; `sceIoctl` added as a logging stub |
+| save layer | `UnformatMcCard` 0x0025EB58, `ChangeMcDir` 0x0025F170, unformat-then-probe 0x0025F820 | `save_mc.cpp`; `sceMcUnformat` / `sceMcChdir` are logging stubs in `src/sce/libmc.cpp` |
+| core | image upload 0x00100CB8, frames -> min/sec/hundredths 0x00100DF0, camera helpers (`SetCameraScreenCentre`, `SetCameraScale`, `GetCameraDiagonalFov`, 0x00103150), segment/sphere tests 0x001034A0 / 0x00103660, the `acosf` timing loops 0x00103AF0 / 0x00103B50 / 0x00103BA8, the empty VIF1 packet flush 0x00103CC8 | `boot.cpp`, `camera.cpp`, `math.cpp`, `display.cpp` |
+| render / flight | GIM / VIF0 / matrix helpers, noise fractal sum and double-precision product (0x00137778 / 0x00137868), segment vs. model strips 0x001400A0, model mask render 0x00140998, soft drop shadow 0x001410D0 | `model.cpp`, `world_load.cpp`, `world_draw.cpp`, `sky.cpp` |
+| effects | strip / fan builders 0x001D8A98-0x001D98D8, pool reset 0x001D8910, near/far segment clip 0x001DA7E0, outcode 0x001DA998, the dead drawer variants below | `effect_draw.cpp`, `effect_pools.cpp`, `effect_spawn.cpp`, `effect_update.cpp` |
+| menus / text / radio / replay | menu-object helpers, mission-table byte 0x00226348, centred sprite 0x0022A4D0, default player setup 0x0022D030, terrain height sample 0x0023ECD8, old message-window widget functions, `GetMessageWidth` 0x00251FF8, radio accessors, replay frame skipper 0x0016EA90 | `menu_object.cpp`, `briefing_page.cpp`, `mission_title_page.cpp`, `menu.cpp`, `menu_widgets.cpp`, `hdd.cpp`, `message_window.cpp`, `radio_chatter.cpp`, `mission_misc.cpp`, `replay.cpp` |
+
+Findings on the way:
+- **Dead drawer variants.** `func_001F5280` is a copy of the live blast-ring drawer `func_001F3D38` (glow puffs x16 instead of x14, smoke corner offsets multiplied as sn x (size x scale)). `func_001FAD90` is a ground-hugging copy of `func_001F93E0` (puff y from the terrain height `func_0013E338`, size x (2 - radius), a simpler near fade, alpha threshold 5, pass-1 V offset from the halfword 0x00410C26). `func_002068E0` draws a debug column of 32 puffs with a marker sprite each; `func_00207268` an older smoke trail (quads between the halfway points of a 64-entry point ring, plus five head segments on the record's last tick).
+- **Original bugs kept.** `func_002068E0` uses the visibility flag and depth of the previous point (GCC loaded them before the inline VU0 block that writes them, which lacks a memory clobber); for point 0 these are stack words as found. `func_001D9278` / `func_001D95A8` read their four corner offsets from the bottom of their own stack frame, which they never write. The strip counts of `func_001D8A98` / `func_001D98D8` use `>> 4` / `>> 3` where a strip is 64 / 32 pixels, so the tails are zero-width strips.
+- **Live-code fix.** Re-reading `func_001F3D38` against its copy showed that its glow alpha divides by span x (span x 4), not by span x 2 - n as first translated; corrected in `effect_draw.cpp`, and the open question about a division trap there is closed (span is never 0).
+- Not done: the debug-layer menu entry to enter scenes 1 and 3 (slice plan S8, "Debug layer"): port-side code, left for the owner's go-ahead.
+

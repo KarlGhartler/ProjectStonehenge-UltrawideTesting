@@ -17,6 +17,7 @@
 
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "game/flight_common.h"
 
 namespace ac04::game {
 
@@ -192,6 +193,71 @@ void UpdateMessageWindow(u32 win) {
     }
     GRef<s16>(win + 0x10) = static_cast<s16>(GRef<s16>(win + 0x10) + 1);
     if (shown < GRef<s16>(win + 0x3C)) GRef<s16>(win + 0x14) = GRef<s16>(win + 0x3C);
+}
+
+// EE: 0x0024F360
+// Dead (no reference): draws message `line` (+4 message id, only when below the window's message
+// count +0xB) as one sprite of the uploaded glyph strip: TEXFLUSH, TEST_2 0x30003, ALPHA_2 0x44,
+// FBA_2 0, then PRIM 0x356 / TEX0_2 (glyph TBP/TBW/PSM, CLUT) / RGBAQ (+0x1C) / UV / XYZ2 at
+// (x +0x34, y +0x36 + row * 20) with the message width (16-pixel-high strip). Words the
+// original leaves unwritten (GIFtag register high words, NOP and UV high words) stay unwritten.
+void func_0024F360(u32 win, u32 list, s32 index, u32 line, s32 row) {
+    const s32 msg = GRef<s16>(line + 4);
+    if (!(msg < GRef<s8>(win + 0xB))) return;
+    UploadMessageGlyphs(list, 0, msg, GRef<u16>(win + 4));
+    const s32 width = GetMessageWidth(GRef<s16>(line + 4));
+    const u32 p = BeginPacket();
+    Put(p, 0x00, 0x10000002);
+    Put(p, 0x01, 0);
+    Put(p, 0x02, 0);
+    Put(p, 0x03, 0x50000002);
+    Put(p, 0x04, 0x8001);
+    Put(p, 0x05, 0x10000000);
+    Put(p, 0x06, 0xE);
+    Put(p, 0x0A, 0x3F);
+    Put(p, 0x0C, 0x10000004);
+    Put(p, 0x0D, 0);
+    Put(p, 0x0E, 0x11000000);
+    Put(p, 0x0F, 0x50000004);
+    Put(p, 0x10, 0x8003);
+    Put(p, 0x12, 0xE);
+    Put(p, 0x11, 0x10000000);
+    Put(p, 0x14, 0x30003);
+    Put(p, 0x16, 0x48);
+    Put(p, 0x18, 0x44);
+    Put(p, 0x1A, 0x43);
+    Put(p, 0x19, 0);
+    Put(p, 0x1B, 0);
+    Put(p, 0x1C, 0);
+    Put(p, 0x1E, 0x4B);
+    Put(p, 0x20, 0x10000005);
+    Put(p, 0x21, 0);
+    Put(p, 0x22, 0);
+    Put(p, 0x23, 0x50000005);
+    Put(p, 0x24, 0x8001);
+    Put(p, 0x25, 0x84000000);
+    Put(p, 0x26, 0x4343F170);
+    GRef<u64>(p + 0xA0) = 0x356;
+    Put(p, 0x2A, static_cast<u32>(GRef<s16>(win + 4)) | 0x80000000u |
+                     (static_cast<u32>(GRef<s8>(win + 7)) << 20 | static_cast<u32>(GRef<s8>(win + 6)) << 14) | 0x28000000u);
+    Put(p, 0x2B, static_cast<u32>(GRef<s16>(win + 8)) << 5 | 0x20000000u | (static_cast<u32>(GRef<s8>(win + 0xA)) << 19 | 6));
+    Put(p, 0x2C, GRef<u8>(win + 0x1C) | static_cast<u32>(GRef<u8>(win + 0x1F)) << 24 |
+                     (static_cast<u32>(GRef<u8>(win + 0x1E)) << 16 | static_cast<u32>(GRef<u8>(win + 0x1D)) << 8));
+    GRef<f32>(p + 0xB4) = 1.0f;
+    Put(p, 0x30, 0x80008);
+    const s32 ly = row * 0x14 + 0x720;
+    const s32 y = GRef<s16>(win + 0x36);
+    const s32 x = GRef<s16>(win + 0x34);
+    Put(p, 0x33, 0);
+    Put(p, 0x32, static_cast<u32>(x + 0x6CE) << 4 | static_cast<u32>(y + ly) << 20);
+    Put(p, 0x34, static_cast<u32>(width) << 4 | 0x1080008u);
+    Put(p, 0x36, static_cast<u32>(x + width + 0x6CE) << 4 | static_cast<u32>(y + 0x10 + ly) << 20);
+    Put(p, 0x37, 0);
+    Put(p, 0x38, 0x10000000);
+    Put(p, 0x39, 0);
+    Put(p, 0x3A, 0);
+    Put(p, 0x3B, 0x11000000);
+    EndPacket(list, index, p + 0xF0);
 }
 
 // EE: 0x0024F698
@@ -625,6 +691,20 @@ s32 GetGlyphStringLength(u32 s) {
 // EE: 0x00251FD0
 s32 GetMessageLength(u32 id) { return GetGlyphStringLength(GetMessage(id)); }
 
+// EE: 0x00251FF8
+// Width in pixels of message `id`: the sum of its glyph widths.
+s32 GetMessageWidth(s32 id) {
+    u32 s = GetMessage(static_cast<u32>(id));
+    s32 n = GetGlyphStringLength(GetMessage(static_cast<u32>(id)));
+    s32 width = 0;
+    for (; n > 0; --n, s += 2) width += GetGlyphWidth(GRef<u16>(s));
+    return width;
+}
+
+// EE: 0x00252070
+// Dead (no reference): GetMessageWidth.
+s32 func_00252070(s32 id) { return GetMessageWidth(id); }
+
 // EE: 0x00252090
 // Glyph code of character `index` of message `id` (the terminator outside the string).
 u16 GetMessageChar(u32 id, s64 index) {
@@ -726,4 +806,274 @@ void UploadMessageGlyphs(u32 list, s32 index, s64 id, u64 dbp) {
     LinkPacket(list, index, start, data + 0x20);
 }
 
+
+// ---- Text engine: in-flight text (slice S5g) -------------------------------------------------------
+
+// EE: 0x00251340
+// Textured sprite of the text texture at p (DMA cnt 15 + DIRECT): TEXFLUSH; ALPHA 0x44 (FIX 0x80
+// for modes 2 and 8); CLAMP 5; TEST 0x3000D (mode 8) or 0x30002; ZBUF 0x131000000; TEX0 (TBP tbp,
+// CBP cbp, T4 / CT32 layout constants); TEX1 0x100080060; then the sprite from (x, y, z) of size
+// (w, h) (screen units) with texels (u, v)-(u + tw, v + th) and the colour qword at col. Returns
+// the end of the data.
+u32 func_00251340(u32 p, u32 x, u32 y, u32 z, u32 w, u32 h, u32 u, u32 v, u16 tw, u16 th, u32 col, u16 tbp, u16 cbp,
+                  s32 mode) {
+    x &= 0xFFFF, y &= 0xFFFF, w &= 0xFFFF, h &= 0xFFFF, u &= 0xFFFF, v &= 0xFFFF;
+    fl::ZeroQ(p);
+    Put(p, 0, 0x1000000F);
+    Put(p, 3, 0x5000000F);
+    GRef<u64>(p + 0x18) = 0xE;
+    GRef<u64>(p + 0x10) = 0x1000000000000007ull;
+    GRef<u64>(p + 0x28) = 0x3F;
+    GRef<u64>(p + 0x20) = 0;
+    GRef<u64>(p + 0x30) = (mode == 2 || mode == 8) ? 0x8000000044ull : 0x44ull;
+    GRef<u64>(p + 0x38) = 0x42;
+    GRef<u64>(p + 0x40) = 5;
+    GRef<u64>(p + 0x48) = 8;
+    GRef<u64>(p + 0x50) = mode == 8 ? 0x3000Dull : 0x30002ull;
+    GRef<u64>(p + 0x58) = 0x47;
+    GRef<u64>(p + 0x60) = 0x131000000ull;
+    GRef<u64>(p + 0x68) = 0x4E;
+    GRef<u64>(p + 0x70) = static_cast<u64>(tbp) | 0x2000000000000000ull | (static_cast<u64>(cbp) << 37) | 0x665420000ull;
+    GRef<u64>(p + 0x78) = 6;
+    GRef<u64>(p + 0x80) = 0x100080060ull;
+    GRef<u64>(p + 0x88) = 0x14;
+    GRef<u64>(p + 0x90) = 0x30AB400000008002ull;
+    GRef<u64>(p + 0x98) = 0x413;
+    fl::ZeroQ(p + 0xA0);
+    Put(p + 0xA0, 0, u * 16 + 8);
+    Put(p + 0xA0, 1, v * 16 + 8);
+    fl::CopyQ(p + 0xB0, col);
+    Put(p + 0xC0, 1, y);
+    Put(p + 0xC0, 0, x);
+    Put(p + 0xC0, 3, 0x8000);
+    Put(p + 0xC0, 2, z);
+    fl::ZeroQ(p + 0xD0);
+    Put(p + 0xD0, 0, (u + tw) * 16 - 8);
+    Put(p + 0xD0, 1, (v + th) * 16 - 8);
+    fl::CopyQ(p + 0xE0, col);
+    Put(p + 0xF0, 0, x + w);
+    Put(p + 0xF0, 1, y + h);
+    Put(p + 0xF0, 2, z);
+    Put(p + 0xF0, 3, 0);
+    return p + 0x100;
+}
+
+// EE: 0x00251D90
+// Metrics of glyph `code`: width and height bytes of its 4-byte entry.
+void func_00251D90(u32 code, u32 w, u32 h) {
+    const u32 m = GRef<u32>(kFont + 0x20) + (code & 0xFFFF) * 4;
+    GRef<u16>(w) = GRef<u8>(m);
+    GRef<u16>(h) = GRef<u8>(m + 1);
+}
+
+// EE: 0x00251DB8
+// Glyph cell size of the current font.
+void func_00251DB8(u32 w, u32 h) {
+    GRef<u16>(w) = GRef<u16>(kFont + 0x10);
+    GRef<u16>(h) = GRef<u16>(kFont + 0x12);
+}
+
+// EE: 0x002581C8
+// Image upload at p: DMA cnt 5 + DIRECT (BITBLTBUF dbp / dbw / dpsm, TRXPOS (dx, dy), TRXREG w x
+// h, TRXDIR 0) and a DMA ref of qwc quadwords at data. Returns the end.
+u32 func_002581C8(u32 data, u32 qwc, u64 dbp, u64 dbw, u64 dpsm, u64 dx, u64 dy, u64 w, u16 h, u32 p) {
+    fl::ZeroQ(p);
+    Put(p, 0, 0x10000005);
+    Put(p, 3, 0x50000005);
+    GRef<u64>(p + 0x10) = 0x1000000000008004ull;
+    GRef<u64>(p + 0x18) = 0xE;
+    GRef<u64>(p + 0x28) = 0x50;
+    GRef<u64>(p + 0x20) = ((dbp & 0xFFFF) << 32) | ((dbw & 0xFF) << 48) | (dpsm << 56);
+    GRef<u64>(p + 0x30) = ((dx & 0xFFFF) << 32) | (dy << 48);
+    GRef<u64>(p + 0x38) = 0x51;
+    GRef<u64>(p + 0x40) = (w & 0xFFFF) | (static_cast<u64>(h) << 32);
+    GRef<u64>(p + 0x48) = 0x52;
+    GRef<u64>(p + 0x50) = 0;
+    GRef<u64>(p + 0x58) = 0x53;
+    fl::ZeroQ(p + 0x60);
+    Put(p + 0x60, 0, qwc | 0x30000000u);
+    Put(p + 0x60, 1, data);
+    Put(p + 0x60, 3, qwc | 0x50000000u);
+    return p + 0x70;
+}
+
+// EE: 0x002582B0
+// Uploads the image block img ({+0x10 pixels, +0x14 qwc, +0x18 CLUT, +0x1C CLUT qwc; image header
+// +0x20, CLUT header after the pixels: +3 PSM, +0xC width, +0xE height}) to (dbp, x, y) and its
+// CLUT to cbp, then TEXFLUSH. Returns the end.
+u32 func_002582B0(u32 img, u16 dbp, u16 x, u16 y, u16 cbp, u32 p) {
+    const u32 hdr = img + 0x20;
+    const u32 pix = img + GRef<u32>(img + 0x10);
+    const u32 qwc = GRef<u32>(img + 0x14);
+    const u32 ch = pix + qwc * 16;
+    p = func_002581C8(pix, qwc, dbp, 8, GRef<u8>(hdr + 3), x, y, GRef<u16>(hdr + 0xC), GRef<u16>(hdr + 0xE), p);
+    p = func_002581C8(img + GRef<u32>(img + 0x18), GRef<u32>(img + 0x1C), cbp, 8, GRef<u8>(ch + 3), 0, 0, GRef<u16>(ch + 0xC), GRef<u16>(ch + 0xE), p);
+    fl::ZeroQ(p);
+    Put(p, 0, 0x10000002);
+    Put(p, 3, 0x50000002);
+    GRef<u64>(p + 0x10) = 0x1000000000008001ull;
+    GRef<u64>(p + 0x18) = 0xE;
+    GRef<u64>(p + 0x28) = 0x3F;
+    GRef<u64>(p + 0x20) = 0;
+    return p + 0x30;
+}
+
+// EE: 0x00252100
+// Uploads the inline icon of text code 8..11 (image idx = code - 8 of the glyph block) to (dbp,
+// x, y), its CLUT at cbp + idx + 1. Returns the end.
+u32 func_00252100(u32 p, u32 code, u32 dbp, u32 cbp, u32 x, u32 y) {
+    const u32 idx = (code & 0xFFFF) - 8;
+    const u32 glyphs = GRef<u32>(kFont + 0x18);
+    const u32 img = glyphs + GRef<u32>(idx * 4 + glyphs + 4);
+    return func_002582B0(img, static_cast<u16>(dbp), static_cast<u16>(x), static_cast<u16>(y),
+                         static_cast<u16>((cbp & 0xFFFF) + idx + 1), p);
+}
+
+// EE: 0x00252160
+// Lays out the glyph string s into the text texture at dbp (16 glyphs per row; 0xFFFD = new line;
+// codes 8..11 are inline icons uploaded with their CLUTs from cbp + 1), then uploads the font CLUT
+// to cbp and flushes. info receives {lines, total, glyphs on lines 0, 1, 2}. Returns the end.
+u32 func_00252160(u32 p, u32 s, u32 info, u32 dbp, u32 cbp) {
+    dbp &= 0xFFFF;
+    cbp &= 0xFFFF;
+    s32 n = 0, line = 0;
+    u32 x = 0, y = 0;
+    s32 counts[3] = {0, 0, 0};
+    u32 lines = 1;
+    while (GRef<u16>(s) < 0xFFFE) {
+        const u32 code = GRef<u16>(s);
+        if (code - 8 < 4) {
+            ++n;
+            p = func_00252100(p, GRef<u16>(s), dbp, cbp, x, y);
+            s += 2;
+            x = (x + GRef<u16>(kFont + 0x10)) & 0xFFFF;
+            ++counts[line];
+        } else if (code == 0xFFFD) {
+            line = static_cast<s32>(lines);
+            x = 0;
+            n = 0;
+            y = (y + GRef<u16>(kFont + 0x12)) & 0xFFFF;
+            s += 2;
+            ++lines;
+        } else {
+            const u32 bytes = GRef<u32>(kFont + 0x14);
+            const u32 glyph = GRef<u32>(kFont + 4);
+            Put(p, 0, 0x10000005);
+            Put(p, 3, 0x50000005);
+            Put(p, 1, 0);
+            Put(p, 2, 0);
+            GRef<u64>(p + 0x10) = 0x1000000000000004ull;
+            GRef<u64>(p + 0x18) = 0xE;
+            GRef<u64>(p + 0x20) = (static_cast<u64>(dbp) << 32) | 0x1408000000000000ull;
+            GRef<u64>(p + 0x28) = 0x50;
+            GRef<u64>(p + 0x30) = (static_cast<u64>(x) << 32) | (static_cast<u64>(y) << 48);
+            GRef<u64>(p + 0x38) = 0x51;
+            GRef<u64>(p + 0x48) = 0x52;
+            GRef<u64>(p + 0x40) = static_cast<u64>(GRef<u16>(kFont + 0x10)) | (static_cast<u64>(GRef<u16>(kFont + 0x12)) << 32);
+            GRef<u64>(p + 0x58) = 0x53;
+            GRef<u64>(p + 0x50) = 0;
+            s += 2;
+            Put(p + 0x60, 1, glyph + code * bytes);
+            Put(p + 0x60, 2, 0);
+            Put(p + 0x60, 3, (GRef<u32>(kFont + 0x14) >> 4) | 0x50000000u);
+            Put(p + 0x60, 0, (GRef<u32>(kFont + 0x14) >> 4) | 0x30000000u);
+            p += 0x70;
+            ++counts[line];
+            x = (x + GRef<u16>(kFont + 0x10)) & 0xFFFF;
+            if (((n < 0 ? n + 0xF : n) >> 4) << 4 == n - 0xF) {
+                x = 0;
+                y = (y + GRef<u16>(kFont + 0x12)) & 0xFFFF;
+            }
+            ++n;
+        }
+    }
+    fl::ZeroQ(p);
+    Put(p, 0, 0x10000005);
+    Put(p, 3, 0x50000005);
+    GRef<u64>(p + 0x10) = 0x1000000000000004ull;
+    GRef<u64>(p + 0x18) = 0xE;
+    GRef<u64>(p + 0x20) = (static_cast<u64>(cbp) << 32) | 0x1000000000000ull;
+    GRef<u64>(p + 0x28) = 0x50;
+    GRef<u64>(p + 0x38) = 0x51;
+    GRef<u64>(p + 0x30) = 0;
+    GRef<u64>(p + 0x40) = 0x200000008ull;
+    GRef<u64>(p + 0x48) = 0x52;
+    GRef<u64>(p + 0x58) = 0x53;
+    GRef<u64>(p + 0x50) = 0;
+    Put(p + 0x60, 0, 0x30000005);
+    Put(p + 0x60, 3, 0x50000005);
+    Put(p + 0x60, 1, GRef<u32>(kFont + 8));
+    Put(p + 0x60, 2, 0);
+    fl::ZeroQ(p + 0x70);
+    Put(p + 0x70, 0, 0x10000002);
+    Put(p + 0x70, 3, 0x50000002);
+    GRef<u64>(p + 0x80) = 0x1000000000008001ull;
+    GRef<u64>(p + 0x88) = 0xE;
+    GRef<u64>(p + 0x98) = 0x3F;
+    GRef<u64>(p + 0x90) = 0;
+    GRef<u8>(info) = static_cast<u8>(lines);
+    const u8 c0 = static_cast<u8>(counts[0]), c1 = static_cast<u8>(counts[1]), c2 = static_cast<u8>(counts[2]);
+    GRef<u8>(info + 2) = c0;
+    GRef<u8>(info + 3) = c1;
+    GRef<u8>(info + 1) = static_cast<u8>(c2 + (c0 + c1));
+    GRef<u8>(info + 4) = c2;
+    return p + 0xA0;
+}
+
+// EE: 0x00258418
+// ALPHA_1 (A, B, C, D, FIX) as one A+D packet at p (DMA cnt 2 + DIRECT). Returns the end.
+u32 func_00258418(u32 p, u64 a, u64 b, u64 c, u64 d, u64 fix) {
+    fl::ZeroQ(p);
+    Put(p, 0, 0x10000002);
+    Put(p, 3, 0x50000002);
+    GRef<u64>(p + 0x10) = 0x1000000000008001ull;
+    GRef<u64>(p + 0x18) = 0xE;
+    GRef<u64>(p + 0x28) = 0x42;
+    GRef<u64>(p + 0x20) = (a & 0xFFFF) | (fix << 32) | ((c & 0xFFFF) << 4) | ((b & 0xFFFF) << 2) | ((d & 0xFFFF) << 6);
+    return p + 0x30;
+}
+
+// EE: 0x002584A0
+// TEST_1 (ATE, ATST, AREF, AFAIL, DATE, DATM, ZTE, ZTST) as one A+D packet at p. Returns the end.
+u32 func_002584A0(u32 p, u64 ate, u64 atst, u64 aref, u64 afail, u64 date, u64 datm, u64 zte, u16 ztst) {
+    fl::ZeroQ(p);
+    Put(p, 0, 0x10000002);
+    Put(p, 3, 0x50000002);
+    GRef<u64>(p + 0x10) = 0x1000000000008001ull;
+    GRef<u64>(p + 0x18) = 0xE;
+    GRef<u64>(p + 0x20) = (ate & 0xFFFF) | (static_cast<u64>(ztst) << 17) | ((afail & 0xFFFF) << 12) | ((datm & 0xFFFF) << 15) |
+                          ((atst & 0xFFFF) << 1) | ((aref & 0xFFFF) << 4) | ((date & 0xFFFF) << 14) | ((zte & 0xFFFF) << 16);
+    GRef<u64>(p + 0x28) = 0x47;
+    return p + 0x30;
+}
+
+// EE: 0x00258550
+// Textured sprite at p (DMA cnt 7 + DIRECT): (x, y, z) to (x + w, y + h) in pixels, texels (u, v)
+// to (u + w, v + h), colour (r, g, b, a). Returns the end.
+u32 func_00258550(u32 p, u32 x, u32 y, s32 z, u32 u, u32 v, u32 w, u32 h, u16 r, u16 g, u16 b, u16 a) {
+    x &= 0xFFFF, y &= 0xFFFF, u &= 0xFFFF, v &= 0xFFFF, w &= 0xFFFF, h &= 0xFFFF;
+    fl::ZeroQ(p);
+    Put(p, 3, 0x50000007);
+    Put(p, 0, 0x10000007);
+    GRef<u64>(p + 0x10) = 0x30AB400000008002ull;
+    GRef<u64>(p + 0x18) = 0x413;
+    fl::ZeroQ(p + 0x20);
+    Put(p + 0x20, 1, v * 16 + 8);
+    Put(p + 0x20, 0, u * 16 + 8);
+    const u32 c[4] = {r, g, b, a};
+    for (u32 i = 0; i < 4; ++i) Put(p + 0x30, i, c[i]);
+    Put(p + 0x40, 0, x << 4);
+    Put(p + 0x40, 1, y << 4);
+    Put(p + 0x40, 3, 0x8000);
+    Put(p + 0x40, 2, static_cast<u32>(z) << 4);
+    fl::ZeroQ(p + 0x50);
+    Put(p + 0x50, 0, (u + w) * 16 - 8);
+    Put(p + 0x50, 1, (v + h) * 16 - 8);
+    for (u32 i = 0; i < 4; ++i) Put(p + 0x60, i, c[i]);
+    Put(p + 0x70, 0, (x + w) << 4);
+    Put(p + 0x70, 1, (y + h) << 4);
+    Put(p + 0x70, 2, static_cast<u32>(z) << 4);
+    Put(p + 0x70, 3, 0);
+    return p + 0x80;
+}
 }  // namespace ac04::game

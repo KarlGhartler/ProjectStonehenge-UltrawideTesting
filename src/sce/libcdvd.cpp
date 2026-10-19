@@ -141,3 +141,12 @@ s32 sceCdPowerOff(u32) {
     AC04_SCE_STUB("sceCdPowerOff");
     return 0;
 }
+// Reached only from dead CD helpers (0x002144B8, 0x002144E0): logged once, -1.
+s32 sceCdStatus() {
+    AC04_SCE_STUB("sceCdStatus");
+    return -1;
+}
+s32 sceCdGetError() {
+    AC04_SCE_STUB("sceCdGetError");
+    return -1;
+}

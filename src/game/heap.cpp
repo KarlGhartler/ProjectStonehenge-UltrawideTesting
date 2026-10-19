@@ -3,7 +3,18 @@
 // offset 0x0041178C, mark 0x00411790.
 #include "game/game.h"
 
+#include <cstring>
+
+#include "common/debug_hooks.h"
 #include "sce/sce.h"
+#include "game/main_context.h"
+
+#if defined(_MSC_VER)
+#include <intrin.h>
+#define AC04_CALLER_ADDRESS() _ReturnAddress()
+#else
+#define AC04_CALLER_ADDRESS() __builtin_return_address(0)
+#endif
 
 namespace ac04::game {
 
@@ -72,6 +83,8 @@ u32 WorkHeapAlloc(s32 size, u64 align) {
     const u32 next = g_WorkHeapOffset() + static_cast<u32>(size);
     u32 result = g_WorkHeapBase() + g_WorkHeapOffset();
     g_WorkHeapOffset() = next;
+    if (debug::AllocHook hook = debug::GetAllocHook())
+        hook(result, size, static_cast<u32>(align), debug::ImageRelative(AC04_CALLER_ADDRESS()));
     if (g_WorkHeapSize() < next) result = 0;
     return result;
 }
@@ -105,6 +118,11 @@ u32 ResetWorkHeapToMark() {
     GRef<u8>(0x00411794) = 0;
     g_WorkHeapOffset() = mark;
     for (s32 i = 3; i >= 0; --i) GRef<u32>(0x00412198 + 4u * static_cast<u32>(i)) = 0;
+    if (const int fill = debug::HeapFill(); fill >= 0) {  // debug layer: --heap-fill
+        const u32 lo = g_WorkHeapBase() + mark;
+        const u32 hi = g_WorkHeapBase() + g_WorkHeapSize();
+        if (u8* p = guest::Mem().Translate(lo, hi - lo)) std::memset(p, fill, hi - lo);
+    }
     return mark;
 }
 
@@ -135,6 +153,16 @@ u32 AllocAndLoadDataEntry(s32 entry) {
     const u32 buf = WorkHeapAlloc(static_cast<s32>(GetDataEntryAllocSize(entry)), 0x40);
     LoadDataEntryAsync(entry, buf);
     return buf;
+}
+
+// EE: 0x00100FB8
+// Dead (no reference): clears the counters 0x0041178C / 0x00411790, the byte 0x00411794 and the four
+// words at 0x00412198.
+void func_00100FB8() {
+    GRef<u32>(0x0041178C) = 0;
+    GRef<u8>(0x00411794) = 0;
+    GRef<u32>(0x00411790) = 0;
+    for (s32 i = 3; i >= 0; --i) GRef<u32>(0x00412198 + 4u * static_cast<u32>(i)) = 0;
 }
 
 }  // namespace ac04::game

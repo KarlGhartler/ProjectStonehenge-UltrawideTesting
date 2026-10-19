@@ -55,9 +55,35 @@ void SetVBlankSource(u64 (*source)()) { g_vblank_source = source; }
 
 namespace {
 bool g_freeze_sim = false;
+AllocHook g_alloc_hook = nullptr;
+int g_heap_fill = -1;
 }  // namespace
+
+int HeapFill() { return g_heap_fill; }
+void SetHeapFill(int value) { g_heap_fill = value; }
+
+#if defined(_MSC_VER)
+extern "C" char __ImageBase;  // MSVC linker symbol: start of the executable image
+#endif
+
+void SetAllocHook(AllocHook hook) { g_alloc_hook = hook; }
+AllocHook GetAllocHook() { return g_alloc_hook; }
+u64 ImageRelative(const void* host_address) {
+#if defined(_MSC_VER)
+    return static_cast<u64>(reinterpret_cast<const char*>(host_address) - &__ImageBase);
+#else
+    return reinterpret_cast<u64>(host_address);  // other compilers: absolute address (no image base)
+#endif
+}
 
 bool FreezeSim() { return g_freeze_sim; }
 void SetFreezeSim(bool on) { g_freeze_sim = on; }
+
+namespace {
+BootMission g_boot_mission;
+}  // namespace
+
+const BootMission& GetBootMission() { return g_boot_mission; }
+void SetBootMission(const BootMission& m) { g_boot_mission = m; }
 
 }  // namespace ac04::debug

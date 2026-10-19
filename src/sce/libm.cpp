@@ -4,8 +4,8 @@
 // executable's .data in guest memory (never copied into src/).
 //
 // sinf 0x00284830, cosf 0x00284660, __ieee754_rem_pio2f 0x00286DE0, __kernel_rem_pio2f 0x00287450,
-// __kernel_sinf 0x00287DA0, __kernel_cosf 0x002872F8, scalbnf 0x002886B8, atan2f 0x00284CB8
-// (wrapper), __ieee754_atan2f 0x00286018, atanf 0x002883A0, fabsf 0x00288648, asinf 0x00284BB8 /
+// __kernel_sinf 0x00287DA0, __kernel_cosf 0x002872F8, tanf 0x00284920 / __kernel_tanf 0x00287EA8,
+// scalbnf 0x002886B8, atan2f 0x00284CB8 (wrapper), __ieee754_atan2f 0x00286018, atanf 0x002883A0, fabsf 0x00288648, asinf 0x00284BB8 /
 // __ieee754_asinf 0x00285C78, acosf 0x00284AB8 / __ieee754_acosf 0x00285848, __ieee754_sqrtf 0x002871C0,
 // powf 0x00284F20 / __ieee754_powf 0x00286550.
 #include <cstring>
@@ -342,6 +342,86 @@ s32 RemPio2f(f32 x, f32* y) {
     return n;
 }
 
+// __kernel_tanf (0x00287EA8): tan(x + y) on [-pi/4, pi/4]; iy = 1 for tan, -1 for -1/tan. The
+// polynomial T[0..12] is read from .data 0x0040C9D8.
+f32 KernelTanf(f32 x, f32 y, s32 iy) {
+    constexpr u32 kT = 0x0040C9D8;
+    const auto T = [](u32 i) { return GRef<f32>(kT + 4 * i); };
+    const u32 hx = Bits(x);
+    const u32 ix = hx & 0x7FFFFFFFu;
+    if (ix < 0x31800000u && fpu::FloatToInt(x) == 0) {
+        if ((ix | static_cast<u32>(iy + 1)) == 0) return fpu::Div(1.0f, FromBits(ix));
+        if (iy == 1) return x;
+        return fpu::Div(-1.0f, x);
+    }
+    const bool big = ix >= 0x3F2CA140u;
+    if (big) {
+        if (static_cast<s32>(hx) < 0) {
+            x = -x;
+            y = -y;
+        }
+        const f32 z = fpu::Sub(K(0x3F490FDA), x);
+        const f32 w = fpu::Sub(K(0x33222168), y);
+        y = 0.0f;
+        x = fpu::Add(z, w);
+    }
+    const f32 z = fpu::Mul(x, x);
+    const f32 w = fpu::Mul(z, z);
+    const f32 s = fpu::Mul(z, x);
+    f32 a = fpu::Mul(w, T(12));
+    f32 b = fpu::Mul(w, T(11));
+    const f32 t0s = fpu::Mul(T(0), s);
+    a = fpu::Add(T(10), a);
+    b = fpu::Add(T(9), b);
+    a = fpu::Mul(w, a);
+    b = fpu::Mul(w, b);
+    a = fpu::Add(T(8), a);
+    b = fpu::Add(T(7), b);
+    a = fpu::Mul(w, a);
+    b = fpu::Mul(w, b);
+    a = fpu::Add(T(6), a);
+    b = fpu::Add(T(5), b);
+    a = fpu::Mul(w, a);
+    b = fpu::Mul(w, b);
+    a = fpu::Add(T(4), a);
+    b = fpu::Add(T(3), b);
+    a = fpu::Mul(w, a);
+    b = fpu::Mul(w, b);
+    const f32 v = fpu::Add(T(2), a);
+    const f32 r0 = fpu::Add(T(1), b);
+    f32 r = fpu::Add(r0, fpu::Mul(z, v));
+    r = fpu::Mul(s, r);
+    r = fpu::Add(r, y);
+    r = fpu::Mul(z, r);
+    r = fpu::Add(y, r);
+    r = fpu::Add(r, t0s);
+    const f32 ww = fpu::Add(x, r);
+    if (big) {
+        const f32 fv = fpu::IntToFloat(iy);
+        const f32 sq = fpu::Mul(ww, ww);
+        const f32 den = fpu::Add(ww, fv);
+        const s32 sign = 1 - static_cast<s32>((static_cast<u32>(static_cast<s32>(hx) >> 30)) & 2u);
+        const f32 fs = fpu::IntToFloat(sign);
+        f32 q = fpu::Div(sq, den);
+        q = fpu::Sub(q, r);
+        q = fpu::Sub(x, q);
+        q = fpu::Add(q, q);
+        q = fpu::Sub(fv, q);
+        return fpu::Mul(fs, q);
+    }
+    if (iy == 1) return ww;
+    // -1 / (x + r) computed accurately (fdlibm): z = w with the low 12 bits cleared, t likewise for a.
+    const f32 zc = FromBits(Bits(ww) & 0xFFFFF000u);
+    const f32 d = fpu::Sub(zc, x);
+    const f32 an = fpu::Div(-1.0f, ww);
+    const f32 vv = fpu::Sub(r, d);
+    const f32 tc = FromBits(Bits(an) & 0xFFFFF000u);
+    const f32 s1 = fpu::Add(fpu::Mul(tc, zc), 1.0f);
+    f32 e = fpu::Add(s1, fpu::Mul(tc, vv));
+    e = fpu::Mul(an, e);
+    return fpu::Add(tc, e);
+}
+
 }  // namespace
 
 // sinf (0x00284830).
@@ -370,6 +450,16 @@ f32 cosf(f32 x) {
         case 2: return -KernelCosf(y[0], y[1]);
         default: return KernelSinf(y[0], y[1], 1);
     }
+}
+
+// tanf (0x00284920).
+f32 tanf(f32 x) {
+    const u32 ix = Bits(x) & 0x7FFFFFFFu;
+    if (ix <= 0x3F490FDAu) return KernelTanf(x, 0.0f, 1);
+    if (ix > 0x7F7FFFFFu) return fpu::Sub(x, x);
+    f32 y[2];
+    const s32 n = RemPio2f(x, y);
+    return KernelTanf(y[0], y[1], 1 - ((n & 1) << 1));
 }
 
 // atanf (0x002883A0).

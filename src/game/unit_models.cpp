@@ -7,6 +7,7 @@
 
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "game/game_flight.h"
 #include "game/main_context.h"
 #include "platform/log.h"
 #include "sce/sce.h"
@@ -120,13 +121,9 @@ u32 UnitObject(s32 u) { return GRef<u32>(kUnitPtrTable + 4 * static_cast<u32>(u)
 
 // Current LOD block of unit u: word (word (H[0] + 0x18u + 8) + 0x20 * byte U+0x5A).
 u32 UnitLodEntry(u32 h, s32 u) {
-    return GRef<u32>(GRef<u32>(h) + 0x18 * static_cast<u32>(u) + 8) +
-           0x20 * static_cast<u32>(GRef<u8>(UnitObject(u) + 0x5A));
-}
-
-void DrawSpecialObjectNotYet() {
-    log::WriteOnce("func_001E0A98", log::Level::Info, "game",
-                   "world draw: DrawSpecialObject (0x001E0A98) not translated yet (slice S5f)");
+    const u32 entry = GRef<u32>(GRef<u32>(h) + 0x18 * static_cast<u32>(u) + 8) +
+                      0x20 * static_cast<u32>(GRef<u8>(UnitObject(u) + 0x5A));
+    return GRef<u32>(entry);  // the LOD entry holds the instance block pointer
 }
 
 }  // namespace
@@ -150,10 +147,10 @@ void func_001456F8(u32 out, u32 d) {
         }
         return;
     }
-    GRef<f32>(out + 4) = atan2f(x, z);
+    GRef<f32>(out + 4) = ee::atan2f(x, z);
     const f32 xx = GRef<f32>(d) * GRef<f32>(d), zz = GRef<f32>(d + 8) * GRef<f32>(d + 8);
     const f32 len = fpu::Sqrt(fpu::Add(xx, zz));
-    GRef<f32>(out + 0) = atan2f(-GRef<f32>(d + 4), len);
+    GRef<f32>(out + 0) = ee::atan2f(-GRef<f32>(d + 4), len);
     GRef<u32>(out + 0xC) = 0;
     GRef<u32>(out + 8) = 0;
 }
@@ -169,7 +166,7 @@ void func_00145D08(f32 v, u32 h, s32 u, s32 track) {
 
 // EE: 0x00145DA0
 // Track time `track` of unit u's current LOD instance 0.
-u32 func_00145DA0(u32 h, s32 u, s32 track) { return func_00141000(UnitLodEntry(h, u), track); }
+f32 func_00145DA0(u32 h, s32 u, s32 track) { return func_00141000(UnitLodEntry(h, u), track); }
 
 // EE: 0x00146680
 // out = matrix of the first node of unit u's current instance with id `id`; unchanged when absent.
@@ -185,7 +182,7 @@ void func_00146680(u32 h, u32 out, s32 u, s32 id) {
 
 // EE: 0x00146988
 // func_00144228 of unit u's current instance 2.
-u32 func_00146988(u32 h, s32 u) { return func_00144228(UnitLodEntry(h, u) + 0x98); }
+f32 func_00146988(u32 h, s32 u) { return func_00144228(UnitLodEntry(h, u) + 0x98); }
 
 // EE: 0x001359D0
 // Unit model track animation (docs/subsystems/rendering.md): track 1 loops every 240 frames;
@@ -303,9 +300,8 @@ void SelectUnitModelLods(u32 h, u32 v) {
 // EE: 0x00146268
 // Unit models (docs/subsystems/rendering.md): context-1 state and the light set in bucket 6, then
 // per visible unit its texture and model instance (bucket 6) and its attached objects
-// (DrawSpecialObject, slice S5f: positions and angles are still updated here).
+// (DrawSpecialObject into ot2).
 void func_00146268(u32 h, u32 cam, u32 ot, u32 ot2) {
-    (void)ot2;
     guest::GuestFrame frame(0x140);
     const u32 sp = frame.Address();
     const u32 m0 = sp, m1 = sp + 0x40, g = sp + 0x80, d = sp + 0xB0, m3 = sp + 0xC0, m2 = sp + 0x100;
@@ -353,12 +349,21 @@ void func_00146268(u32 h, u32 cam, u32 ot, u32 ot2) {
                 sceVu0ApplyMatrix(d, m2, dir + 0x10 * static_cast<u32>(k));
                 func_001456F8(o + 0x20, d);
             }
-            DrawSpecialObjectNotYet();
+            func_001E0A98(cam, ot2, o);
         }
     }
     p = BeginPacket();
     wr(4, 0); wr(0, 0x10000000); wr(8, 0); wr(0xC, 0x11000000);
     EndPacket(ot, 6, p + 0x10);
+}
+
+// EE: 0x001467C8
+// Dead (no reference): value +0x38 of unit n's current model state (LOD by unit byte +0x5A).
+u32 func_001467C8(u32 rec, s32 n) {
+    const u32 unit = GRef<u32>(0x002A1F70 + 4u * static_cast<u32>(n));
+    const u32 e = GRef<u32>(rec) + static_cast<u32>(n) * 0x18;
+    const u32 lod = GRef<u32>(e + 8) + GRef<u8>(unit + 0x5A) * 0x20u;
+    return GRef<u32>(GRef<u32>(lod) + 0x38);
 }
 
 }  // namespace ac04::game
