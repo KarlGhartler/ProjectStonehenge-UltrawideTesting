@@ -39,6 +39,30 @@ struct Vu1State {
     std::int32_t I(std::uint32_t addr, int c) const { return static_cast<std::int32_t>(mem[(addr & (kVuMemQwords - 1)) * 4 + c]); }
 };
 
+// Frame interpolation (ADR-002; platform/render/frame_interpolator.h): what each VU1 program run of
+// a step read and where its XGKICK output went, so that the run can be repeated at presentation time
+// with blended matrices. Recorded only while interpolation is active (Vif1::SetRunLog).
+struct RunRecord {
+    std::uint32_t gif_offset = 0, gif_size = 0;  // the run's output in the step's GIF stream
+    std::uint32_t source = 0;                    // program (guest address of its microcode)
+    std::uint32_t pc = 0;                        // entry pair
+    std::uint32_t top = 0, itop = 0;
+    std::uint32_t vertex_source = 0;  // guest address of the UNPACK data that last wrote TOP + 32
+    // VU memory at the start of the run (RunLog::mem from mem_offset): the absolute qwords
+    // 0..kAbsQwords-1 (the backface history at 0-1, the glow program's constants at 32-49), then
+    // rel_qwords qwords from TOP (the fixed block and the vertex records).
+    static constexpr std::uint32_t kAbsQwords = 64;
+    std::uint32_t mem_offset = 0, rel_qwords = 0;
+};
+struct RunLog {
+    std::vector<RunRecord> runs;
+    std::vector<std::uint32_t> mem;
+    void Clear() {
+        runs.clear();
+        mem.clear();
+    }
+};
+
 class Vif1 {
 public:
     // `gif` receives PATH2 (DIRECT) and PATH1 (XGKICK) GIF data in stream order.
@@ -53,6 +77,8 @@ public:
     }
 
     Vu1State& Vu() { return vu_; }
+    // Records the program runs into `log` (null: no recording).
+    void SetRunLog(RunLog* log) { log_ = log; }
     // Number of program runs per program id since the last call (debug overlay / tests).
     std::uint64_t Runs() const { return runs_; }
 
@@ -75,6 +101,8 @@ private:
     std::vector<std::uint32_t> data_;
     std::uint32_t data_addr_ = 0;  // guest address of the first data word (MPG)
     std::uint64_t runs_ = 0;
+    RunLog* log_ = nullptr;
+    std::uint32_t vertex_source_ = 0;
 };
 
 }  // namespace ac04::render::vu1

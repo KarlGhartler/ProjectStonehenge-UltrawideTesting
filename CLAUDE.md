@@ -133,7 +133,7 @@ All "read" entries below mean: read from the ISO image at runtime, never from ex
 | `SLUS_201.52` | Main EE executable | Translate code into `src/game/`; load its initialised data sections from the ISO at runtime |
 | `SYSTEM.CNF` | Boot config | Reference only |
 | `IOPRP23.IMG` | Sony IOP kernel update image | Not used |
-| `IRX/LIBSD, MCMAN, MCSERV, PADMAN, SIO2MAN, USBD` | Stock Sony IOP modules | Not used; replaced by `src/sce/` + `src/platform/` |
+| `IRX/LIBSD, MCMAN, MCSERV, PADMAN, SIO2MAN, USBD` | Stock Sony IOP modules | Not used; replaced by `src/sce/` + `src/platform/`. Exception: libsd's reverb preset table is read from `IRX/LIBSD.IRX` at runtime (`docs/port/validation.md` §2ab) |
 | `IRX/SOUND.IRX`, `IRX/VAG.IRX` | Namco sound drivers: SOUND = RPC 0x81000101 (SFX command batches), VAG = RPC 0x81000102 (6 streaming slots) (`docs/game/iop-interface.md`, `docs/subsystems/sound.md`) | Not used; their RPC interface is reimplemented in the audio backend (ADR-004) |
 | `IRX/USBJOY.IRX` | USB joystick driver, RPC 0x80000210 | Not used; replaced by the input backend |
 | `BIN/DATA.CDP+TBL`, `BIN/BD.CDP+TBL` | Packed archives: TBL = `{u32 sector, u32 size}[]`, CDP = sector-aligned entries, loaded by index (`docs/formats/CDP.md`). DATA = 360 `count+offsets` containers (missions, aircraft, menus, sound headers); BD = 13 raw SPU ADPCM banks | Read by index like the game (`tools/cdp_extract.py` is for research only) |

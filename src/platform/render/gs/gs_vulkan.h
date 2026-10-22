@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -149,6 +150,8 @@ private:
                       int rows = 0);
     // Scale of a new target `native_w` pixels wide (TargetScale policy, renderer.md §1.4.5).
     int TargetScale(int native_w) const;
+    // `t` rebuilt at 1x from its scaled image (each native pixel from its centre host pixel).
+    void DownscaleTarget(VkCommandBuffer cmd, int frame, Target& t);
     bool CreateTargetImages(Target& t, int frame, VkCommandBuffer cmd);
     // Destroys `img` once the frame slot `frame` comes round again (in-flight commands may use it).
     void Retire(int frame, Image& img);
@@ -184,6 +187,7 @@ private:
     // Before a draw into `t`: converts `newer` into it (at native resolution, then scaled into t).
     void Sync(VkCommandBuffer cmd, int frame, Target& t, Target& newer);
     bool InitConvert(std::string& error);
+    bool InitDepthCopy(std::string& error);
     // Anti-aliasing (gs_antialias.cpp): pipelines and the SMAA lookup textures; working images the
     // size of the target being processed (recreated when that changes, after a device wait).
     bool InitAntiAlias(std::string& error);
@@ -242,6 +246,7 @@ private:
     std::uint64_t verify_count_ = 0, verify_mismatches_ = 0;
     Image feedback_;
     Image date_;  // destination alpha test: copy of the target region a DATE draw covers
+    Image clut_img_;  // 16x16 palette drawn on the GPU, copied before the draw that uses it (flag 29)
     Image present_;
     bool present_valid_ = false;
     int present_w_ = 0, present_h_ = 0;  // native
@@ -275,6 +280,16 @@ private:
     // points at a Z buffer (the game clears Z by drawing into it as a colour buffer) fills the
     // depth image of that target instead.
     std::map<std::uint32_t, std::pair<std::uint64_t, std::uint64_t>> zbuf_owner_;
+    // Depth copies (gs_depth_copy.frag): a Z buffer drawn into another Z buffer through a sprite.
+    VkDescriptorSetLayout depth_copy_set_layout_ = VK_NULL_HANDLE;
+    VkPipelineLayout depth_copy_layout_ = VK_NULL_HANDLE;
+    VkPipeline depth_copy_pipeline_ = VK_NULL_HANDLE;
+    VkDescriptorPool depth_copy_pool_[kFrames]{};
+    static constexpr std::uint32_t kMaxDepthCopies = 16;  // per frame
+    std::uint32_t depth_copy_count_ = 0;
+    // Frame buffers whose memory is drawn both in the 32-bit layout and in a 16-bit one: their views
+    // reinterpret each other's bits, so they are held at 1x (renderer.md §1, row 7).
+    std::set<std::uint32_t> native_fbps_;
     // Anti-aliasing state (gs_antialias.cpp).
     AntiAlias aa_mode_ = AntiAlias::kOff;
     bool aa_ready_ = false;

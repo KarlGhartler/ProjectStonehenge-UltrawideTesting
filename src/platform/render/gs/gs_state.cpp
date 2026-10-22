@@ -51,6 +51,7 @@ bool SameState(const DrawCommand& a, const DrawCommand& b) {
            a.zbuf == b.zbuf && a.scissor == b.scissor && a.texa == b.texa && a.fba == b.fba &&
            a.fogcol == b.fogcol && a.miptbp1 == b.miptbp1 && a.miptbp2 == b.miptbp2 && a.colclamp == b.colclamp && a.pabe == b.pabe && a.dthe == b.dthe &&
            a.texture == b.texture && a.texture_from_frame == b.texture_from_frame && a.frame_clut == b.frame_clut &&
+           a.clut_from_frame == b.clut_from_frame &&
            a.texture_guest_source == b.texture_guest_source && a.texture_guest_width == b.texture_guest_width;
 }
 
@@ -280,6 +281,19 @@ void GsState::LoadClut(std::uint64_t tex) {
     const bool eight = psm == kPsmT8 || psm == kPsmT8H;
     const bool four = psm == kPsmT4 || psm == kPsmT4HL || psm == kPsmT4HH;
     if (!eight && !four) return;
+    // A palette drawn on the GPU: the flight's sun flare counts the visible part of the sun into a
+    // pixel of FBP 0x190 and draws its palette there, scaled by it, each frame (validation.md §2z).
+    // Local memory does not hold what the GPU drew, so the CLUT gets the identity (entry i = i) and
+    // the draws carry the source (DrawCommand::clut_from_frame) for the backend to look up.
+    clut_frame_cbp_ = -1;
+    if (eight && !Clut16(cpsm) && (cbp & 3) == 0 && fb_pages_.count(cbp >> 5) != 0 &&
+        fb_overwritten_.count(cbp >> 5) == 0) {
+        clut_frame_cbp_ = static_cast<std::int32_t>(cbp);
+        ++clut_gen_;
+        for (ClutSource& c : clut_src_) c.valid = false;
+        for (std::uint32_t e = 0; e < 256; ++e) clut_[e] = e;
+        return;
+    }
     // The source is contiguous in local memory: a 16x16 CT32 image is blocks cbp..cbp+3 (1 KiB), a
     // 16x16 CT16 one blocks cbp..cbp+1, and the 8x2 image of a 4-bit palette lies in the first 64
     // bytes of block cbp.
@@ -592,6 +606,7 @@ void GsState::EmitPrimitive(const GsVertex* v, int count) {
     d.texture.reset();
     d.texture_from_frame = -1;
     d.frame_clut.reset();
+    d.clut_from_frame = -1;
     d.texture_guest_source = 0;
     d.texture_guest_width = 0;
     NoteFrameBuffer(d);
@@ -615,6 +630,7 @@ void GsState::EmitPrimitive(const GsVertex* v, int count) {
         } else {
             d.texture = DecodeTexture(d, v, count);
         }
+        if (clut_frame_cbp_ >= 0 && (tpsm == kPsmT8 || tpsm == kPsmT8H)) d.clut_from_frame = clut_frame_cbp_;
         if (!upload_source_.empty()) {
             const auto src = upload_source_.find(tbp);
             if (src != upload_source_.end()) {
@@ -817,7 +833,6 @@ std::shared_ptr<const DecodedTexture> GsState::DecodeTexture(const DrawCommand& 
         LogOnce("tex-psm", "texture PSM 0x%llx not supported", psm);
         return nullptr;
     }
-    if (psm >= kPsmZ32) LogOnce("tex-z", "Z buffer sampled as a texture (PSM 0x%llx) not implemented: texels are 0", psm);
     std::uint32_t r[4];
     TexelRange(d, v, count, r);
     const std::uint32_t u0 = r[0], v0 = r[1], u1 = r[2], v1 = r[3];

@@ -105,6 +105,10 @@ A draw in step N is matched with a draw in step N−1 by a **stable key**:
 - With interpolation off, or at exactly 59.94 Hz, the output is the step-N frame, the same as the original.
 - Thresholds and keys are tuned against PCSX2 captures and replays. A debug overlay showing matched/unmatched/snapped draws is a modding-layer tool.
 
+## Implementation (2026-10-22)
+
+Built as designed at the level where the game's 3D is transformed: the VU1 programs (CPU HLE). Matrices are blended element by element (no decomposition): the steps are 16.7 ms apart, so the error is small, and parts that turn fast (more than 25° per step) blend only their position. The one-step latency of the design applies to the 3D; HUD and 2D show the newest step. Matching keys, guards, cost and checks: `../port/validation.md` §2ac. Not done: a matched-draw debug view; effects the EE projects itself are drawn from the newest step.
+
 ## Consequences
 
 - `src/platform/` owns: the frame clock (accumulator), presentation and interpolation, file/audio/save worker threads.

@@ -98,6 +98,8 @@ u64 WalkChain(u32 tag_addr, bool& ok, OnTag on_tag, OnData on_data) {
 ac04::render::vu1::Vif1& Vif1Unit(std::vector<u8>& gif) {
     static ac04::render::vu1::Vif1 vif(gif);
     vif.SetOutput(gif);
+    auto& dma = ac04::sce::Dma();
+    vif.SetRunLog(dma.record_runs ? &dma.gs_step_runs : nullptr);
     return vif;
 }
 
@@ -197,6 +199,8 @@ u32 PassVBlank() {
     }
     dma.gs_steps_marks.push_back(std::move(dma.gs_step_marks));
     dma.gs_step_marks.clear();
+    dma.gs_steps_runs.push_back(std::move(dma.gs_step_runs));
+    dma.gs_step_runs.Clear();
     if (ac04::sce::Host().on_vblank) ac04::sce::Host().on_vblank();
     g_csr_field = rt.WaitVBlank();
     ac04::sce::EeRegisters::Get().OnVBlank(rt.VBlankCount());

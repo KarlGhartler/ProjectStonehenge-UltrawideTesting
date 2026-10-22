@@ -4,6 +4,19 @@ Checks that need the original game running in PCSX2 2.8.2, ordered by importance
 
 General: open the debugger with **Debug → Open Debugger**. "Execute breakpoint" = Breakpoints tab → New → Execute, address as given. "Memory watch" = Memory view, go to the address, and read the value while the game runs or is paused.
 
+## R. References for the renderer and sound work of 2026-10-22 (one session, about 45 minutes)
+- **Purpose:** compare the features built from code alone with the original: the sun flare's palette drawn on the GPU (`../port/validation.md` §2z), the depth copy of the cloud pass (§2ab ZC), the reverb (§2ab RV), the mission title card (§2z), and the memory card exchange with the port (`../formats/folder-memcard.md`).
+- **Blocks:** nothing; the port runs without them. They decide whether the new code needs corrections.
+- **Preparation:** Internal Resolution **Native**, PNG screenshots "Internal Resolution (Aspect Uncorrected)", 4:3, GS dumps **Uncompressed**, save states **Uncompressed**. Files into `Slices/Reference_1022/`.
+- **Steps:**
+  1. **Sun flare** (any campaign mission in daylight; mission 1 is fine): turn towards the sun until the flare rings show. Screenshot + GS dump (`r1_flare_full`). Then fly so that the sun is half behind a bomber or a cloud: screenshot + GS dump (`r1_flare_partial`). Save a state at each (`r1_flare_full.p2s`, `r1_flare_partial.p2s`).
+  2. **Depth copy, no-save intro:** boot with no AC04 save in slot 1 (as section 1 run A). When the first cloud transition starts (about 22 s into the in-engine intro, right after the seagull shots), take a GS dump of 3 consecutive frames (`r2_intro_cloud_1` … `_3`) and screenshots. If possible repeat at the second transition (about 31 s).
+  3. **Depth copy, mission 12:** any frame of free flight in mission 12 (campaign save or free mission): GS dump + screenshot (`r3_m12`).
+  4. **Reverb:** with audio recording on (Tools → Start Video Capture, which records the sound too; or the audio dump option of the build), record (a) 15 s of the main menu moving the cursor up and down and opening/closing OPTIONS, (b) 30 s of flight in mission 1 or 4 including a missile launch and a hit. Files `r4_menu`, `r4_flight`.
+  5. **Mission title card:** finish mission 1 (or load a state just before its end) and let the game reach the MISSION 02 title card ("IMMINENT THREAT"): screenshots at its start, while it zooms in, and when it stands (`r5_title_1` … `_3`).
+  6. **Memory card round trip:** (a) copy the port's save folder `%LOCALAPPDATA%\ProjectStonehenge\saves\BASLUS-20152AC04` into a PCSX2 folder memory card, load it in PCSX2 and check the campaign progress and options; save once in PCSX2. (b) Copy the folder back into a copy of the port's `saves\` and load it in the port (give me the folder; I run the port side). Note anything that differs.
+- **Record:** the state and dump names, what was on screen, and for step 6 what loaded correctly on each side.
+
 ## S7. Slice 7 batch: results screen and post-mission menu (one session, about 30 minutes; can follow C2)
 - **Purpose:** reference data for scene 5 (results) and the post-mission menu (`../subsystems/results-startup.md` "Scene 5"), translated 2026-10-18 in `src/game/results_scene.cpp` and `src/game/post_mission_page.cpp`. The port cannot reach the results screen on its own yet: a `--mission` start diverges from PCSX2 (its RNG and heap differ), so replaying `b3_m4_full.p2m2` over it does not complete mission 4 (tried 2026-10-18). Hence test vectors and screenshots.
 - **Blocks:** validation of S7 only.

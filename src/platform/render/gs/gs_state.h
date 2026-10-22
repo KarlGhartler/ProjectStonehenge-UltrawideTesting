@@ -101,6 +101,10 @@ struct DrawCommand {
     // For a paletted texture read from a frame buffer: the palette as RGBA8 (TEXA applied for 16-bit
     // CLUTs; 4-bit formats: the 16 entries from CSA in 0-15), for the backend's format conversion.
     std::shared_ptr<const std::array<std::uint32_t, 256>> frame_clut;
+    // 8-bit palette drawn on the GPU (the CLUT was loaded from a frame buffer drawn earlier): its CBP,
+    // else -1. The texture then holds palette indices (identity palette, entry i = i in red) and
+    // the backend looks them up in that frame buffer at draw time (gs.frag flag 29).
+    std::int32_t clut_from_frame = -1;
     // Movie upscaling side path (ADR-006 §5): when the texture's last IMAGE upload came from a marked
     // guest block, the guest address of the upload's first texel and the upload width (texels).
     std::uint32_t texture_guest_source = 0;
@@ -213,6 +217,8 @@ private:
     // read from local memory until the buffer is drawn again.
     std::unordered_map<std::uint32_t, std::uint32_t> fb_pages_;
     std::unordered_set<std::uint32_t> fb_overwritten_;
+    // CBP of the last CLUT load when it read a drawn frame buffer (LoadClut), else -1.
+    std::int32_t clut_frame_cbp_ = -1;
     // Bits of the 32-bit pixel any draw has written per FBP (FBMSK and the frame format): a T8H /
     // T4HL / T4HH texture over a frame buffer whose draws all kept its bits (the mission 1 opening
     // draws RGB into FBP 0x70 with FBMSK 0xFF000000 over the aircraft's T8H texture) is what local

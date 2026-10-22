@@ -96,13 +96,17 @@ bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& pr
 
 void Renderer::SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps,
                              std::vector<std::vector<gs::SourceMark>>& marks,
-                             std::vector<std::vector<uint8_t>>& pool) {
+                             std::vector<std::vector<uint8_t>>& pool, bool draws) {
     const auto start = std::chrono::steady_clock::now();
     for (size_t i = 0; i < steps.size(); ++i) {
         const std::vector<uint8_t>& s = steps[i];
         gs_state_.ProcessGif(s.data(), s.size(), i < marks.size() ? &marks[i] : nullptr);
-        auto draws = gs_state_.TakeDraws();
-        gs_pending_.insert(gs_pending_.end(), std::make_move_iterator(draws.begin()), std::make_move_iterator(draws.end()));
+        // Without draws (frame interpolation: the step is drawn from its blended copy) the step
+        // still updates the GS state and local memory, and its texture work still runs.
+        auto step_draws = gs_state_.TakeDraws();
+        if (draws)
+            gs_pending_.insert(gs_pending_.end(), std::make_move_iterator(step_draws.begin()),
+                               std::make_move_iterator(step_draws.end()));
         auto ops = gs_state_.TakeTextureOps();
         if (gs_ready_) gs_ops_.insert(gs_ops_.end(), std::make_move_iterator(ops.begin()), std::make_move_iterator(ops.end()));
     }

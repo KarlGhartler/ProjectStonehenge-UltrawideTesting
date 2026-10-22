@@ -18,6 +18,7 @@ layout(set = 1, binding = 0) uniform sampler2D tex;  // the draw's decoded textu
 layout(binding = 1) uniform sampler2D feedback;
 layout(binding = 2) uniform sampler2D dst_copy;  // target region before a DATE draw (flag 22) or a shader blend (flag 28)
 layout(binding = 3) uniform sampler2D movie;     // upscaled movie picture, bilinear (flag 27)
+layout(binding = 4) uniform sampler2D clut_img;  // 16x16 palette drawn on the GPU (flag 29)
 
 layout(push_constant) uniform Params {
     vec2 target_size;
@@ -55,7 +56,7 @@ int WrapScaled(int c, int mode, int size, int mn, int mx, int s) {
 // Texel t of mipmap level `level`. Level 0 is the decoded rectangle (or the frame-buffer copy);
 // levels 1.. are stored whole to the right of level 0, stacked top to bottom (gs_state.h
 // DecodedTexture). HYPOTHESIS: the region clamp/repeat values scale with the level (>> level).
-vec4 Fetch(ivec2 t, int level) {
+vec4 FetchTexel(ivec2 t, int level) {
     ivec2 size = max(pc.tex_size >> level, ivec2(1));
     if (level == 0 && (pc.flags & (1 << 16)) != 0) {
         // Frame-buffer copy, `tex_scale` host texels per GS texel.
@@ -73,6 +74,16 @@ vec4 Fetch(ivec2 t, int level) {
     for (int k = 1; k < level; ++k) y += max(pc.tex_size.y >> k, 1);
     ivec2 a = clamp(t, ivec2(0), size - 1);
     return floor(texelFetch(tex, ivec2(pc.rect.z, y) + a, 0) * 255.0 + 0.5);
+}
+
+// Flag 29: the texture holds 8-bit palette indices (in red) of a palette the GPU drew; each texel
+// is looked up in its 16x16 CT32 image (CSM1: bits 3 and 4 of the index swapped), before filtering.
+vec4 Fetch(ivec2 t, int level) {
+    vec4 c = FetchTexel(t, level);
+    if ((pc.flags & (1 << 29)) == 0) return c;
+    int i = int(c.r);
+    int p = (i & 0xE7) | ((i & 0x08) << 1) | ((i & 0x10) >> 1);
+    return floor(texelFetch(clut_img, ivec2(p & 15, p >> 4), 0) * 255.0 + 0.5);
 }
 
 // Level `level` sampled at level-0 texel coordinates uv, nearest or bilinear. A scaled
@@ -93,12 +104,13 @@ vec4 Sample(vec2 uv, int level, bool linear) {
 
 void main() {
     // Flag 26: a 2D sprite drawn at internal scale > 1 samples at the UV of the native pixel the
-    // host pixel lies in (native sample point floor(g), g = the host pixel's GS position), so its
-    // texels map 1:1 to native pixels as on the PS2. Derivatives first (uniform control flow).
+    // host pixel lies in (native pixel n covers GS positions [n - 1/2, n + 1/2), sample point n =
+    // floor(g + 1/2), g = the host pixel's GS position), so its texels map 1:1 to native pixels as
+    // on the PS2. Derivatives first (uniform control flow).
     vec2 tex_xy = v_tex.xy;
     if ((pc.flags & (1 << 26)) != 0) {
         vec2 g = gl_FragCoord.xy / float(pc.scale) - 0.5;
-        vec2 dg = (floor(g) - g) * float(pc.scale);
+        vec2 dg = (floor(g + 0.5) - g) * float(pc.scale);
         tex_xy += dFdx(v_tex.xy) * dg.x + dFdy(v_tex.xy) * dg.y;
     }
     // Flag 22: destination alpha test. The pixel is drawn only when bit 7 of the stored alpha equals

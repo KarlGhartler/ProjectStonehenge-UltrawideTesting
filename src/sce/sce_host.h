@@ -15,6 +15,7 @@
 #include "platform/iso9660.h"
 #include "platform/memcard/folder_card.h"
 #include "platform/render/gs/gs_source_mark.h"
+#include "platform/render/vu1/vif1.h"
 
 namespace ac04::sce {
 
@@ -76,6 +77,11 @@ struct DmaStats {
     std::vector<GsSourceMark> gs_step_marks;
     std::vector<std::vector<GsSourceMark>> gs_steps_marks;
     MoviePicture movie_picture;
+    // Frame interpolation (platform/render/frame_interpolator.h): while the host sets record_runs,
+    // the VU1 program runs of the current step and of the completed steps (same order as gs_steps).
+    bool record_runs = false;
+    render::vu1::RunLog gs_step_runs;
+    std::vector<render::vu1::RunLog> gs_steps_runs;
     // --dump-dma-at: capture of the current step (pairs guest address, word).
     bool capture_active = false;
     std::vector<u32> capture_vif1;

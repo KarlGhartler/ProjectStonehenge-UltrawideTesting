@@ -179,8 +179,31 @@ public:
                         mixer_->SetMasterVolume(rec[4], l, r);
                     }
                     break;
-                case 6: case 7: case 8: case 9:
-                    log::WriteOnce("iop:sound:reverb", log::Level::Info, "iop", "SOUND: reverb is not mixed yet (slice S2a)");
+                case 6:
+                    // set_reverb_mode(core, mode): sceSdSetEffectAttr {mode | clear work area,
+                    // depth 0} (SOUND.IRX 0x5E0); the work area ends at the core's EEA.
+                    if (mixer_ && rec[4] < 2 && Word(rec, size, 8) < 10) {
+                        const std::uint32_t core = rec[4], mode = Word(rec, size, 8);
+                        if (mode == 7 || mode == 8)
+                            log::WriteOnce("iop:sound:reverb-delay", log::Level::Warning, "iop",
+                                           "SOUND: reverb mode %u: echo delay and feedback not modelled", mode);
+                        mixer_->SetReverbMode(static_cast<int>(core), static_cast<int>(mode), EffectStart(core, mode),
+                                              kEffectEnd[core]);
+                    }
+                    break;
+                case 7:
+                    // set_reverb_depth(core, l, r): EFFECT_ENABLE on, EVOL L/R (SOUND.IRX 0x628).
+                    if (mixer_ && rec[4] < 2) {
+                        std::int16_t l, r;
+                        std::memcpy(&l, rec + 0xC, 2);
+                        std::memcpy(&r, rec + 0xE, 2);
+                        mixer_->SetReverbDepth(rec[4], l, r);
+                    }
+                    break;
+                case 8: case 9:
+                    // set_reverb_on / set_reverb_off(voice): the voice's VMIXEL and VMIXER bits
+                    // (SOUND.IRX 0x6A4 / 0x75C; the voice is the signed byte at +5).
+                    if (mixer_) mixer_->SetVoiceReverb(static_cast<std::int8_t>(rec[5]), id == 8);
                     break;
                 case 0xD:
                     // set_datainput_volume: core 0 sound-data input (movie PCM).

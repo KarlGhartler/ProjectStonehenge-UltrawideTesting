@@ -51,6 +51,7 @@ add_library(ac04_platform STATIC
     platform/render/gs/gs_antialias.cpp
     platform/render/movie_upscaler.cpp
     platform/render/renderer.cpp
+    platform/render/frame_interpolator.cpp
     platform/render/gs_dump.cpp
     platform/render/vk_context.cpp
     platform/render/vma_impl.cpp)
@@ -61,6 +62,7 @@ ac04_add_shaders(ac04_platform
     "${CMAKE_SOURCE_DIR}/shaders/output.frag"
     "${CMAKE_SOURCE_DIR}/shaders/gs.vert"
     "${CMAKE_SOURCE_DIR}/shaders/gs.frag"
+    "${CMAKE_SOURCE_DIR}/shaders/gs_depth_copy.frag"
     "${CMAKE_SOURCE_DIR}/shaders/gs_conv.comp"
     "${CMAKE_SOURCE_DIR}/shaders/gs_decode.comp"
     "${CMAKE_SOURCE_DIR}/shaders/fsr1_easu.comp"

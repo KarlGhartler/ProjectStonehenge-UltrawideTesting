@@ -29,7 +29,7 @@ A **voice record** (0x48 bytes) is owned by the caller and passed to every call.
 | `StopSound(voice)` 0x0021E058 | type 4 | |
 | `func_0021E0E8` | command 5 | stop by masks (`func_002197E8` stops everything) |
 | `func_0021CE38` / `func_0021CEA0` | commands 0xB / 0xC | master volume / core input volume pairs; 0xC has no callers (dead) |
-| `func_0021CFE8` / `func_0021D018` | commands 8 / 9 | reverb on / off for one SPU core |
+| `func_0021CFE8` / `func_0021D018` | commands 8 / 9 | reverb on / off for one voice (its VMIXEL / VMIXER bits; corrected 2026-10-22) |
 
 Convenience wrappers: `PlayMenuSe(bank, sound)` 0x002196A8 on a fixed voice (50 callers), `func_002196E0`, `func_00219728`, `func_00219758`, `func_00219798`.
 
@@ -176,7 +176,7 @@ Byte offsets inside each record. "voice" = 0–47 (0–23 core 0, 24–47 core 1
 | 5 | 12 | `tone_key_off_bit` | `func_0021E0E8(a, b)` via `func_002179D8` | +4 core-0 mask (24 bits), +8 core-1 mask | key off by bitmask; voice states cleared |
 | 6 | 16 | `set_reverb_mode` | `func_0021CF70(core, mode)` | +4 byte core, +8 mode | reverb type; the reply carries the effect work-area start address (`sceSdGetAddr` of the ESA) |
 | 7 | 16 | `set_reverb_depth` | `func_0021CFA0(core, l, r)` | +4 core, +0xC s16 depth L, +0xE depth R | reverb depth |
-| 8 / 9 | 16 | `set_reverb_on` / `set_reverb_off` | `func_0021CFE8(core)` / `func_0021D018(core)` | +5 core | reverb on / off |
+| 8 / 9 | 16 | `set_reverb_on` / `set_reverb_off` | `func_0021CFE8(voice)` / `func_0021D018(voice)` | +5 s8 voice | the voice's wet switches VMIXEL / VMIXER (0x1900 / 0x1B00 | core) set / cleared (SOUND.IRX 0x6A4 / 0x75C). Command 6 is `sceSdSetEffectAttr` {mode \| 0x100 clear work area, depth 0} (0x5E0), command 7 `sceSdSetCoreAttr(EFFECT_ENABLE)` + EVOL L/R (0x628). Port: `../port/validation.md` §2ab |
 | 0xA | 20 | posts to the `TransBd` thread | `func_00217680(src, dst, size)`, returns a ticket | +4 IOP source, +8 SPU destination, +0xC size, +0x10 ticket | **dst ≠ 0**: `sceSdVoiceTrans` (IOP → SPU RAM; BD.CDP sample banks, `StreamBdEntryToIop` (H) 0x00219C80). **dst = 0**: `sceSdBlockTrans` on core 0 (PCM streaming into the core-0 sound-data input: mode 0x10 = loop with a source, mode 2 = stop when the source is 0); used for SMV movie audio |
 | 0xB | 12 | `set_master_volume` | `func_0021CE38(core, l, r)` (scaled to 0x3FFF) | +4 core, +6 s16 L, +8 s16 R | master volume |
 | 0xC | 12 | `set_coreinput_volume` | `func_0021CEA0` (no callers) | same layout | core input volume; never sent (dead command) |

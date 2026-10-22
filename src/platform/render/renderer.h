@@ -51,7 +51,7 @@ public:
     // shorter); processed now, drawn with the next frame.
     // Processes the steps' GIF data; the emptied step buffers go to `pool` (kept for reuse).
     void SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps, std::vector<std::vector<gs::SourceMark>>& marks,
-                       std::vector<std::vector<uint8_t>>& pool);
+                       std::vector<std::vector<uint8_t>>& pool, bool draws = true);
     // Off: submitted steps update GS registers and local memory but produce no draws (--fast-until:
     // steps that are never shown).
     void SetGsDrawsEnabled(bool on) { gs_state_.SetDrawsEnabled(on); }

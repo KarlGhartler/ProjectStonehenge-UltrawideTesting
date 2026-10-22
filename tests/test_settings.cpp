@@ -24,6 +24,7 @@ TEST_CASE("settings: defaults") {
     CHECK(s.presentation.default_screen_ratio == ScreenRatioDefault::Monitor);
     CHECK_FALSE(s.debug.fps_overlay);
     CHECK(s.presentation.antialiasing == AntiAliasing::Fxaa);
+    CHECK(s.presentation.frame_interpolation);
     CHECK(s.audio.on_focus_loss == FocusLossAudio::KeepPlaying);
     CHECK(s.debug.overlay_toggle == "\\");
     CHECK(s.input.bindings.at("cross").size() == 2);
@@ -93,6 +94,21 @@ TEST_CASE("settings: anti-aliasing") {
     std::vector<std::string> warnings;
     CHECK_FALSE(store.LoadFromText(R"({"presentation":{"antialiasing":"msaa"}})", warnings));
     CHECK_FALSE(warnings.empty());
+}
+
+TEST_CASE("settings: frame interpolation") {
+    SettingsStore store;
+    std::vector<std::string> warnings;
+    int notified = 0;
+    store.Subscribe(SettingsSection::Presentation, [&notified](const Settings&) { ++notified; });
+    CHECK(store.LoadFromText(R"({"presentation":{"frame_interpolation":false}})", warnings));
+    CHECK_FALSE(store.Get().presentation.frame_interpolation);
+    CHECK(nlohmann::json::parse(store.ToText())["presentation"]["frame_interpolation"] == false);
+    Settings next = store.Get();
+    next.presentation.frame_interpolation = true;
+    store.Replace(next);
+    CHECK(notified == 1);  // a change notifies the presentation section
+    CHECK_FALSE(store.LoadFromText(R"({"presentation":{"frame_interpolation":"yes"}})", warnings));
 }
 
 TEST_CASE("settings: valid values are read") {

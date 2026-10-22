@@ -41,6 +41,7 @@
 #include "platform/png_writer.h"
 #include "platform/audio/spu_mixer.h"
 #include "platform/render/gs_dump.h"
+#include "platform/render/frame_interpolator.h"
 #include "platform/render/renderer.h"
 #include "platform/settings.h"
 #include "platform/system_info.h"
@@ -334,6 +335,15 @@ DisplayInfo QueryDisplay(SDL_DisplayID id) {
         d.refresh_hz = static_cast<int>(std::lround(m->refresh_rate));
     }
     return d;
+}
+
+// Refresh period of the display the window is on, in seconds (0 when unknown).
+double DisplayRefreshSeconds(SDL_Window* window) {
+    const SDL_DisplayMode* m = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+    if (m == nullptr) return 0.0;
+    if (m->refresh_rate_numerator > 0 && m->refresh_rate_denominator > 0)
+        return static_cast<double>(m->refresh_rate_denominator) / m->refresh_rate_numerator;
+    return m->refresh_rate > 0.0f ? 1.0 / m->refresh_rate : 0.0;
 }
 
 // The frame cap in force: none with v-sync on (the presentation engine paces the frames).
@@ -663,6 +673,13 @@ int Run(int argc, char** argv) {
     static platform::audio::SpuMixer mixer;
     audio.SetSource(&mixer);
     mixer.SetCapture(cl.options.dump_audio);
+    {
+        // Reverb presets: libsd's table in the disc's IRX/LIBSD.IRX (read like any other game data).
+        IsoEntry entry;
+        std::vector<std::uint8_t> libsd;
+        if (!disc->Iso().Find("IRX/LIBSD.IRX", entry) || !disc->Iso().ReadFile(entry, libsd) || !mixer.LoadReverbPresets(libsd))
+            AC04_LOG_WARN("audio", "reverb presets not found in IRX/LIBSD.IRX: reverb is off");
+    }
     debug::SetFreezeSim(cl.options.freeze_sim);
     if (cl.options.mission != 0 || cl.options.mission_id >= 0) {
         debug::BootMission m;
@@ -873,6 +890,16 @@ int Run(int argc, char** argv) {
     std::mt19937 stress_rng(std::random_device{}());
 
     auto last_time = std::chrono::steady_clock::now();
+    sce::RefreshSnap refresh_snap;
+    double refresh_seconds = 0.0;
+    // Frame interpolation (ADR-002, platform/render/frame_interpolator.h): the blended copy of the
+    // newest step is drawn instead of the step itself when more frames than steps are presented.
+    render::FrameInterpolator interpolator;
+    bool interpolating = false;
+    std::vector<std::vector<u8>> blended(1);
+    std::vector<std::vector<render::gs::SourceMark>> blended_marks(1);
+    std::vector<std::vector<u8>> blended_pool;
+    u64 frame_number = 0;
     bool game_end_logged = false;
     bool running = true;
     std::vector<unsigned> screenshot_due = cl.options.screenshot_at;
@@ -914,8 +941,13 @@ int Run(int argc, char** argv) {
         // Fixed 59.94 Hz simulation: release the ticks due since the last frame (catch-up <= 4);
         // the game thread runs them and parks again before the frame is presented.
         const auto now = std::chrono::steady_clock::now();
-        const double elapsed = std::chrono::duration<double>(now - last_time).count();
+        const double measured = std::chrono::duration<double>(now - last_time).count();
         last_time = now;
+        // V-sync on: each presented frame is one display refresh (RefreshSnap), so the ticks per
+        // frame do not follow the jitter of where the CPU blocks. The refresh rate is read again
+        // every second (the window can move to another display).
+        if (frame_number++ % 60 == 0) refresh_seconds = DisplayRefreshSeconds(window.Handle());
+        const double elapsed = refresh_snap.Step(measured, settings.Get().presentation.vsync ? refresh_seconds : 0.0);
         // --fast-until (development builds): ticks run back to back for about 100 ms per frame
         // until that vblank, and only the last tick's draws are shown; the steps before it update GS
         // registers and local memory only. The game sees the same ticks and pads as at normal speed
@@ -923,6 +955,21 @@ int Run(int argc, char** argv) {
         // before a screenshot and before the end run one per frame with all draws, as at normal
         // speed, because what a frame shows depends on how the ticks were grouped into frames.
         const bool fast = fast_until != 0 && game.VBlankCount() < fast_until;
+        {
+            // Interpolation only helps above 60 presented frames per second (v-sync: the display's
+            // refresh rate; otherwise the frame cap). Never in validation runs (their screenshots
+            // compare with PCSX2) or while fast-forwarding. The VIF records the program runs of
+            // this frame's steps only while it is on.
+            const PresentationSettings& pr = settings.Get().presentation;
+            const double rate = pr.vsync ? (refresh_seconds > 0.0 ? 1.0 / refresh_seconds : 60.0) : pr.frame_cap;
+            const bool want = pr.frame_interpolation && !validation_run && !fast && rate > 62.0;
+            if (want != interpolating) {
+                interpolating = want;
+                interpolator.Reset();
+                AC04_LOG_INFO("renderer", "frame interpolation: %s (%.0f frames per second)", want ? "on" : "off", rate);
+            }
+            sce::Dma().record_runs = want;
+        }
         const u32 ticks = fast ? 0xFFFFFFFFu : clock.Advance(elapsed);
         // One tick at a time: the pads are sampled and latched before each tick (slices.md §B P1).
         u32 ticks_run = 0;
@@ -940,6 +987,7 @@ int Run(int argc, char** argv) {
                     // Keep GS memory current step by step without building draws.
                     renderer.SetGsDrawsEnabled(false);
                     renderer.SubmitGsSteps(sce::Dma().gs_steps, sce::Dma().gs_steps_marks, sce::Dma().gs_step_pool);
+                    sce::Dma().gs_steps_runs.clear();
                 }
             }
             ++ticks_run;
@@ -978,7 +1026,41 @@ int Run(int argc, char** argv) {
             }
         }
         // The game is parked: its GS data and the latest movie picture (side path) can be taken.
-        renderer.SubmitGsSteps(sce::Dma().gs_steps, sce::Dma().gs_steps_marks, sce::Dma().gs_step_pool);
+        {
+            sce::DmaStats& dma = sce::Dma();
+            bool blend = false;
+            if (interpolating) {
+                // A frame without steps shows the newest step again, further blended.
+                bool current = dma.gs_steps.empty();
+                if (!current && dma.gs_steps_runs.size() == dma.gs_steps.size() &&
+                    dma.gs_steps_marks.size() == dma.gs_steps.size()) {
+                    interpolator.PushStep(dma.gs_steps.back(), dma.gs_steps_marks.back(), dma.gs_steps_runs.back());
+                    current = true;
+                }
+                if (current) blend = interpolator.Build(clock.Alpha(), blended[0], blended_marks[0]);
+                else interpolator.Reset();
+            }
+            dma.gs_steps_runs.clear();
+            // With a blended copy the newest step is replaced by it: the copy makes the same GS
+            // register and local memory changes (only the blended runs' vertices differ). Earlier
+            // steps of this frame still update the GS state, without drawing.
+            if (blend && !dma.gs_steps.empty()) {
+                dma.gs_steps.back().clear();
+                if (dma.gs_step_pool.size() < 4) dma.gs_step_pool.push_back(std::move(dma.gs_steps.back()));
+                dma.gs_steps.pop_back();
+                if (dma.gs_steps_marks.size() > dma.gs_steps.size()) dma.gs_steps_marks.resize(dma.gs_steps.size());
+            }
+            renderer.SubmitGsSteps(dma.gs_steps, dma.gs_steps_marks, dma.gs_step_pool, !blend);
+            if (blend) {
+                renderer.SubmitGsSteps(blended, blended_marks, blended_pool);
+                blended.resize(1);
+                blended_marks.resize(1);
+                if (!blended_pool.empty()) {
+                    blended[0] = std::move(blended_pool.back());
+                    blended_pool.pop_back();
+                }
+            }
+        }
         renderer.SetDisplay(sce::Dma().dispenv[2], sce::Dma().dispenv[3]);
         // Vibration as the game last set it (scePadSetActDirect), on the live gamepads only: runs
         // fed from a script or a recording leave the pads still.
@@ -1005,7 +1087,7 @@ int Run(int argc, char** argv) {
         if (overlay.Active()) {
             const sce::DmaStats& dma = sce::Dma();
             OverlayFrameData od;
-            od.frame_seconds = elapsed;
+            od.frame_seconds = measured;
             od.ticks_run = ticks_run;
             od.vblank_count = game.VBlankCount();
             od.dropped_ticks = clock.DroppedTicks();

@@ -44,6 +44,9 @@ struct PresentationSettings {
     int internal_scale = 1;         // renderer scale factor 1-kMaxInternalScale (docs/port/renderer.md §1)
     ScreenRatioDefault default_screen_ratio = ScreenRatioDefault::Monitor;
     AntiAliasing antialiasing = AntiAliasing::Off;
+    // Frame interpolation (ADR-002): above 60 presented frames per second the 3D is shown between
+    // the last two game steps (platform/render/frame_interpolator.h). Presentation only.
+    bool frame_interpolation = true;
 };
 
 struct PathSettings {

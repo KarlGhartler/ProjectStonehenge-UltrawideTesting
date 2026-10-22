@@ -13,6 +13,7 @@
 
 #include "gs_conv_comp_spv.h"
 #include "gs_decode_comp_spv.h"
+#include "gs_depth_copy_frag_spv.h"
 #include "gs_frag_spv.h"
 #include "gs_vert_spv.h"
 #include "platform/log.h"
@@ -358,16 +359,17 @@ bool GsBackend::Init(VkContext& ctx, std::string& error) {
     VkPhysicalDeviceProperties props{};
     vkGetPhysicalDeviceProperties(ctx.physical_device, &props);
     max_image_dim_ = static_cast<int>(props.limits.maxImageDimension2D);
-    // Set 0: feedback, DATE copy and movie (bindings 1-3); set 1: the draw's texture (binding 0).
-    VkDescriptorSetLayoutBinding bindings[3]{};
-    for (int i = 0; i < 3; ++i) {
+    // Set 0: feedback, DATE copy, movie and the GPU-drawn palette (bindings 1-4); set 1: the draw's
+    // texture (binding 0).
+    VkDescriptorSetLayoutBinding bindings[4]{};
+    for (int i = 0; i < 4; ++i) {
         bindings[i].binding = static_cast<uint32_t>(i + 1);
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[i].descriptorCount = 1;
         bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     }
     VkDescriptorSetLayoutCreateInfo dli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    dli.bindingCount = 3;
+    dli.bindingCount = 4;
     dli.pBindings = bindings;
     vkCreateDescriptorSetLayout(ctx.device, &dli, nullptr, &set_layout_);
     bindings[0].binding = 0;
@@ -391,14 +393,14 @@ bool GsBackend::Init(VkContext& ctx, std::string& error) {
 
     const VkImageUsageFlags tex_usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     if (!CreateImage(feedback_, kFeedbackWidth, kTargetHeight, tex_usage | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT) ||
-        !CreateImage(date_, kFeedbackWidth, kTargetHeight, tex_usage) ||
+        !CreateImage(date_, kFeedbackWidth, kTargetHeight, tex_usage) || !CreateImage(clut_img_, 16, 16, tex_usage) ||
         !CreateImage(present_, kFeedbackWidth, kTargetHeight, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) {
         error = "cannot create the GS renderer images";
         return false;
     }
     // One set per frame in flight: Record rewrites its frame's set (the images can be replaced
     // between frames: scratch growth, the movie stage's output).
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 * kFrames};
+    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 * kFrames};
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     dpi.maxSets = kFrames;
     dpi.poolSizeCount = 1;
@@ -454,9 +456,96 @@ bool GsBackend::Init(VkContext& ctx, std::string& error) {
     vkQueueWaitIdle(ctx.queue);
     vkDestroyCommandPool(ctx.device, pool, nullptr);
     if (!InitConvert(error)) return false;
+    if (!InitDepthCopy(error)) return false;
     // Anti-aliasing is optional: without it the setting has no effect.
     std::string aa_error;
     if (!InitAntiAlias(aa_error)) AC04_LOG_ERROR("renderer", "anti-aliasing unavailable: %s", aa_error.c_str());
+    return true;
+}
+
+bool GsBackend::InitDepthCopy(std::string& error) {
+    VkDescriptorSetLayoutBinding b{};
+    b.binding = 0;
+    b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    b.descriptorCount = 1;
+    b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo dli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    dli.bindingCount = 1;
+    dli.pBindings = &b;
+    vkCreateDescriptorSetLayout(ctx_->device, &dli, nullptr, &depth_copy_set_layout_);
+    VkPushConstantRange pcr{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 24};
+    VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pli.setLayoutCount = 1;
+    pli.pSetLayouts = &depth_copy_set_layout_;
+    pli.pushConstantRangeCount = 1;
+    pli.pPushConstantRanges = &pcr;
+    vkCreatePipelineLayout(ctx_->device, &pli, nullptr, &depth_copy_layout_);
+    VkShaderModuleCreateInfo smi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    smi.codeSize = sizeof(gs_depth_copy_frag_spv);
+    smi.pCode = gs_depth_copy_frag_spv;
+    VkShaderModule fs = VK_NULL_HANDLE;
+    vkCreateShaderModule(ctx_->device, &smi, nullptr, &fs);
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs_, "main", nullptr};
+    stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main", nullptr};
+    VkVertexInputBindingDescription vb{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
+    VkVertexInputAttributeDescription va[4] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
+                                               {1, 0, VK_FORMAT_R8G8B8A8_UINT, 12},
+                                               {2, 0, VK_FORMAT_R32G32B32_SFLOAT, 16},
+                                               {3, 0, VK_FORMAT_R32_SFLOAT, 28}};
+    VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    vi.vertexBindingDescriptionCount = 1;
+    vi.pVertexBindingDescriptions = &vb;
+    vi.vertexAttributeDescriptionCount = 4;
+    vi.pVertexAttributeDescriptions = va;
+    VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    vp.viewportCount = 1;
+    vp.scissorCount = 1;
+    VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    rs.polygonMode = VK_POLYGON_MODE_FILL;
+    rs.cullMode = VK_CULL_MODE_NONE;
+    rs.lineWidth = 1.0f;
+    VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineColorBlendAttachmentState cba{};  // colour not written
+    VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    cb.attachmentCount = 1;
+    cb.pAttachments = &cba;
+    VkPipelineDepthStencilStateCreateInfo dss{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+    dss.depthTestEnable = VK_TRUE;
+    dss.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+    dss.depthWriteEnable = VK_TRUE;
+    VkDynamicState dyn[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    ds.dynamicStateCount = 2;
+    ds.pDynamicStates = dyn;
+    VkGraphicsPipelineCreateInfo gpi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    gpi.stageCount = 2;
+    gpi.pStages = stages;
+    gpi.pVertexInputState = &vi;
+    gpi.pInputAssemblyState = &ia;
+    gpi.pViewportState = &vp;
+    gpi.pRasterizationState = &rs;
+    gpi.pMultisampleState = &ms;
+    gpi.pColorBlendState = &cb;
+    gpi.pDepthStencilState = &dss;
+    gpi.pDynamicState = &ds;
+    gpi.layout = depth_copy_layout_;
+    gpi.renderPass = pass_;
+    const VkResult r = vkCreateGraphicsPipelines(ctx_->device, VK_NULL_HANDLE, 1, &gpi, nullptr, &depth_copy_pipeline_);
+    vkDestroyShaderModule(ctx_->device, fs, nullptr);
+    if (r != VK_SUCCESS) {
+        error = "cannot create the GS depth copy pipeline";
+        return false;
+    }
+    const VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxDepthCopies};
+    VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    dpi.maxSets = kMaxDepthCopies;
+    dpi.poolSizeCount = 1;
+    dpi.pPoolSizes = &ps;
+    for (int f = 0; f < kFrames; ++f) vkCreateDescriptorPool(ctx_->device, &dpi, nullptr, &depth_copy_pool_[f]);
     return true;
 }
 
@@ -1173,6 +1262,16 @@ void GsBackend::Shutdown() {
         DestroyBuffer(conv_clut_[f]);
     }
     DestroyBuffer(conv_tables_);
+    if (depth_copy_pipeline_) vkDestroyPipeline(ctx_->device, depth_copy_pipeline_, nullptr);
+    if (depth_copy_layout_) vkDestroyPipelineLayout(ctx_->device, depth_copy_layout_, nullptr);
+    if (depth_copy_set_layout_) vkDestroyDescriptorSetLayout(ctx_->device, depth_copy_set_layout_, nullptr);
+    for (int f = 0; f < kFrames; ++f) {
+        if (depth_copy_pool_[f]) vkDestroyDescriptorPool(ctx_->device, depth_copy_pool_[f], nullptr);
+        depth_copy_pool_[f] = VK_NULL_HANDLE;
+    }
+    depth_copy_pipeline_ = VK_NULL_HANDLE;
+    depth_copy_layout_ = VK_NULL_HANDLE;
+    depth_copy_set_layout_ = VK_NULL_HANDLE;
     if (conv_pipeline_) vkDestroyPipeline(ctx_->device, conv_pipeline_, nullptr);
     if (conv_layout_) vkDestroyPipelineLayout(ctx_->device, conv_layout_, nullptr);
     if (conv_set_layout_) vkDestroyDescriptorSetLayout(ctx_->device, conv_set_layout_, nullptr);
@@ -1203,6 +1302,7 @@ void GsBackend::Shutdown() {
     decode_set_layout_ = VK_NULL_HANDLE;
     DestroyImage(feedback_);
     DestroyImage(date_);
+    DestroyImage(clut_img_);
     DestroyImage(present_);
     for (int i = 0; i < kFrames; ++i) {
         DestroyBuffer(staging_[i]);
@@ -1259,7 +1359,7 @@ bool GsBackend::CreateTargetImages(Target& t, int frame, VkCommandBuffer cmd) {
     }
     if (!CreateImage(t.depth, w, h,
                      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                         VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                      kDepthFormat)) {
         LogOnce("target", "cannot create a render target");
         Retire(frame, t.img);
@@ -1324,17 +1424,57 @@ GsBackend::Target* GsBackend::GetTarget(VkCommandBuffer cmd, int frame, std::uin
         t = std::move(grown);
         return &t;
     }
+    // A frame buffer drawn both in the 32-bit layout and in a 16-bit one (the flight's work page at
+    // FBP 0x180: CT32, then CT16S over the same bytes, then CT32 again; the explosions sample it)
+    // moves bits between pixels with each view change, which a scaled image cannot follow: all its
+    // views are held at 1x (renderer.md §1, row 7; validation.md §2y).
+    for (auto& [k, u] : targets_) {
+        if (u.fbp != fbp || u.psm == LayoutClass(psm)) continue;
+        if (native_fbps_.insert(fbp).second && (u.scale > 1 || TargetScale(std::max<int>(64, static_cast<int>(fbw) * 64)) > 1))
+            AC04_LOG_INFO("renderer", "frame buffer FBP 0x%X drawn in 32- and 16-bit layouts: kept at 1x", fbp);
+        break;
+    }
+    if (native_fbps_.count(fbp) != 0) {
+        for (auto& [k, u] : targets_) {
+            if (u.fbp == fbp && u.scale > 1) DownscaleTarget(cmd, frame, u);
+        }
+    }
     Target t;
     t.fbp = fbp;
     t.fbw = fbw;
     t.psm = LayoutClass(psm);
     t.native_w = std::max<int>(64, static_cast<int>(fbw) * 64);
-    t.scale = TargetScale(t.native_w);
+    t.scale = native_fbps_.count(fbp) != 0 ? 1 : TargetScale(t.native_w);
     t.native_h = t.scale == 1 ? kTargetHeight : std::max(64, (rows + 63) & ~63);
     if (!CreateTargetImages(t, frame, cmd)) return nullptr;
     Transition(cmd, t.img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     Transition(cmd, t.depth, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     return &targets_.emplace(key, std::move(t)).first->second;
+}
+
+void GsBackend::DownscaleTarget(VkCommandBuffer cmd, int frame, Target& t) {
+    Target n = t;
+    n.scale = 1;
+    n.native_h = kTargetHeight;
+    n.img = Image{};
+    n.depth = Image{};
+    n.fb = VK_NULL_HANDLE;
+    if (!CreateTargetImages(n, frame, cmd)) return;
+    // Colour only: the depth image starts cleared (these are 2D work buffers).
+    VkImageBlit b{};
+    b.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    b.dstSubresource = b.srcSubresource;
+    b.srcOffsets[1] = {t.img.width, t.img.height, 1};
+    b.dstOffsets[1] = {t.native_w, t.native_h, 1};
+    Transition(cmd, t.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    vkCmdBlitImage(cmd, t.img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, n.img.image,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b, VK_FILTER_NEAREST);
+    Transition(cmd, n.img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    Transition(cmd, n.depth, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    Retire(frame, t.img);
+    Retire(frame, t.depth);
+    retired_fb_[frame].push_back(t.fb);
+    t = std::move(n);
 }
 
 bool GsBackend::EnsureScratch(int frame, VkCommandBuffer cmd, int w, int h) {
@@ -1580,20 +1720,36 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
     auto depth_fill = [&](const DrawCommand& d) {
         return d.kind == PrimKind::kSprite && !d.textured && zbuf_owner_.count(d.Fbp()) != 0;
     };
+    // A sprite that reads a Z buffer as a texture and draws into another Z buffer (the half-size
+    // copy of the scene's depth for the cloud pass of the no-save intro and mission 12): a depth copy
+    // between the owners' depth images (gs_depth_copy.frag), not a colour draw.
+    auto z_texture = [](const DrawCommand& d) { return d.textured && Bits(d.tex0, 20, 6) >= kPsmZ32; };
+    auto depth_copy = [&](const DrawCommand& d) {
+        const std::uint32_t tbp = static_cast<std::uint32_t>(Bits(d.tex0, 0, 14));
+        return d.kind == PrimKind::kSprite && z_texture(d) && (tbp & 31) == 0 && zbuf_owner_.count(tbp >> 5) != 0 &&
+               zbuf_owner_.count(d.Fbp()) != 0;
+    };
     {
         // Native rows each target needs this frame (its scissors), then the scratch images for the
         // largest target and this frame's descriptor set.
         std::map<std::uint64_t, int> rows;
+        // Z buffers tested in this frame are owned before any draw runs, so a depth copy into one
+        // finds its owner in the first frame it is used (the cloud pass that tests it comes after).
+        for (const DrawCommand& d : draws) {
+            if (!d.aa_point && !depth_fill(d) && Bits(d.test, 16, 1) && Bits(d.test, 18, 1) &&
+                zbuf_owner_.count(static_cast<std::uint32_t>(Bits(d.zbuf, 0, 9))) == 0)
+                zbuf_owner_[static_cast<std::uint32_t>(Bits(d.zbuf, 0, 9))] = {TargetKey(d.Fbp(), d.Fbw(), d.Fpsm()), d.zbuf};
+        }
         for (std::size_t i = 0; i < draws.size(); ++i) {
             const DrawCommand& d = draws[i];
-            if (d.aa_point || depth_fill(d) || ranges[i].second == 0) continue;
+            if (d.aa_point || depth_fill(d) || depth_copy(d) || ranges[i].second == 0) continue;
             const int bottom = std::min(static_cast<int>(Bits(d.scissor, 48, 11)) + 1,
                                         static_cast<int>(std::ceil(std::max(boxes[i][3], 0.0f))) + 2);
             int& r = rows[TargetKey(d.Fbp(), d.Fbw(), d.Fpsm())];
             r = std::max(r, std::min(bottom, kTargetHeight));
         }
         for (const DrawCommand& d : draws) {
-            if (!d.aa_point && !depth_fill(d)) GetTarget(cmd, frame, d.Fbp(), d.Fbw(), d.Fpsm(), rows[TargetKey(d.Fbp(), d.Fbw(), d.Fpsm())]);
+            if (!d.aa_point && !depth_fill(d) && !depth_copy(d)) GetTarget(cmd, frame, d.Fbp(), d.Fbw(), d.Fpsm(), rows[TargetKey(d.Fbp(), d.Fbw(), d.Fpsm())]);
         }
         int sw = 0, sh = 0;
         for (const auto& [key, t] : targets_) {
@@ -1603,11 +1759,19 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
         }
         EnsureScratch(frame, cmd, sw, sh);
         const VkImageView movie_view = movie_.view ? movie_.view : dummy_texture_.img.view;
-        VkDescriptorImageInfo infos[3] = {{sampler_, feedback_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        if (clut_img_.layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+            VkClearColorValue zero{};
+            VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            Transition(cmd, clut_img_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            vkCmdClearColorImage(cmd, clut_img_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
+            Transition(cmd, clut_img_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        }
+        VkDescriptorImageInfo infos[4] = {{sampler_, feedback_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
                                           {sampler_, date_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-                                          {linear_sampler_, movie_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
-        VkWriteDescriptorSet w[3]{};
-        for (int i = 0; i < 3; ++i) {
+                                          {linear_sampler_, movie_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                          {sampler_, clut_img_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+        VkWriteDescriptorSet w[4]{};
+        for (int i = 0; i < 4; ++i) {
             w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             w[i].dstSet = sets_[frame];
             w[i].dstBinding = static_cast<uint32_t>(i + 1);
@@ -1615,7 +1779,7 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             w[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             w[i].pImageInfo = &infos[i];
         }
-        vkUpdateDescriptorSets(ctx_->device, 3, w, 0, nullptr);
+        vkUpdateDescriptorSets(ctx_->device, 4, w, 0, nullptr);
     }
     Target* open = nullptr;
     // Dynamic state already set in this render pass: draws that repeat it skip the call (the hangar
@@ -1653,6 +1817,8 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
     present_valid_ = false;
     conv_count_ = 0;
     vkResetDescriptorPool(ctx_->device, conv_pool_[frame], 0);
+    vkResetDescriptorPool(ctx_->device, depth_copy_pool_[frame], 0);
+    depth_copy_count_ = 0;
     for (std::size_t i = 0; i < draws.size(); ++i) {
         const DrawCommand& d = draws[i];
         if (d.aa_point) {
@@ -1692,6 +1858,71 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
                 VkClearRect cr{{{rx0 * sc, ry0 * sc}, {static_cast<uint32_t>((rx1 - rx0) * sc), static_cast<uint32_t>((ry1 - ry0) * sc)}}, 0, 1};
                 vkCmdClearAttachments(cmd, 1, &ca, 1, &cr);
             }
+            continue;
+        }
+        if (depth_copy(d)) {
+            const std::uint32_t src_zbp = static_cast<std::uint32_t>(Bits(d.tex0, 0, 14)) >> 5;
+            const auto& [src_key, src_zbuf] = zbuf_owner_[src_zbp];
+            const auto& [dst_key, dst_zbuf] = zbuf_owner_[d.Fbp()];
+            auto src_it = targets_.find(src_key);
+            auto dst_it = targets_.find(dst_key);
+            if (src_it == targets_.end() || dst_it == targets_.end() || src_it == dst_it ||
+                depth_copy_count_ >= kMaxDepthCopies) {
+                continue;
+            }
+            Target* src = &src_it->second;
+            Target* dst = &dst_it->second;
+            VkDescriptorSet set = VK_NULL_HANDLE;
+            VkDescriptorSetAllocateInfo dai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+            dai.descriptorPool = depth_copy_pool_[frame];
+            dai.descriptorSetCount = 1;
+            dai.pSetLayouts = &depth_copy_set_layout_;
+            if (vkAllocateDescriptorSets(ctx_->device, &dai, &set) != VK_SUCCESS) continue;
+            ++depth_copy_count_;
+            VkDescriptorImageInfo info{sampler_, src->depth.view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+            VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            w.dstSet = set;
+            w.descriptorCount = 1;
+            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w.pImageInfo = &info;
+            vkUpdateDescriptorSets(ctx_->device, 1, &w, 0, nullptr);
+            end_pass();
+            Transition(cmd, src->depth, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+            begin_pass(dst);
+            const int ts = dst->scale;
+            const int x0 = static_cast<int>(Bits(d.scissor, 0, 11)), x1 = static_cast<int>(Bits(d.scissor, 16, 11)) + 1;
+            const int y0 = static_cast<int>(Bits(d.scissor, 32, 11)), y1 = static_cast<int>(Bits(d.scissor, 48, 11)) + 1;
+            VkRect2D sc{{std::max(x0, 0) * ts, std::max(y0, 0) * ts},
+                        {static_cast<uint32_t>(std::max(0, std::min(x1, dst->native_w) - std::max(x0, 0)) * ts),
+                         static_cast<uint32_t>(std::max(0, std::min(y1, dst->native_h) - std::max(y0, 0)) * ts)}};
+            vkCmdSetScissor(cmd, 0, 1, &sc);
+            // Z bits of each format (ZBUF.PSM 0: Z32, 1: Z24, else 16): the same Z value moves to
+            // the other format's depth range.
+            auto zbits = [](std::uint64_t zbuf) {
+                const std::uint32_t psm = static_cast<std::uint32_t>((zbuf >> 24) & 0xF);
+                return psm == 0 ? 32 : psm == 1 ? 24 : 16;
+            };
+            struct {
+                float target_size[2];
+                std::int32_t src_scale;
+                float ratio;
+                std::int32_t src_size[2];
+            } pc{{static_cast<float>(dst->native_w), static_cast<float>(dst->native_h)},
+                 src->scale,
+                 std::ldexp(1.0f, zbits(src_zbuf) - zbits(dst_zbuf)),
+                 {src->depth.width, src->depth.height}};
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, depth_copy_pipeline_);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, depth_copy_layout_, 0, 1, &set, 0, nullptr);
+            vkCmdPushConstants(cmd, depth_copy_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(pc), &pc);
+            vkCmdDraw(cmd, static_cast<uint32_t>(ranges[i].second), 1, static_cast<uint32_t>(ranges[i].first), 0);
+            // The main pipeline layout is bound again by the next pass.
+            end_pass();
+            Transition(cmd, src->depth, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+            continue;
+        }
+        if (z_texture(d)) {
+            LogOnce("z-texture", "Z buffer read as a texture outside a depth copy (not drawn)");
             continue;
         }
         Target* target = GetTarget(cmd, frame, d.Fbp(), d.Fbw(), d.Fpsm());
@@ -1757,6 +1988,47 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
                 }
                 Transition(cmd, feedback_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
                 Transition(cmd, src->img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+            }
+        }
+        // Palette drawn on the GPU (gs_state.h DrawCommand::clut_from_frame): its 16x16 CT32 image
+        // (blocks CBP..CBP+3, a 2x2 group of 8x8 blocks of the page) is copied from the target at
+        // that page, brought up to date with its newest view, into clut_img_ (native pixels).
+        bool frame_clut_ready = false;
+        if (d.textured && d.clut_from_frame >= 0) {
+            const std::uint32_t cbp = static_cast<std::uint32_t>(d.clut_from_frame);
+            Target* src = nullptr;
+            for (auto& [key, t] : targets_) {
+                if (t.fbp == cbp >> 5 && t.psm == 0 && (!src || t.last_write > src->last_write)) src = &t;
+            }
+            int bx = -1, by = -1;
+            for (std::uint32_t y = 0; y < 32 && bx < 0; y += 8) {
+                for (std::uint32_t x = 0; x < 64; x += 8) {
+                    if (GsMemory::PixelAddress(kPsmCt32, 0, 1, x, y) / 256 == (cbp & 31)) {
+                        bx = static_cast<int>(x);
+                        by = static_cast<int>(y);
+                        break;
+                    }
+                }
+            }
+            if (src && bx >= 0 && bx + 16 <= src->native_w && by + 16 <= src->native_h) {
+                end_pass();
+                if (Target* newer = NewerView(*src)) Sync(cmd, frame, *src, *newer);
+                const int s = src->scale;
+                VkImageBlit b{};
+                b.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                b.dstSubresource = b.srcSubresource;
+                b.srcOffsets[0] = {bx * s, by * s, 0};
+                b.srcOffsets[1] = {(bx + 16) * s, (by + 16) * s, 1};
+                b.dstOffsets[1] = {16, 16, 1};
+                Transition(cmd, src->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+                Transition(cmd, clut_img_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                vkCmdBlitImage(cmd, src->img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, clut_img_.image,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b, VK_FILTER_NEAREST);
+                Transition(cmd, clut_img_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                Transition(cmd, src->img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+                frame_clut_ready = true;
+            } else {
+                LogOnce("clut-frame", "palette drawn on the GPU without a 32-bit frame buffer at its CBP (drawn with indices)");
             }
         }
         begin_pass(target);
@@ -1853,6 +2125,7 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             p.tex1 = static_cast<std::int32_t>(Bits(d.tex1, 6, 3) | std::min<std::uint32_t>(levels, 7) << 3 |
                                                Bits(d.tex1, 0, 1) << 6 | Bits(d.tex1, 19, 2) << 7 |
                                                Bits(d.tex1, 32, 12) << 9 | Bits(d.tex1, 5, 1) << 21);
+            if (frame_clut_ready) flags |= 1 << 29;  // palette indices, looked up in clut_img_
             if (d.texture_from_frame >= 0) {
                 flags |= 1 << 16;
             } else if (d.texture) {

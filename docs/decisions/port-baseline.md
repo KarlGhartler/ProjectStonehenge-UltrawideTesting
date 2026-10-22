@@ -12,7 +12,7 @@ This file lists category 2. A feature is added here only after the User approves
 | Feature | Details | Related | Date approved |
 |---|---|---|---|
 | Output scaled to the host's screen, internal rendering resolution native (4:3 preserved, pillarboxing; 16:9 when the game's own SCREEN RATIO option is on) | two filters, **sharp** (sharp bilinear) and **smooth** (bilinear), chosen in `settings.json`, default **sharp**; the full 448-line draw buffer is presented (ADR-006 §4) | ADR-006 | 2026-10-10, filters 2026-10-11 |
-| Frame rate decoupled from the simulation, with interpolation | fixed 59.94 Hz step, interpolated presentation | ADR-002 | 2026-10-10 |
+| Frame rate decoupled from the simulation, with interpolation | fixed 59.94 Hz step, interpolated presentation (interpolation built 2026-10-22: `../port/port-features.md` §2, setting `presentation.frame_interpolation`) | ADR-002 | 2026-10-10 |
 | Frame cap | 60 / 120 / 144 / 240; **360 is the default upper limit** | ADR-002 | 2026-10-11 |
 | V-sync on/off | presentation timing only | ADR-002 | 2026-10-11 |
 | Window modes | **windowed** and **fullscreen** (a borderless window the size of the desktop; exclusive fullscreen not included). `settings.json` value `fullscreen` (`borderless`, the name used before 2026-10-20, is still read) | ADR-006 | 2026-10-11, naming 2026-10-20 |

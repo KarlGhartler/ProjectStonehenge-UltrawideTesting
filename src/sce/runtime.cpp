@@ -1,5 +1,7 @@
 #include "sce/runtime.h"
 
+#include <cmath>
+
 #include "platform/log.h"
 
 namespace ac04::sce {
@@ -68,6 +70,24 @@ u32 GameRuntime::WaitVBlank() {
     parked_ = false;
     ++ticks_consumed_;
     return static_cast<u32>(++vblank_count_ & 1u);
+}
+
+double RefreshSnap::Step(double elapsed_seconds, double refresh_seconds) {
+    if (refresh_seconds <= 0.0) {
+        debt_ = 0.0;
+        return elapsed_seconds;
+    }
+    debt_ += elapsed_seconds - refresh_seconds;
+    double counted = refresh_seconds;
+    if (debt_ > refresh_seconds) {
+        const double missed = std::floor(debt_ / refresh_seconds);
+        counted += missed * refresh_seconds;
+        debt_ -= missed * refresh_seconds;
+    } else if (debt_ < -refresh_seconds) {
+        counted = 0.0;  // frames faster than the assumed refresh rate
+        debt_ += refresh_seconds;
+    }
+    return counted;
 }
 
 u32 TickClock::Advance(double elapsed_seconds) {
