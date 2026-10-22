@@ -132,6 +132,65 @@ TEST_CASE("GS memory: image writes in runs equal pixel-by-pixel writes") {
     }
 }
 
+TEST_CASE("GS memory: whole-block image writes equal pixel-by-pixel writes, with the same block changes") {
+    // Block-aligned rectangles sent in one piece take WriteImage's whole-block path. Memory, the
+    // generation of every block and the dirty blocks must be what pixel writes give; written over
+    // existing contents (some blocks unchanged) as well as into zeros.
+    std::mt19937 rng(17);
+    const std::uint32_t formats[] = {kPsmCt32, kPsmCt16, kPsmCt16S, kPsmT8, kPsmT4, kPsmZ32, kPsmZ16S};
+    for (int iter = 0; iter < 120; ++iter) {
+        const std::uint32_t psm = formats[rng() % 7];
+        CAPTURE(psm);
+        const int bpp = BitsPerPixel(psm);
+        const std::uint32_t bwp = BlockWidth(psm), bhp = BlockHeight(psm);
+        const std::uint32_t bp = rng() % 0x3000, bw = 1 + rng() % 16;
+        const std::uint32_t sx = (rng() % 40) * bwp, sy = (rng() % 30) * bhp;
+        const std::uint32_t w = (1 + rng() % 6) * bwp, h = (1 + rng() % 4) * bhp;
+        std::vector<std::uint8_t> data((static_cast<std::size_t>(w) * h * bpp + 7) / 8);
+        for (auto& b : data) b = static_cast<std::uint8_t>(rng());
+        auto a = std::make_unique<GsMemory>();
+        auto b = std::make_unique<GsMemory>();
+        if (iter % 2) {
+            // Same earlier contents in both, then the same data again for half of the blocks.
+            std::vector<std::uint8_t> image(GsMemory::kSize);
+            for (auto& v : image) v = static_cast<std::uint8_t>(rng());
+            a->LoadImage(image.data());
+            b->LoadImage(image.data());
+            // The same first upload in both; the second (below) repeats its second half, so those
+            // blocks do not change.
+            a->WriteImage(bp, bw, psm, sx, sy, w, h, 0, data.data(), static_cast<std::uint32_t>(data.size()));
+            b->WriteImage(bp, bw, psm, sx, sy, w, h, 0, data.data(), static_cast<std::uint32_t>(data.size()));
+            for (std::size_t k = 0; k < data.size() / 2; ++k) data[k] = static_cast<std::uint8_t>(rng());
+            a->TakeDirtyBlocks();
+            b->TakeDirtyBlocks();
+        }
+        std::vector<std::uint32_t> gens_a, gens_b;
+        for (std::uint32_t blk = 0; blk < GsMemory::kSize / 256; ++blk) gens_a.push_back(a->BlockGeneration(blk << 8));
+        gens_b = gens_a;
+        for (std::uint32_t blk = 0; blk < GsMemory::kSize / 256; ++blk) gens_b[blk] = b->BlockGeneration(blk << 8);
+        const std::uint32_t pos = a->WriteImage(bp, bw, psm, sx, sy, w, h, 0, data.data(), static_cast<std::uint32_t>(data.size()));
+        for (std::uint32_t i = 0; i < w * h; ++i) {
+            std::uint32_t v = 0;
+            if (bpp == 4) v = (data[i >> 1] >> ((i & 1) * 4)) & 0xF;
+            else for (int k = 0; k < bpp / 8; ++k) v |= static_cast<std::uint32_t>(data[i * (bpp / 8) + k]) << (8 * k);
+            b->WritePixel(psm, bp, bw, sx + i % w, sy + i / w, v);
+        }
+        CHECK(pos == w * h);
+        CHECK(std::memcmp(a->Data(), b->Data(), GsMemory::kSize) == 0);
+        // The same blocks changed (generations moved) and are dirty.
+        std::size_t changed_a = 0, changed_b = 0, differ = 0;
+        for (std::uint32_t blk = 0; blk < GsMemory::kSize / 256; ++blk) {
+            const bool ca = a->BlockGeneration(blk << 8) != gens_a[blk], cb = b->BlockGeneration(blk << 8) != gens_b[blk];
+            changed_a += ca;
+            changed_b += cb;
+            differ += ca != cb;
+        }
+        CHECK(differ == 0);
+        CHECK(changed_a == changed_b);
+        CHECK(a->TakeDirtyBlocks() == b->TakeDirtyBlocks());
+    }
+}
+
 TEST_CASE("GIF: PACKED sprite, REGLIST, IMAGE upload and CLUT load") {
     GsState gs;
     Packet p;

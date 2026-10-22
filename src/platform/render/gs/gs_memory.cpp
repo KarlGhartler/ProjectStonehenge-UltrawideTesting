@@ -258,6 +258,54 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
         case kPsmT4: run_len = 32; break;
         default: break;
     }
+    // Whole blocks: a transfer whose data arrives in one piece and whose rectangle lies on block
+    // boundaries (texture tiles: the no-save intro streams its terrain this way every frame) is
+    // written block by block: the 256 bytes of a block assembled in the GS layout, then compared
+    // and stored at once. Same bytes and the same block changes as the run loop below.
+    const std::uint32_t bw_px = BlockWidth(dpsm), bh_px = BlockHeight(dpsm);
+    if (run_len != 0 && pos == 0 && pixels >= total && dsax % bw_px == 0 && dsay % bh_px == 0 && rrw % bw_px == 0 &&
+        rrh % bh_px == 0 && dsax + rrw <= 2048 && dsay + rrh <= 2048) {
+        std::uint8_t* const m = mem_.data();
+        std::uint8_t block[256];
+        for (std::uint32_t by = 0; by < rrh; by += bh_px) {
+            for (std::uint32_t bx = 0; bx < rrw; bx += bw_px) {
+                const std::size_t first = static_cast<std::size_t>(by) * rrw + bx;  // pixel index of the block's corner
+                switch (bpp) {
+                    case 32:
+                        for (std::uint32_t y = 0; y < 8; ++y)
+                            for (std::uint32_t x = 0; x < 8; ++x)
+                                std::memcpy(block + Off32(x, y), data + (first + static_cast<std::size_t>(y) * rrw + x) * 4, 4);
+                        break;
+                    case 16:
+                        for (std::uint32_t y = 0; y < 8; ++y)
+                            for (std::uint32_t x = 0; x < 16; ++x)
+                                std::memcpy(block + Off16(x, y), data + (first + static_cast<std::size_t>(y) * rrw + x) * 2, 2);
+                        break;
+                    case 8:
+                        for (std::uint32_t y = 0; y < 16; ++y)
+                            for (std::uint32_t x = 0; x < 16; ++x) block[Off8(x, y)] = data[first + static_cast<std::size_t>(y) * rrw + x];
+                        break;
+                    default:  // 4-bit: every nibble of the block is written
+                        for (std::uint32_t y = 0; y < 16; ++y) {
+                            for (std::uint32_t x = 0; x < 32; ++x) {
+                                const std::size_t i = first + static_cast<std::size_t>(y) * rrw + x;
+                                const std::uint8_t v = static_cast<std::uint8_t>((data[i >> 1] >> ((i & 1) * 4)) & 0xF);
+                                const std::uint32_t nib = Nib4(x, y);
+                                std::uint8_t& b = block[nib >> 1];
+                                b = (nib & 1) ? static_cast<std::uint8_t>((b & 0x0F) | v << 4) : static_cast<std::uint8_t>((b & 0xF0) | v);
+                            }
+                        }
+                        break;
+                }
+                const std::uint32_t base = PixelAddress(dpsm, dbp, dbw, dsax + bx, dsay + by) & ~0xFFu;
+                if (std::memcmp(m + base, block, 256) != 0) {
+                    std::memcpy(m + base, block, 256);
+                    Touch(base);
+                }
+            }
+        }
+        return total;
+    }
     if (run_len != 0) {
         std::uint64_t i = 0;
         std::uint8_t* const m = mem_.data();

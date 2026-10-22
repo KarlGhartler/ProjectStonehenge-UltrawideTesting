@@ -15,6 +15,7 @@ Every validation run of the project, newest last. How slices are validated: `val
 | §2r | no-save intro: cloud transitions, stutter; PSMT8 table; renaming (2026-10-22; IN-1, IN-2, RN-1; S2a-6) |
 | §2s | GPU texture decoding, generation-based texture cache, texture images (2026-10-22; GD-1 to GD-3) |
 | §2t | release 0.9 preparation: development parameters, version, file properties, startup image, no game data (2026-10-22) |
+| §2u | no-save intro stutters: terrain uploads written block by block (2026-10-22) |
 | §2o | new memory card and first save, startup messages (2026-10-20; NS-1, NS-2) |
 | §2n | anti-aliasing (FXAA, SMAA) before the HUD (2026-10-20; AA-1 to AA-4) |
 | §2m | settings tests (GRAPHICS page, live combinations, controller and save round trip), texture residency, sprite edges at N×, defaults and the frame-rate overlay (2026-10-20; ST-1 to ST-8) |
@@ -843,6 +844,17 @@ Same six runs as step 1 (§5 there), same conditions (windows not focused); CPU 
 - **No game data in the executable** (release build, 7.5 MB): no VAG, TIM2, GIM, PS2I or IOPRP signatures and no embedded PS2 ELF; 0 of about 26,000 sampled 64-byte runs of every section of `SLUS_201.52` (code, `.data`, `.rodata`, VU code and data) occur in it. Two 4-byte MPEG start codes in `.rdata` are inside constant tables (not followed by a sequence header). The executable reads all game data from the user's disc image at runtime.
 - **Release folder**: the build writes `ProjectStonehenge.exe` next to build leftovers (`ac04_core.lib`, `ac04_platform.lib`) and a stale `ac04port.exe` from before the rename (2026-10-22 00:50); there is no packaging step yet, so a release archive must be put together by hand from `ProjectStonehenge.exe` (plus `LICENSE`, `THIRD_PARTY_NOTICES.md`, `README.md`).
 - **Packaging step** (User request, same day): `cmake --build --preset release --target package_release` (`cmake/PackageRelease.cmake`) writes `out/release/ProjectStonehenge-0.9.0-win64.zip` with `ProjectStonehenge.exe`, `LICENSE`, `README.md` and `THIRD_PARTY_NOTICES.md` in a `ProjectStonehenge-0.9.0-win64/` folder (3.2 MB; checked by listing the archive). The script refuses other configurations (checked with `--preset dev`) and stops on game-data file names, the VAG, TIM2 and IOPRP signatures and embedded PS2 ELF headers (checked with a test file holding `VAGp`). The stale `ac04port.exe` and every other build leftover under the old name (its intermediate folder, project files, the old solution) were deleted from `build/` (User approval).
+
+## 2u. No-save intro: terrain uploads written block by block (2026-10-22)
+
+User report: stutters remain in the first in-engine cutscene (the no-save intro). Measured with a temporary per-frame probe and `tools/research/sample_profile.py` (development build, normal speed, window not focused):
+- No single game tick needed more than 16.1 ms of CPU, but the end of the intro (vblank 2500–2620) needed about 15 ms per tick (game tick 4.8, GS processing 7.0, recording 3.7 ms), leaving almost nothing for presentation. The profile of that stretch: `GsMemory::WriteImage` alone was about 40 % of all CPU work (about 83 % of GS processing): the game streams terrain tiles into texture memory every frame (about 1.8 MB per frame), written pixel by pixel.
+- Pipeline creation is not a cause: 14 pipelines in the whole intro, 2.4 ms in total.
+- Fix (`gs_memory.cpp`): an upload that arrives in one piece with its rectangle on block boundaries is written block by block (the 256 bytes of a block assembled in the GS layout, compared and stored at once); everything else takes the run loop as before. Same bytes, same changed blocks and generations: new test `GS memory: whole-block image writes equal pixel-by-pixel writes, with the same block changes` (every format, into zeros and over existing contents with some blocks unchanged).
+- Result (same run): `WriteImage` from about 12 % to 3 % of the samples; vblank 2500–2620 at 11.7 ms of CPU per tick on average (GS processing 3.7 ms), worst 14.3 ms; ticks needing more than 13 ms in the whole intro: 151 → 13.
+- Left: recording costs about 3.4 ms per frame in that stretch, mostly in the Vulkan driver's command recording (barriers and render pass changes around frame-buffer reads); reducing it needs the draws grouped differently, a larger renderer change not made before the 0.9 release. The game tick itself (translated code and the VU1 programs) is about 4.7 ms.
+- Version raised to **0.9.1** after this change (User request); the release archive is `out/release/ProjectStonehenge-0.9.1-win64.zip`.
+- Regression (`full.json`, run `rel09`, against this morning's `gpu_1022`): all 27 RAM checkpoints and all 6 hash logs identical; 75 of 77 screenshots identical, `m3_route` and `m4_route` screenshot 5300 differ only in the loading-fade column x = 409 (IR-1). Development and release tests pass.
 
 ## 3. Recommendations
 
