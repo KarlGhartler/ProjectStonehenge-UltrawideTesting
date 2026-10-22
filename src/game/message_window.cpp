@@ -25,8 +25,6 @@ using guest::GRef;
 
 namespace {
 
-void Put(u32 p, u32 i, u32 v) { GRef<u32>(p + 4 * i) = v; }
-
 // Font state (0x004BD798..0x004BD7BB).
 constexpr u32 kFont = 0x004BD798;
 constexpr u32 kMessageTable = 0x004BCF70;  // 512 message pointers
@@ -805,7 +803,6 @@ void UploadMessageGlyphs(u32 list, s32 index, s64 id, u64 dbp) {
     GRef<u64>(data + 0x10) = 0;
     LinkPacket(list, index, start, data + 0x20);
 }
-
 
 // ---- Text engine: in-flight text (slice S5g) -------------------------------------------------------
 

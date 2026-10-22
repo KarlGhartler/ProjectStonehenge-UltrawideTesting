@@ -22,8 +22,9 @@ layout(push_constant) uniform Params {
     int dst_tbw;   // 64-pixel units
     ivec2 origin;  // first texel converted
     ivec2 size;    // texels converted
-    ivec2 src_size;
+    ivec2 src_size;  // native pixels
     int texa;      // TA0 bits 0-7, AEM bit 15, TA1 bits 16-23
+    int src_scale; // host pixels per GS pixel of the source target (one sample per GS pixel)
 } pc;
 
 // Offsets of the tables in the buffer (gs_vulkan.cpp BuildConvTables, same order).
@@ -56,6 +57,9 @@ uint SrcPixel(uint addr) {
     }
     ivec2 pos = ivec2((p % ppr) * 64 + int(xy & 0xFFu), (p / ppr) * ph + int(xy >> 8));
     if (pos.x >= pc.src_size.x || pos.y >= pc.src_size.y) return 0u;
+    // A scaled target: the conversion works on GS pixels (bit layouts), so one host sample per
+    // GS pixel, never a blend of several (palette indices, 16-bit packing).
+    pos = pos * pc.src_scale + pc.src_scale / 2;
     uvec4 v = uvec4(floor(texelFetch(src, pos, 0) * 255.0 + 0.5));
     if (is32) return v.r | v.g << 8 | v.b << 16 | v.a << 24;
     return (v.r >> 3) | (v.g >> 3) << 5 | (v.b >> 3) << 10 | (v.a >= 128u ? 0x8000u : 0u);

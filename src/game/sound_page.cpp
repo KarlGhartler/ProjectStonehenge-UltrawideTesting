@@ -36,8 +36,6 @@ AC04_GUEST_VAR(u16, g_MissionNo, 0x002A15B8)
 constexpr u32 kSoundOptions = 0x002A15C4;
 constexpr u32 kBgmTracks = 0x003AF6A0;
 
-f32 K(u32 address) { return GRef<f32>(address); }
-u64 Sx(s32 v) { return static_cast<u64>(static_cast<s64>(v)); }
 s32& SoundState(u32 obj) { return GRef<s32>(obj + 0x2A8); }
 s32& SoundValue(u32 obj, u32 i) { return GRef<s32>(obj + 0x318 + i * 4); }
 s32& BgmState(u32 obj) { return GRef<s32>(obj + 0x304); }

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <memory>
 #include <random>
 #include <set>
@@ -70,6 +71,29 @@ TEST_CASE("GS memory: image writes round trip per format") {
     pos = m.WriteImage(0, 1, kPsmCt32, 0, 0, 4, 4, pos, ct32.data() + 32, 32);
     CHECK(pos == 16);
     CHECK(m.ReadPixel(kPsmCt32, 0, 1, 3, 3) == 0x3F3E3D3Cu);
+}
+
+TEST_CASE("GS memory: ReadRect gives the ReadPixel values for every format") {
+    GsMemory m;
+    std::mt19937 rng(20261019);
+    std::vector<std::uint8_t> image(GsMemory::kSize);
+    for (auto& b : image) b = static_cast<std::uint8_t>(rng());
+    m.LoadImage(image.data());
+    const std::uint32_t formats[] = {kPsmCt32, kPsmCt24, kPsmCt16, kPsmCt16S, kPsmT8, kPsmT4, kPsmT8H,
+                                     kPsmT4HL, kPsmT4HH, kPsmZ32, kPsmZ24, kPsmZ16, kPsmZ16S};
+    for (std::uint32_t psm : formats) {
+        for (int trial = 0; trial < 8; ++trial) {
+            const std::uint32_t bp = rng() % 0x4000, bw = 1 + rng() % 16;
+            const std::uint32_t x0 = rng() % 600, y0 = rng() % 600, w = 1 + rng() % 70, h = 1 + rng() % 40;
+            std::vector<std::uint32_t> out(static_cast<std::size_t>(w) * h);
+            m.ReadRect(psm, bp, bw, x0, y0, w, h, out.data());
+            bool same = true;
+            for (std::uint32_t y = 0; y < h; ++y)
+                for (std::uint32_t x = 0; x < w; ++x)
+                    same = same && out[y * w + x] == m.ReadPixel(psm, bp, bw, x0 + x, y0 + y);
+            CHECK(same);
+        }
+    }
 }
 
 TEST_CASE("GS memory: image writes in runs equal pixel-by-pixel writes") {
@@ -254,4 +278,300 @@ TEST_CASE("GIF: source marks name the guest origin of an upload (movie side path
     draws = gs.TakeDraws();
     REQUIRE(draws.size() == 1);
     CHECK(draws[0].texture_guest_source == 0u);
+}
+
+namespace {
+
+// Host->local upload of a w x h rectangle at (x, y) of buffer (bp, bw, psm); `data` holds packed
+// pixels as the GIF IMAGE transfer carries them.
+void Upload(Packet& p, std::uint32_t bp, std::uint32_t bw, std::uint32_t psm, std::uint32_t x, std::uint32_t y,
+            std::uint32_t w, std::uint32_t h, const std::vector<std::uint8_t>& data) {
+    p.Tag(4, false, 0, 1, 0xE);
+    p.Ad(0x50, static_cast<std::uint64_t>(bp) << 32 | static_cast<std::uint64_t>(bw) << 48 | static_cast<std::uint64_t>(psm) << 56);
+    p.Ad(0x51, static_cast<std::uint64_t>(x) << 32 | static_cast<std::uint64_t>(y) << 48);
+    p.Ad(0x52, w | static_cast<std::uint64_t>(h) << 32);
+    p.Ad(0x53, 0);
+    std::vector<std::uint8_t> padded = data;
+    padded.resize((padded.size() + 15) / 16 * 16, 0);
+    // IMAGE tags of at most 0x7FFF qwords (NLOOP is 15 bits).
+    for (std::size_t q = 0; q < padded.size() / 16; q += 0x7FFF) {
+        const std::size_t n = std::min<std::size_t>(0x7FFF, padded.size() / 16 - q);
+        p.Tag(static_cast<std::uint32_t>(n), false, 2, 0, 0);
+        for (std::size_t i = q * 16; i < (q + n) * 16; i += 8) {
+            std::uint64_t v;
+            std::memcpy(&v, padded.data() + i, 8);
+            p.w.push_back(v);
+        }
+    }
+}
+
+// A sprite over the whole 2^tw x 2^th texture (FST UVs), so the decode covers every texel.
+void DrawTexture(Packet& p, std::uint64_t tex0, std::uint32_t size_u, std::uint32_t size_v) {
+    p.Tag(2, false, 0, 1, 0xE);
+    p.Ad(0x06, tex0);
+    p.Ad(0x4C, 1ull << 16);
+    p.Tag(1, true, 1, 6, 0x535310);
+    p.w.push_back(0x116);
+    p.w.push_back(0x80808080ull);
+    p.w.push_back(0);
+    p.w.push_back(0);
+    p.w.push_back(static_cast<std::uint64_t>(size_u) * 16 | static_cast<std::uint64_t>(size_v) * 16 << 16);
+    p.w.push_back(static_cast<std::uint64_t>(size_u) * 16 | static_cast<std::uint64_t>(size_v) * 16 << 16);
+}
+
+std::vector<std::uint8_t> RandomBytes(std::mt19937& rng, std::size_t n) {
+    std::vector<std::uint8_t> v(n);
+    for (auto& b : v) b = static_cast<std::uint8_t>(rng());
+    return v;
+}
+
+}  // namespace
+
+TEST_CASE("texture decode: re-decoding only the written blocks equals a full decode") {
+    struct Case {
+        std::uint32_t psm, bpp;
+    };
+    for (const Case c : {Case{kPsmT8, 8}, Case{kPsmT4, 4}, Case{kPsmCt32, 32}}) {
+        CAPTURE(c.psm);
+        std::mt19937 rng(c.psm * 7 + 1);
+        const std::uint32_t tbp = 0x1010, tbw = 2, size = 128;  // not page aligned: blocks cross pages
+        const std::uint32_t cbp = 0x3000;
+        const bool paletted = c.bpp < 16;
+        const std::uint64_t tex0 = tbp | static_cast<std::uint64_t>(tbw) << 14 | static_cast<std::uint64_t>(c.psm) << 20 |
+                                   7ull << 26 | 7ull << 30 | 1ull << 34 |
+                                   (paletted ? static_cast<std::uint64_t>(cbp) << 37 | 1ull << 61 : 0);
+        const auto clut = RandomBytes(rng, 256 * 4);
+        const auto full = RandomBytes(rng, size * size * c.bpp / 8);
+        // Patches: one crossing block edges, one outside the texture in the same pages, one large.
+        struct Patch {
+            std::uint32_t bp, x, y, w, h;
+        };
+        const Patch patches[] = {{tbp, 5, 7, 40, 21}, {tbp, 0, 130, 32, 8}, {tbp, 0, 0, 128, 100}};
+        std::vector<std::vector<std::uint8_t>> patch_data;
+        for (const Patch& q : patches) patch_data.push_back(RandomBytes(rng, q.w * q.h * c.bpp / 8 + 8));
+
+        GsState incremental;
+        std::shared_ptr<const DecodedTexture> previous;
+        {
+            Packet p;
+            if (paletted) Upload(p, cbp, 1, kPsmCt32, 0, 0, 16, 16, clut);
+            Upload(p, tbp, tbw, c.psm, 0, 0, size, size, full);
+            DrawTexture(p, tex0, size, size);
+            incremental.ProcessGif(p.Data(), p.Bytes());
+            const auto first = incremental.TakeDraws();
+            REQUIRE(first.size() == 1);
+            previous = first[0].texture;
+        }
+        for (std::size_t k = 0; k < std::size(patches); ++k) {
+            const Patch& q = patches[k];
+            CAPTURE(k);
+            Packet p;
+            std::vector<std::uint8_t> bytes(patch_data[k].begin(), patch_data[k].begin() + q.w * q.h * c.bpp / 8);
+            Upload(p, q.bp, tbw, c.psm, q.x, q.y, q.w, q.h, bytes);
+            DrawTexture(p, tex0, size, size);
+            incremental.ProcessGif(p.Data(), p.Bytes());
+            const auto draws = incremental.TakeDraws();
+            REQUIRE(draws.size() == 1);
+            REQUIRE(static_cast<bool>(draws[0].texture));
+
+            // The same memory built from scratch and decoded once.
+            GsState fresh;
+            Packet f;
+            if (paletted) Upload(f, cbp, 1, kPsmCt32, 0, 0, 16, 16, clut);
+            Upload(f, tbp, tbw, c.psm, 0, 0, size, size, full);
+            for (std::size_t j = 0; j <= k; ++j) {
+                const Patch& r = patches[j];
+                std::vector<std::uint8_t> b(patch_data[j].begin(), patch_data[j].begin() + r.w * r.h * c.bpp / 8);
+                Upload(f, r.bp, tbw, c.psm, r.x, r.y, r.w, r.h, b);
+            }
+            DrawTexture(f, tex0, size, size);
+            fresh.ProcessGif(f.Data(), f.Bytes());
+            const auto fresh_draws = fresh.TakeDraws();
+            REQUIRE(fresh_draws.size() == 1);
+            REQUIRE(static_cast<bool>(fresh_draws[0].texture));
+            CHECK(draws[0].texture->width == fresh_draws[0].texture->width);
+            CHECK(draws[0].texture->rgba == fresh_draws[0].texture->rgba);
+            // A write outside the texture's blocks keeps the decode (same texture, no new decode).
+            if (k == 1) CHECK(draws[0].texture.get() == previous.get());
+            previous = draws[0].texture;
+        }
+    }
+}
+
+TEST_CASE("texture decode: a decode stays valid until a block it reads is written") {
+    std::mt19937 rng(11);
+    GsState gs;
+    const std::uint32_t tbp = 0x400, tbw = 2;  // 128 x 128 T8: two 8 KiB pages (blocks tbp to tbp + 63)
+    const std::uint32_t cbp = 0x3000;
+    const std::uint64_t tex0 = tbp | static_cast<std::uint64_t>(tbw) << 14 | static_cast<std::uint64_t>(kPsmT8) << 20 |
+                               7ull << 26 | 7ull << 30 | 1ull << 34 | static_cast<std::uint64_t>(cbp) << 37 | 1ull << 61;
+    auto draw = [&](Packet& p) {
+        DrawTexture(p, tex0, 128, 128);
+        gs.ProcessGif(p.Data(), p.Bytes());
+        const auto draws = gs.TakeDraws();
+        REQUIRE(draws.size() == 1);
+        return draws[0].texture;
+    };
+    Packet first;
+    Upload(first, cbp, 1, kPsmCt32, 0, 0, 16, 16, RandomBytes(rng, 256 * 4));
+    Upload(first, tbp, tbw, kPsmT8, 0, 0, 128, 128, RandomBytes(rng, 128 * 128));
+    const auto a = draw(first);
+    Packet same;  // nothing written
+    CHECK(draw(same).get() == a.get());
+    Packet elsewhere;  // the next page, not part of the texture
+    Upload(elsewhere, tbp + 64, tbw, kPsmT8, 0, 0, 16, 16, RandomBytes(rng, 16 * 16));
+    CHECK(draw(elsewhere).get() == a.get());
+    Packet unchanged;  // the same bytes again: no block changes
+    {
+        std::vector<std::uint8_t> bytes(16 * 16);
+        for (std::uint32_t y = 0; y < 16; ++y)
+            for (std::uint32_t x = 0; x < 16; ++x) bytes[y * 16 + x] = static_cast<std::uint8_t>(gs.Memory().ReadPixel(kPsmT8, tbp, tbw, x, y));
+        Upload(unchanged, tbp, tbw, kPsmT8, 0, 0, 16, 16, bytes);
+    }
+    CHECK(draw(unchanged).get() == a.get());
+    Packet inside;  // one texel of the texture
+    Upload(inside, tbp, tbw, kPsmT8, 64, 64, 1, 1, {static_cast<std::uint8_t>(~gs.Memory().ReadPixel(kPsmT8, tbp, tbw, 64, 64))});
+    const auto b = draw(inside);
+    CHECK(b.get() != a.get());
+    CHECK(b->serial != a->serial);
+}
+
+TEST_CASE("texture decode: the GPU ops replayed on a copy of local memory give the CPU decode") {
+    // GsState in kBoth mode emits the GPU work (memory updates, then decodes) and decodes on the CPU
+    // as well. Replaying the ops in order on a second memory, as the backend does on the GPU, and
+    // decoding each texture from that memory at its op (DecodeOnCpu, the reference of
+    // gs_decode.comp) must give each texture's CPU decode, although the stream rewrites the texture
+    // memory between draws (the terrain case).
+    struct Case {
+        std::uint32_t psm, bpp, cpsm;
+    };
+    for (const Case c : {Case{kPsmT8, 8, 0}, Case{kPsmT4, 4, 0}, Case{kPsmT4, 4, 2}, Case{kPsmCt32, 32, 0},
+                         Case{kPsmCt24, 24, 0}, Case{kPsmCt16, 16, 0}, Case{kPsmCt16S, 16, 0}}) {
+        CAPTURE(c.psm);
+        CAPTURE(c.cpsm);
+        std::mt19937 rng(c.psm * 13 + c.cpsm);
+        GsState gs;
+        gs.SetTextureDecode(TextureDecode::kBoth);
+        const std::uint32_t tbp = 0x1010, tbw = 2, size = 64, cbp = 0x3000;
+        const bool paletted = c.bpp < 16;
+        // TEXA: TA0 0x40, AEM on, TA1 0x90 (CT24, CT16 and 16-bit palettes use it).
+        const std::uint64_t texa = 0x40 | 1ull << 15 | 0x90ull << 32;
+        const std::uint64_t tex0 = tbp | static_cast<std::uint64_t>(tbw) << 14 | static_cast<std::uint64_t>(c.psm) << 20 |
+                                   6ull << 26 | 6ull << 30 | 1ull << 34 |
+                                   (paletted ? static_cast<std::uint64_t>(cbp) << 37 | static_cast<std::uint64_t>(c.cpsm) << 51 | 1ull << 61 : 0);
+        Packet setup;
+        setup.Tag(1, false, 0, 1, 0xE);
+        setup.Ad(0x3B, texa);
+        if (paletted) {
+            if (c.cpsm == 0) Upload(setup, cbp, 1, kPsmCt32, 0, 0, 16, 16, RandomBytes(rng, 256 * 4));
+            else Upload(setup, cbp, 1, kPsmCt16, 0, 0, 16, 16, RandomBytes(rng, 256 * 2));
+        }
+        Upload(setup, tbp, tbw, c.psm, 0, 0, size, size, RandomBytes(rng, size * size * c.bpp / 8));
+        gs.ProcessGif(setup.Data(), setup.Bytes());
+        std::vector<std::shared_ptr<const DecodedTexture>> drawn;
+        for (int round = 0; round < 6; ++round) {
+            Packet p;
+            // Rewrite part of the texture (and, every other round, an unrelated page), then draw.
+            const std::uint32_t x = static_cast<std::uint32_t>(rng() % 48), y = static_cast<std::uint32_t>(rng() % 48);
+            Upload(p, tbp, tbw, c.psm, x, y, 16, 16, RandomBytes(rng, 16 * 16 * c.bpp / 8));
+            if (round % 2) Upload(p, 0x2000, 2, kPsmCt32, 0, 0, 16, 16, RandomBytes(rng, 16 * 16 * 4));
+            DrawTexture(p, tex0, size, size);
+            gs.ProcessGif(p.Data(), p.Bytes());
+            const auto draws = gs.TakeDraws();
+            REQUIRE(draws.size() == 1);
+            REQUIRE(static_cast<bool>(draws[0].texture));
+            drawn.push_back(draws[0].texture);
+        }
+        GsMemory gpu;  // starts zero, as the GPU copy
+        std::vector<std::uint8_t> image(GsMemory::kSize, 0);
+        std::size_t decodes = 0;
+        for (const TextureOp& op : gs.TakeTextureOps()) {
+            if (!op.decode) {
+                REQUIRE(op.bytes.size() == op.blocks.size() * 256);
+                for (std::size_t i = 0; i < op.blocks.size(); ++i)
+                    std::memcpy(&image[static_cast<std::size_t>(op.blocks[i]) * 256], &op.bytes[i * 256], 256);
+                gpu.LoadImage(image.data());
+                continue;
+            }
+            DecodedTexture replay = *op.decode;
+            DecodeOnCpu(gpu, replay);
+            CHECK(replay.rgba == op.decode->rgba);
+            ++decodes;
+        }
+        CHECK(decodes == drawn.size());
+    }
+}
+
+TEST_CASE("texture decode: the decoded-texture cache stays within its byte budget") {
+    // 512 x 512 CT32 textures (1 MiB each) at different block pointers, more than the budget holds.
+    std::mt19937 rng(5);
+    GsState gs;
+    const std::uint32_t tbw = 8;
+    {
+        Packet p;
+        Upload(p, 0, tbw, kPsmCt32, 0, 0, 512, 512, RandomBytes(rng, 512 * 512 * 4));
+        gs.ProcessGif(p.Data(), p.Bytes());
+    }
+    const std::size_t entries = GsState::kTextureCacheBytes / (512 * 512 * 4) + 64;
+    std::size_t peak = 0;
+    for (std::size_t i = 0; i < entries; ++i) {
+        const std::uint64_t tbp = (i * 32) & 0x3FFF;
+        const std::uint64_t tex0 = tbp | static_cast<std::uint64_t>(tbw) << 14 | 9ull << 26 | 9ull << 30 | 1ull << 34;
+        Packet p;
+        DrawTexture(p, tex0, 512, 512);
+        gs.ProcessGif(p.Data(), p.Bytes());
+        REQUIRE(gs.TakeDraws().size() == 1);
+        peak = std::max(peak, gs.TextureCacheBytes());
+    }
+    CHECK(peak <= GsState::kTextureCacheBytes + 512 * 512 * 4);
+    CHECK(gs.TextureCacheBytes() < peak);  // the budget was reached and the cache emptied
+}
+
+TEST_CASE("anti-aliasing point: a mark becomes a draw-list entry between the 3D and the HUD") {
+    // Two untextured sprites with the same state into FRAME_1 = FBP 0, FBW 8; a kAntiAlias mark
+    // between them. Without the mark they merge into one draw; with it the list is sprite, point,
+    // sprite, and the point carries FRAME_1 and the view's rectangle as SCISSOR.
+    auto sprite = [](Packet& p, std::uint32_t x) {
+        p.Tag(1, false, 0, 1, 0xE);
+        p.Ad(0x00, 6);  // PRIM sprite
+        p.Tag(2, false, 1, 1, 0x5);  // REGLIST: XYZ2 twice
+        p.w.push_back((static_cast<std::uint64_t>(x) << 4) | (static_cast<std::uint64_t>(10) << 4 << 16));
+        p.w.push_back((static_cast<std::uint64_t>(x + 8) << 4) | (static_cast<std::uint64_t>(20) << 4 << 16));
+    };
+    Packet p;
+    p.Tag(2, false, 0, 1, 0xE);
+    p.Ad(0x4C, 0x00080000ull);  // FRAME_1: FBP 0, FBW 8, CT32
+    p.Ad(0x40, (511ull << 16) | (447ull << 48));
+    sprite(p, 10);
+    const std::uint32_t split = static_cast<std::uint32_t>(p.Bytes());
+    sprite(p, 40);
+    {
+        GsState gs;
+        gs.ProcessGif(p.Data(), p.Bytes());
+        CHECK(gs.TakeDraws().size() == 1);
+    }
+    std::vector<SourceMark> marks(1);
+    marks[0].offset = split;
+    marks[0].kind = SourceMark::kAntiAlias;
+    marks[0].rect[0] = 0;
+    marks[0].rect[1] = 0;
+    marks[0].rect[2] = 511;
+    marks[0].rect[3] = 447;
+    GsState gs;
+    gs.ProcessGif(p.Data(), p.Bytes(), &marks);
+    const auto draws = gs.TakeDraws();
+    REQUIRE(draws.size() == 3);
+    CHECK_FALSE(draws[0].aa_point);
+    CHECK(draws[1].aa_point);
+    CHECK(draws[1].vertices.empty());
+    CHECK(draws[1].frame == 0x00080000ull);
+    CHECK(draws[1].scissor == ((511ull << 16) | (447ull << 48)));
+    CHECK_FALSE(draws[2].aa_point);
+    CHECK(draws[2].vertices.size() == 2);
+    // A movie source mark (kSource) at the same place adds nothing to the draw list.
+    marks[0].kind = SourceMark::kSource;
+    marks[0].bytes = 16;
+    GsState plain;
+    plain.ProcessGif(p.Data(), p.Bytes(), &marks);
+    CHECK(plain.TakeDraws().size() == 1);
 }

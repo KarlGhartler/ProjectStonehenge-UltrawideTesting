@@ -45,9 +45,9 @@ Game code = the functions Ghidra defines in 0x001000D8–0x002616E7. SDK/libc co
 | file | 13 | 1 | 0 | 0 | 12 | `../game/file-loading.md` |
 | input (rumble) | 12 | 12 | 0 | 0 | 0 | `../subsystems/sound.md` |
 | aircraft-data | 7 | 7 | 0 | 0 | 0 | `../formats/AIRCRAFT.md` |
-| boot | 1 | 1 | 0 | 0 | 0 | `../game/scenes.md` |
+| boot | 1 | 1 | 0 | 0 | 0 | `../game/boot.md` |
 
-**The HDD subsystem is unreachable at run time** although only 23 of its 96 functions are "dead": the save page and the HDD install page call the HDD layer when the HDD flags allow, but the HDD module init has no caller and no code sets the flags (`../subsystems/save.md`). The same holds for scenes 1 and 3 and for scene 7 (`../game/scenes.md`). "Dead" in this table is call-graph reachability only.
+**The HDD subsystem is unreachable at run time** although only 23 of its 96 functions are "dead": the save page and the HDD install page call the HDD layer when the HDD flags allow, but the HDD module init has no caller and no code sets the flags (`../subsystems/save.md`). The same holds for scenes 1 and 3 and for scene 7 (`../game/boot.md`). "Dead" in this table is call-graph reachability only.
 
 ## Depth of the notes
 
@@ -59,7 +59,7 @@ Every reachable function is now "understood", but not every note has the same de
 
 ## How the subsystems were assigned
 
-The seed is call-graph reachability from each scene handler and its sub-state table (`../game/scenes.md`):
+The seed is call-graph reachability from each scene handler and its sub-state table (`../game/boot.md`):
 - a function reachable from exactly one scene starts in that scene's subsystem;
 - a function reachable from several scenes was "shared" and then assigned by role;
 - a function reachable from the main loop is **core**;

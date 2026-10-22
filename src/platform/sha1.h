@@ -1,5 +1,5 @@
 // SHA-1 (FIPS 180-4), written in-house (docs/decisions/dependencies.md) for the disc image check
-// (docs/platform/supported-version.md). Not used for security.
+// (docs/platform/executable.md). Not used for security.
 #pragma once
 
 #include <cstddef>

@@ -98,9 +98,9 @@ bool VkContext::Init(SDL_Window* window, bool want_validation, std::string& erro
     }
 
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName = "AC04 Port";
+    app.pApplicationName = "ProjectStonehenge";
     app.applicationVersion = VK_MAKE_API_VERSION(0, 0, 1, 0);
-    app.pEngineName = "AC04 Port";
+    app.pEngineName = "ProjectStonehenge";
     app.apiVersion = kRequiredApi;
     VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ici.pApplicationInfo = &app;
@@ -298,6 +298,10 @@ bool VkContext::CreateSwapchain(int width, int height, bool vsync, std::string& 
     swapchain = next;
     swapchain_format = chosen.format;
     swapchain_extent = extent;
+    AC04_LOG_INFO("renderer", "swapchain %ux%u, %u images, present mode %s", extent.width, extent.height, image_count,
+                  present_mode == VK_PRESENT_MODE_FIFO_KHR      ? "FIFO (v-sync)"
+                  : present_mode == VK_PRESENT_MODE_MAILBOX_KHR ? "MAILBOX"
+                                                                : "IMMEDIATE");
 
     uint32_t icount = 0;
     vkGetSwapchainImagesKHR(device, swapchain, &icount, nullptr);

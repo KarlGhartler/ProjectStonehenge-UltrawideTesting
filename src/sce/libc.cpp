@@ -2,7 +2,7 @@
 // - malloc/free use newlib's chunk sizes on the EE (4-byte size header, 16-byte alignment: a request
 //   of n bytes takes (n + 4 + 15) & ~15, at least 16) in the region the PS2 heap gives the game:
 //   the first chunk is at 0x004CC758 (user block 0x004CC760) and the arena holds 0x01A318B0 bytes,
-//   so ProbeLargestMallocSize finds the measured 0x01A318A4 (docs/pcsx2/sessions-03.md,
+//   so ProbeLargestMallocSize finds the measured 0x01A318A4 (docs/pcsx2/sessions.md run 03,
 //   docs/port/validation.md E-1). The size word (size | 1) is written before each block as newlib
 //   does; the free lists and the top-chunk slack (0xFF8 bytes on the PS2) stay on the host.
 // - rand/srand are newlib's LCG on the original state word (*_impure_ptr + 0x58).

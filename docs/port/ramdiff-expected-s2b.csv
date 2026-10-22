@@ -7,12 +7,12 @@ start,end,category,reason
 0x0039D4F8,0x0039D510,timing,g_MenuFade tab levels +0x18..: decay since the page was opened; PCSX2 loads the page data more slowly (CD latency model)
 0x0029F1A4,0x0029F1CC,timing,CD file-system request counters and pending-read state (g_CdFsState): PCSX2 still has a page-data read in flight at the checkpoint (CD latency), and after LOAD two more data reads (see 0x002BCB18)
 0x00353F90,0x00353F94,timing,VAG slot stream position (music has played for a different time)
-0x002BC600,0x002BC800,input,CD queue 1 records (page data loads): after LOAD PCSX2 has two more data reads (DATA 0xB3 into the save page at 0x00CD0640 and the next one): the owner opened the LOAD page several times while checking the 0x0023D4FC breakpoint (confirmed by the owner, sessions-08.md)
+0x002BC600,0x002BC800,input,CD queue 1 records (page data loads): after LOAD PCSX2 has two more data reads (DATA 0xB3 into the save page at 0x00CD0640 and the next one): the User opened the LOAD page several times while checking the 0x0023D4FC breakpoint (confirmed by the User, sessions.md run 08)
 0x002BCB14,0x002BCB20,input,CD queue 1 read/write indices (as above)
 0x004117F4,0x004117F8,input,ticket of the last page data read (as above)
 0x0042CEAC,0x0042CF60,input,VAG client command queue indices and records: more BGM start/stop commands on PCSX2 (the extra main-menu visits, as above)
 0x0042D1D8,0x0042D1DA,input,menu BGM track of slot 0 at LOAD exit: 4 on PCSX2 (PlayMenuBgm(4) of an extra main-menu visit, then the LOAD page's FadeOutMenuBgm), 3 in the port; both play track 4 from the next main menu on (equal at SCREEN SETTINGS entry)
-0x0029F630,0x0029F634,input,ctx pad held buttons at SOUND SETTINGS exit: the owner still held the button
+0x0029F630,0x0029F634,input,ctx pad held buttons at SOUND SETTINGS exit: the User still held the button
 0x00424FD0,0x00424FD8,input,SOUND voice table entry of the help-line type-out SE (as below)
 0x0042A410,0x0042A450,input,menu SE record: last sound at SOUND SETTINGS exit is the help-line type-out tick (9) in the port, the accept (2) on PCSX2: the pad script presses X 30 frames after the last change, while the help line is still typing
 0x00CD0200,0x00CD0210,input,SOUND SETTINGS help-line message box (+0x284): type-out state (as above)

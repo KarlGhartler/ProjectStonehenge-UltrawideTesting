@@ -26,7 +26,6 @@ AC04_GUEST_VAR(u32, g_pMenuFade, 0x00410E88)
 constexpr u32 kColumns = 0x0039E220;       // 2 columns
 constexpr u32 kHelpMessages = 0x0039E268;  // s16 per menu item (6)
 
-f32 K(u32 address) { return GRef<f32>(address); }
 s32& State(u32 obj) { return GRef<s32>(obj + 0x670); }
 
 }  // namespace

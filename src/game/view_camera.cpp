@@ -15,10 +15,6 @@ using guest::GRef;
 
 namespace {
 
-void CopyQword(u32 dst, u32 src) {
-    for (u32 o = 0; o < 16; o += 4) GRef<u32>(dst + o) = GRef<u32>(src + o);
-}
-
 void ZeroQword(u32 dst) {
     for (u32 o = 0; o < 16; o += 4) GRef<u32>(dst + o) = 0;
 }
@@ -171,8 +167,6 @@ void func_0010D748(u32 view, u32 look) {
 }
 
 namespace {
-
-f32 K(u32 a) { return GRef<f32>(a); }
 
 // Wraps v into the range given by four .lit4 constants (while v > hi: v -= hi_step; while v < lo:
 // v += lo_step), as the solve does for each angle.

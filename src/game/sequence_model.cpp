@@ -191,7 +191,7 @@ u32 func_00220590(u32 work, u32 c, u32 motion) {
 // Part draw state: for each part, the register list at +0x10 (count +0x150 = 7 when done):
 // TEX0_2 = part+0x100, TEX1_2 = 0x60, TEST_2 = 0x515AD, ALPHA_2 = 0x7F00000044, CLAMP_2 = 0, FOGCOL
 // = fog colour *0x00410D70 (low word only; the high word is left as it was, as the original), and
-// at +0x70 an A+D GIF tag for 6 registers.
+// at +0 the A+D GIF tag for those 6 registers (NLOOP = count - 1).
 void func_002206C0(u32 c) {
     for (s32 i = 0; i < GRef<s32>(c + 0xA0); ++i) {
         const u32 p = W(c + 0xC4) + static_cast<u32>(i) * 0x160;
@@ -209,8 +209,8 @@ void func_002206C0(u32 c) {
         GRef<u32>(p + 0x60) = W(0x00410D70);
         GRef<u64>(p + 0x68) = 0x3D;
         GRef<u16>(p + 0x150) = 7;
-        GRef<u64>(p + 0x70) = 0x1000000000000006ull;
-        GRef<u64>(p + 0x78) = 0xE;
+        GRef<u64>(p) = 0x1000000000000006ull;
+        GRef<u64>(p + 8) = 0xE;
     }
 }
 

@@ -21,7 +21,7 @@ void LogUnhandled(const char* service, std::uint32_t fno) {
     log::WriteOnce(key.c_str(), log::Level::Warning, "iop", "%s: fno %u not implemented (accepted)", service, fno);
 }
 
-// SOUND.IRX fno 1 (docs/subsystems/iop-sound.md "Command records" / "Reply"; sifrpc_server
+// SOUND.IRX fno 1 (docs/subsystems/sound.md "Command records" / "Reply"; sifrpc_server
 // 0x0B90 in SOUND.IRX): the batch is {count, records...} with a fixed size per id; the reply is
 // {count = records + 2, one 12-byte record per command with ids 1-4/6-9, the transfer record
 // {10, last finished ticket, status}, the voice-status record {0xF, output mode, 48 bytes}}.
@@ -256,7 +256,7 @@ private:
         if (offset + 4 <= size) std::memcpy(&v, p + offset, 4);
         return v;
     }
-    // Voice request fields (docs/subsystems/iop-sound.md "The 72-byte voice request").
+    // Voice request fields (docs/subsystems/sound.md "The 72-byte voice request").
     audio::SpuMixer::KeyOnParams VoiceParams(const std::uint8_t* rec) const {
         audio::SpuMixer::KeyOnParams p;
         std::memcpy(&p.start, rec + 0x40, 4);
@@ -286,7 +286,7 @@ private:
     std::uint32_t effect_start_[2] = {EffectStart(0, 0), EffectStart(1, 0)};
 };
 
-// VAG.IRX (docs/subsystems/iop-sound.md "VAG.IRX"; functions named by the module's own symbol
+// VAG.IRX (docs/subsystems/sound.md "VAG.IRX"; functions named by the module's own symbol
 // table): 4 stream channels (0-1 stereo at pitch 0xEB4, 2-3 mono at 0x75A) on core-1 voices that
 // loop forever over two half-buffers in SPU RAM. The SPU2 IRQ on channel 1's right voice (one
 // half-buffer period, 448 samples at 44.1 kHz) runs VagMain, which copies the next half of each

@@ -1,4 +1,4 @@
-// Scene system (docs/game/scenes.md): SceneStep, the request helpers, the scene table and scene 0.
+// Scene system (docs/game/boot.md): SceneStep, the request helpers, the scene table and scene 0.
 // Scenes 1-7 are stubs in the skeleton: they log once when entered and then do nothing, so the main
 // loop keeps running (milestone C). They are registered at their original addresses, so SceneStep
 // reaches them through the scene table in guest memory exactly as the PS2 does.

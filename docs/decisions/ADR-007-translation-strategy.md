@@ -1,6 +1,6 @@
 # ADR-007: Translation strategy
 
-Status: **Accepted** (owner decision, 2026-10-13).
+Status: **Accepted** (User decision, 2026-10-13).
 
 ## Context
 
@@ -14,23 +14,23 @@ Status: **Accepted** (owner decision, 2026-10-13).
 
 **Option A.** Option B is **rejected**.
 
-Reason (owner): Claude translates the code directly. Correctness comes from validation against PCSX2 (save states, input recordings and function-level test vectors), not from mechanical translation. A recompiler would be a second large program to write and verify, and its output would not be the readable, documented code this project wants.
+Reason (User): Claude translates the code directly. Correctness comes from validation against PCSX2 (save states, input recordings and function-level test vectors), not from mechanical translation. A recompiler would be a second large program to write and verify, and its output would not be the readable, documented code this project wants.
 
 ## How it works
 
 ### Slice
 - A **slice** is a part of the game that ends in something **visible or playable** that can be validated against PCSX2.
 - A slice is not necessarily a whole scene. Small scenes can be one slice; large ones are split into sub-slices (scene 2, and scene 4 if needed). Self-contained features (movies) get their own slice.
-- Each slice is sized so that its PCSX2 checks fit in **one session** of the owner.
+- Each slice is sized so that its PCSX2 checks fit in **one session** of the User.
 - The order and contents of the slices: `../port/slices.md`. Every game function, dead code included, belongs to exactly one slice (checked by `tools/research/slices.py`).
 
 ### Per-slice workflow
 1. **Plan:** list the functions, the renderer/audio/input/`sce` features and the validation points.
-2. **PCSX2 batch:** collect every save state, screenshot, input recording and test vector the slice needs into **one** batch of exact steps for the owner, early in the slice (`../pcsx2/procedures.md`). Claude continues translating while it waits.
+2. **PCSX2 batch:** collect every save state, screenshot, input recording and test vector the slice needs into **one** batch of exact steps for the User, early in the slice (`../pcsx2/procedures.md`). Claude continues translating while it waits.
 3. **Translate** with the `port-function` skill: `// EE: 0x…` on every function, the game's random sources in the original call order, guest memory (ADR-001). Only the renderer, audio and `sce` features the slice needs are implemented.
 4. **Validate** (`../port/validation-strategy.md`): tests pass; the RAM checkpoint matches PCSX2 apart from documented differences; screens match the PCSX2 screenshots.
 5. **Fix the records:** errors found in the docs during translation are fixed in the docs and in Ghidra, and logged (`../rename-log.csv`).
-6. **Report:** what was translated (counts against `../port/coverage.md`), what is visible or playable, validation results, documented differences, problems. Then wait for the owner's go-ahead; the owner tests and commits between slices.
+6. **Report:** what was translated (counts against `../port/coverage.md`), what is visible or playable, validation results, documented differences, problems. Then wait for the User's go-ahead; the User tests and commits between slices.
 
 ## Consequences
 

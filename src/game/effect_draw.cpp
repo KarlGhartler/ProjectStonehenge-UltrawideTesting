@@ -23,8 +23,6 @@ namespace {
 
 u32 Eff() { return W(0x004106B4); }  // effect block (pools, effect camera +0x624E0, clock +0x6249C)
 
-void Put64(u32 p, u32 i, u64 v) { GRef<u64>(p + 8 * i) = v; }
-
 // Bit pattern of a float (for packet words built from computed floats).
 u32 FBits(f32 f) {
     u32 b;
@@ -103,7 +101,6 @@ void ProjectI4(u32 out, u32 m, u32 in, bool zw0) {
     }
 }
 
-
 // ProjectI4 with zw0, returning the Q (1 / w) it divided by.
 f32 ProjectI4Q(u32 out, u32 m, u32 in) {
     const auto load = [](u32 a) { return vu0::Vec4{F(a), F(a + 4), F(a + 8), F(a + 12)}; };
@@ -136,7 +133,6 @@ void QuadCellUvs(u32 sp, f32 u, s32 r) {
     GRef<f32>(sp + 0x694) = s3;
     GRef<f32>(sp + 0x6A8) = v3;
 }
-
 
 // Corner UVs of a sprite cut from an eighth-wide texture column at u0 (inset c), rotated by r (0..3):
 // u at sp +0x68C..+0x698, v at sp +0x6A0..+0x6AC (va / vb rows); the first corner stays at +0x688 /
@@ -254,7 +250,6 @@ void FadeByDepth(u32 sp, s32 w, s32 a, s32 near_w, s32 div, s32 vk_near) {
     }
 }
 
-
 // Body of the 16-qword smoke sprite after its PRIM: centre RGBAQ (colour at sp + c, alpha +0x5A4)
 // with the cell centre UV, then the four corners (+-sp +0x600) with the edge alpha (+0x5A4 / div)
 // and the cell corners; the cell is (table 0x00405480 [k & 7], [(k + 1) & 7]) / 8.
@@ -340,7 +335,6 @@ void ClippedStripFans(u32 list, u32 vm, u32 clip, s32 fixed) {
     }
 }
 
-
 // SpriteQuarterUvs with constants per rotation case: k[r] = {inset, row va, row vb} read from .rodata.
 void SpriteUvsByCase(u32 sp, f32 u0, s32 r, const u32 (&k)[4][3]) {
     if (r < 0 || 3 < r) return;
@@ -363,7 +357,6 @@ bool LargeImpactUvs(u32 sp, s32 s0, s32 phase, const u32 (&k)[4][4][3]) {
     SpriteUvsByCase(sp, u0, q - (((q < 0 ? q + 3 : q) >> 2) << 2), k[g]);
     return true;
 }
-
 
 // Constants of the two large-explosion drawers 0x001C0228 (scale 1) and 0x001C4D48 (other scales):
 // C addresses of the rates, insets, rows and fade limits of the four parts, and what differs in
@@ -1803,8 +1796,6 @@ void func_0015E2E8(u32 pool, u32 view, u32 list) { DrawPool(pool, 0x40, 0x60, vi
 // Pool draw wrapper: 256 records of 0x30 bytes (counter +0x3020); setup 0x0020E920, record draw 0x00210470.
 void func_0015E440(u32 pool, u32 view, u32 list) { DrawPool(pool, 0x100, 0x30, view, list, func_0020E920, func_00210470); }
 
-
-
 // EE: 0x00181D88
 // AA-gun burst pool (+0x5D070) draw set-up in the scratchpad: guard-band bounds (0x002B89B4..C0 ->
 // +0x5EC..+0x5F8), the far depth (+0x578) and fade range ((near - far) / C 0x0040ED18, +0x57C), the
@@ -1935,7 +1926,6 @@ void func_00181EB0(u32 rec, u32 cam, u32 list) {
         xyz(-sz, -sz);
     }
 }
-
 
 // EE: 0x001829D8
 // Cannon-shell ground-impact pool (+0x60D00) draw set-up: guard band, far depth and fade range
@@ -2080,7 +2070,6 @@ void func_00182B08(u32 rec, u32 cam, u32 list) {
 }
 
 namespace {
-
 
 // The 16-qword sprite packet of the puff effects: PRIM 0x5D, then for the centre RGBAQ (alpha a0),
 // ST, XYZ2 and for the four corners RGBAQ (alpha a1) / ST / XYZ2 around (x, y) by half size `sz`.
@@ -2811,7 +2800,6 @@ void func_00185C48(u32 rec, u32 cam, u32 list) {
         xyz(0x440);
     }
 }
-
 
 // EE: 0x00186DE0
 // Ground-unit destruction pool (+0x5FAD0) draw set-up: guard band (+-0x1000), far depth and fade
@@ -4510,7 +4498,6 @@ void func_00191978(u32 rec, u32 cam, u32 list) {
         EmitXyzOff(sp, -r, -r);
     }
 }
-
 
 // EE: 0x00192848
 // Large impact explosion (surfaces 3 / 4 and the cluster sub-blasts; record as 0x0018F018 with

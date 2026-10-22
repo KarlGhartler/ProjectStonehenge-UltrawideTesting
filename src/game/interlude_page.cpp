@@ -29,8 +29,6 @@ AC04_GUEST_VAR(u32, g_pMenuFade, 0x00410E88)
 
 constexpr u32 kMovieLengths = 0x003AF880;  // s32 frames per movie page n
 
-f32 K(u32 address) { return GRef<f32>(address); }
-u64 Sx(s32 v) { return static_cast<u64>(static_cast<s64>(v)); }
 s32& InterludeState(u32 obj) { return GRef<s32>(obj + 0x314); }
 
 }  // namespace

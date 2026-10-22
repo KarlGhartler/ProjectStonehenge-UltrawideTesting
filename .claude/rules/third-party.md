@@ -9,7 +9,7 @@ paths:
 # Rules for third-party code and dependencies
 
 ## Approval
-- Every new dependency needs the owner's approval **and** a GPL-3.0 compatibility check (record the license and the result in `docs/decisions/dependencies.md`) before it is added, fetched or downloaded.
+- Every new dependency needs the User's approval **and** a GPL-3.0 compatibility check (record the license and the result in `docs/decisions/dependencies.md`) before it is added, fetched or downloaded.
 
 ## Unmodified dependencies
 - Fetched by CMake `FetchContent` (or `ExternalProject`), pinned to an exact version or commit **with a checksum**:
@@ -22,7 +22,7 @@ paths:
   - the original license file (`LICENSE`, `COPYING` or the upstream equivalent, unchanged);
   - `UPSTREAM.md`: source URL, exact version/commit, license, and the list of local changes;
   - the original copyright headers in every file, kept as they are;
-  - in every file we changed, a note: `Modified by the AC04 port project` (with a short reason, next to the original header).
+  - in every file we changed, a note: `Modified by the ProjectStonehenge project` (with a short reason, next to the original header).
 - Never edit third-party code outside `third_party/`. Never copy third-party code into `src/`.
 
 ## Notices

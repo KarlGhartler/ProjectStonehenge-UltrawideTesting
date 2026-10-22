@@ -1,6 +1,6 @@
 # Results (scene 5), startup (scene 6) and HDD error (scene 7)
 
-Mission results and debriefing, how results change the campaign block, the startup sequence with the memory-card check, and the HDD error screen. Save layers: `save.md`; save image: `../formats/SAVE.md`; scene dispatch: `../game/scenes.md`.
+Mission results and debriefing, how results change the campaign block, the startup sequence with the memory-card check, and the HDD error screen. Save layers: `save.md`; save image: `../formats/SAVE.md`; scene dispatch: `../game/boot.md`.
 
 ## Scene 5: results (`SceneResults` 0x00246E18)
 
@@ -102,7 +102,7 @@ The handler is `table_0x003F8708[ctx->sub]()`. The scene work struct is `w = *0x
 | 3 | 0x00261100 | `func_001026B8(w+0x10)` (camera init) → 4 |
 | 4 | 0x00261128 | `func_00260078()`: if any of `w+0x1F0` bits 0x100000/0x200000/0x400000/0x800000 is set, shows startup warning 5/6/10/7 and waits for a button (`ctx->pad_buttons[1] & 0x70`); returns 1 when done → 5. Draws the window every frame |
 | 5 | 0x002611A0 | `w+0x1FE = 0`, `w+0x1E8 = 0`, `w+0x1F4 = 120`, clears bit 0x100 → 6 |
-| 6 | 0x002611D8 | memory-card probe: `func_0025F298()` = save-module state 0x003F7940; `func_0025F528(save, 0)` (load check of slot 0) or `CheckMcCard(save, 0)` 0x0025F438 (status, 0x540 bytes per port block). Sets `w+0x1F0` bits 0x80/0x100/0x200/0x10000 from the result; when the probe is done (bit 0x200) and the counter is at least 120 → 7. Sub 5 presets the counter to 120, so there is no extra wait (the 120 only matters when sub 7 returns to sub 6 after a card was inserted). Card S: two card-info checks and two `sceMcGetDir`; card E / no card: one card-info check (PCSX2 run 06, `../pcsx2/sessions-06.md`) |
+| 6 | 0x002611D8 | memory-card probe: `func_0025F298()` = save-module state 0x003F7940; `func_0025F528(save, 0)` (load check of slot 0) or `CheckMcCard(save, 0)` 0x0025F438 (status, 0x540 bytes per port block). Sets `w+0x1F0` bits 0x80/0x100/0x200/0x10000 from the result; when the probe is done (bit 0x200) and the counter is at least 120 → 7. Sub 5 presets the counter to 120, so there is no extra wait (the 120 only matters when sub 7 returns to sub 6 after a card was inserted). Card S: two card-info checks and two `sceMcGetDir`; card E / no card: one card-info check (PCSX2 run 06, `../pcsx2/sessions.md` run 06) |
 | 7 | 0x00261378 | `func_00260488()` + draw `func_00260900()`. `func_00260488` evaluates the card result (`func_00260288`: card type `save+0x4C8`, error `save+0x4D4` = −0xB / −2, free space `save+0x4CC` vs `func_0023C7B0()` = **75**; HDD context +0x10, +0x216, +0x4399 via `func_002603D8`), shows messages 1–10 and 0x10, handles confirm (pad 0x50) / cancel (pad 0x20), fades the window. → 8 when done (→ 6 to retry the probe) |
 | 8 | 0x00261398 | `w+0x1FD = 0` (image 0), `w+0x1F4 = 0`, `w+0x1F0 |= 1` (start fade), `func_0025FEF8()` (sound bank load request) → 9 |
 | 9 | 0x002613D0 | per frame: `StartupSplashUpdate` 0x00260980 (fade/hold logic) + `func_00260B90()` (draw one GS sprite) |

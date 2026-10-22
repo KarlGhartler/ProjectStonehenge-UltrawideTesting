@@ -1,12 +1,12 @@
 # Naming convention
 
-Status: **Accepted by the owner on 2026-10-10** (the proposal below, no type prefixes). The rules are in CLAUDE.md, "Naming".
+Status: **Accepted by the User on 2026-10-10** (the proposal below, no type prefixes). The rules are in CLAUDE.md, "Naming".
 
 Migration (logged in `../rename-log.csv`):
 - 8 globals: `g_aCdFileTable` → `g_CdFileTable`, `g_pCdFsState` → `g_CdFsState`, `g_aMovieTable` → `g_MovieTable`, `g_pGameState` → `g_GameState`, `g_wMissionNo` → `g_MissionNo`, `g_wMenuPage` → `g_MenuPage`, `g_wMenuSubPage` → `g_MenuSubPage`, `g_dwAltMissionAircraftMask` → `g_AltMissionAircraftMask`.
 - `g_pMainContext` is kept: it is the allowed exception, a pointer global to the named object `g_MainContext`.
 - 48 `MainContext` fields and 2 `CdFileEntry` fields use snake_case in the docs (e.g. `next_scene`, `brightness_r`). **In Ghidra they still carry Hungarian prefixes** (`wNext_scene`, `flBrightness_r`): `modify_struct_field` reports success but the plugin re-applies the prefix. Field names that start with `unk_` are kept. These fields need a manual rename in Ghidra's Structure Editor.
-- Docs use the new names, including `../pcsx2/sessions-02.md`, which only quoted field names.
+- Docs use the new names, including `../pcsx2/sessions.md` run 02, which only quoted field names.
 
 ghidra-mcp naming gate:
 - `rename_symbol`/`set_global` print a "missing_hungarian_prefix" warning, and reject the name unless `strict_mode=false` is passed per call. All renames above used `strict_mode=false`.
@@ -27,7 +27,7 @@ ghidra-mcp naming gate:
 | Globals | `g_` + Hungarian type prefix | 9 | `g_pMainContext`, `g_wMissionNo`, `g_dwAltMissionAircraftMask`, `g_aCdFileTable` |
 | Globals | `g_` + PascalCase, no type prefix | 1 | `g_MainContext` (struct instance) |
 | Struct fields (Ghidra) | Hungarian, **added automatically by the ghidra-mcp plugin** | ~50 | `dwFlags`, `wScene`, `pCur_buf`, `aDbuf`, `bZbuf_psm`, `flUnk_80` |
-| Struct fields (docs) | mixed: Ghidra names plus `unk_XX` | | `../game/main-context.md` |
+| Struct fields (docs) | mixed: Ghidra names plus `unk_XX` | | `../game/boot.md` |
 | Types | PascalCase | 2 | `MainContext`, `CdFileEntry` |
 | Unnamed | Ghidra `FUN_xxxxxxxx` / `DAT_xxxxxxxx`; docs use `func_xxxxxxxx` and occasionally `D_xxxxxxxx`/`unk_XX` (CLAUDE.md) | thousands | |
 

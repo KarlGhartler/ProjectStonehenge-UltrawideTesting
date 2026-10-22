@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -23,7 +24,7 @@
 namespace ac04::platform {
 namespace {
 
-// MainContext fields read by the scene inspector (docs/game/main-context.md).
+// MainContext fields read by the scene inspector (docs/game/boot.md).
 constexpr u32 kMainContextPointer = 0x004104A8;  // g_pMainContext
 constexpr u32 kGameStatePointer = 0x004104A4;    // g_GameState
 
@@ -49,7 +50,25 @@ void CheckVk(VkResult r) {
     if (r != VK_SUCCESS) log::WriteOnce("overlay:vk", log::Level::Error, "overlay", "ImGui Vulkan error %d", r);
 }
 
-void ApplySquareStyle() {
+// UI scale from the window height: 1 up to 1080 pixels, 2 at 2160 (quarter steps), so the panels
+// keep the same share of the screen at higher resolutions.
+float UiScale(SDL_Window* window) {
+    int w = 0, h = 0;
+    if (window == nullptr || !SDL_GetWindowSizeInPixels(window, &w, &h) || h <= 0) return 1.0f;
+    return std::max(1.0f, std::floor(static_cast<float>(h) / 1080.0f * 4.0f) / 4.0f);
+}
+
+bool ContainsNoCase(const std::string& text, const char* needle) {
+    const size_t n = std::strlen(needle);
+    if (n == 0) return true;
+    auto it = std::search(text.begin(), text.end(), needle, needle + n, [](char a, char b) {
+        return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+    });
+    return it != text.end();
+}
+
+void ApplySquareStyle(float scale) {
+    ImGui::GetStyle() = ImGuiStyle();
     ImGui::StyleColorsDark();
     ImGuiStyle& s = ImGui::GetStyle();
     s.WindowRounding = 0.0f;
@@ -61,6 +80,8 @@ void ApplySquareStyle() {
     s.TabRounding = 0.0f;
     s.WindowBorderSize = 1.0f;
     s.Colors[ImGuiCol_WindowBg].w = 0.88f;
+    s.ScaleAllSizes(scale);
+    s.FontScaleDpi = scale;
 }
 
 }  // namespace
@@ -80,18 +101,27 @@ bool DebugOverlay::Apply(const DebugSettings& settings, SDL_Window* window, rend
             toggle_text_ = "\\";
         }
     }
-    if (!settings.overlay_enabled) {
+    panels_ = settings.overlay_enabled;
+    fps_ = settings.fps_overlay;
+    if (!panels_) visible_ = false;
+    if (!panels_ && !fps_) {
         Shutdown();
         return true;
     }
-    if (active_) return true;
+    if (active_) {
+        if (panels_ && symbols_source_.empty()) LoadSymbols();
+        return true;
+    }
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;  // nothing written next to the executable or the working directory
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    ApplySquareStyle();
+    io.Fonts->AddFontDefaultVector();  // scalable, stays sharp at the UI scale
+    window_ = window;
+    scale_ = UiScale(window);
+    ApplySquareStyle(scale_);
 
     if (!ImGui_ImplSDL3_InitForVulkan(window)) {
         error = "ImGui SDL3 backend failed";
@@ -124,6 +154,7 @@ bool DebugOverlay::Apply(const DebugSettings& settings, SDL_Window* window, rend
     renderer.SetOverlayHook([this](VkCommandBuffer cmd) { Draw(cmd); });
     active_ = true;
     visible_ = false;
+    if (!panels_) return true;  // frame-rate overlay only
     LoadSymbols();
     AC04_LOG_INFO("overlay", "debug overlay ready (toggle '%s'); %zu symbols from %s", toggle_text_.c_str(),
                   symbols_.size(), symbols_source_.empty() ? "nowhere" : symbols_source_.c_str());
@@ -143,16 +174,20 @@ void DebugOverlay::Shutdown() {
     visible_ = false;
     frame_built_ = false;
     renderer_ = nullptr;
+    window_ = nullptr;
 }
 
 bool DebugOverlay::HandleEvent(const SDL_Event& event) {
-    if (!active_) return false;
+    if (!active_ || !panels_) return false;
     const bool toggle =
         toggle_scancode_ != 0
             ? (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && event.key.scancode == toggle_scancode_)
             : (event.type == SDL_EVENT_TEXT_INPUT && event.text.text != nullptr && toggle_text_ == event.text.text);
     if (toggle) {
         visible_ = !visible_;
+        // Opening the panels must not take the keyboard from the game: no panel is focused until
+        // the user clicks one.
+        if (visible_) unfocus_pending_ = true;
         return true;
     }
     if (!visible_) return false;
@@ -181,7 +216,7 @@ void DebugOverlay::BuildFrame(const OverlayFrameData& data) {
     // Frame-time history keeps running while the overlay is hidden.
     frame_ms_[frame_ms_pos_] = static_cast<float>(data.frame_seconds * 1000.0);
     frame_ms_pos_ = (frame_ms_pos_ + 1) % frame_ms_.size();
-    if (!visible_) return;
+    if (!visible_ && !fps_) return;
 
     // The output render pass is recreated when the swapchain format changes.
     if (renderer_->OutputRenderPass() != last_render_pass_) {
@@ -193,12 +228,24 @@ void DebugOverlay::BuildFrame(const OverlayFrameData& data) {
         last_render_pass_ = renderer_->OutputRenderPass();
     }
 
+    // Follow window size changes (fullscreen, windowed resize) with the UI scale.
+    const float scale = UiScale(window_);
+    if (scale != scale_) {
+        scale_ = scale;
+        ApplySquareStyle(scale_);
+    }
+
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::SetNextWindowPos(ImVec2(8, 8), ImGuiCond_FirstUseEver);
-    ImGui::Begin("AC04 debug", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    if (fps_) DrawFps();
+    if (!visible_) {
+        EndFrame();
+        return;
+    }
+    ImGui::SetNextWindowPos(Scaled(8, 8), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Debug", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::TextUnformatted("Read-only panels (debug layer)");
     ImGui::Checkbox("Performance", &show_perf_);
     ImGui::SameLine();
@@ -214,10 +261,22 @@ void DebugOverlay::BuildFrame(const OverlayFrameData& data) {
     if (show_scene_) DrawScene();
     if (show_memory_) DrawMemory();
     if (show_log_) DrawLog();
+    if (unfocus_pending_) {
+        ImGui::SetWindowFocus(nullptr);
+        unfocus_pending_ = false;
+    }
+    EndFrame();
+}
 
+void DebugOverlay::EndFrame() {
     ImGui::Render();
     frame_built_ = true;
+    // imgui_impl_sdl3 stops SDL text input when a text field loses focus; the toggle character
+    // arrives as text input, so turn it back on or the toggle stops working.
+    if (window_ != nullptr && !SDL_TextInputActive(window_)) SDL_StartTextInput(window_);
 }
+
+ImVec2 DebugOverlay::Scaled(float x, float y) const { return ImVec2(x * scale_, y * scale_); }
 
 void DebugOverlay::Draw(VkCommandBuffer cmd) {
     if (!frame_built_) return;
@@ -225,9 +284,32 @@ void DebugOverlay::Draw(VkCommandBuffer cmd) {
     frame_built_ = false;
 }
 
+void DebugOverlay::DrawFps() {
+    // Mean over the last half second of presented frames: small text with a 1-pixel shadow, no
+    // window or background, so it covers as little of the picture as possible.
+    float sum = 0.0f;
+    int n = 0;
+    for (size_t i = 0; i < frame_ms_.size() && sum < 500.0f; ++i) {
+        const float v = frame_ms_[(frame_ms_pos_ + frame_ms_.size() - 1 - i) % frame_ms_.size()];
+        if (v <= 0.0f) break;
+        sum += v;
+        ++n;
+    }
+    const float ms = n > 0 ? sum / static_cast<float>(n) : 0.0f;
+    char text[48];
+    std::snprintf(text, sizeof(text), "%.0f FPS\n%.2f ms", ms > 0.0f ? 1000.0f / ms : 0.0f, ms);
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    const ImVec2 size = ImGui::CalcTextSize(text);
+    const ImVec2 pos(ImGui::GetIO().DisplaySize.x - size.x - 8.0f * scale_, 6.0f * scale_);
+    dl->AddText(ImVec2(pos.x + 1.0f, pos.y + 1.0f), IM_COL32(0, 0, 0, 200), text);
+    dl->AddText(pos, IM_COL32(255, 255, 255, 230), text);
+}
+
 void DebugOverlay::DrawPerformance(const OverlayFrameData& data) {
-    ImGui::SetNextWindowPos(ImVec2(8, 110), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(340, 0), ImGuiCond_FirstUseEver);
+    // Default layout (1080-line units, times the UI scale): Performance under the main window,
+    // Scene and Memory side by side at the top, Session log under Performance.
+    ImGui::SetNextWindowPos(Scaled(8, 100), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(Scaled(440, 0), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Performance", &show_perf_)) {
         ImGui::End();
         return;
@@ -240,7 +322,17 @@ void DebugOverlay::DrawPerformance(const OverlayFrameData& data) {
     const float avg = sum / static_cast<float>(frame_ms_.size());
     ImGui::Text("Presented: %.1f fps (avg %.2f ms, worst %.2f ms)", avg > 0.0f ? 1000.0f / avg : 0.0f, avg, worst);
     ImGui::PlotLines("##frame", frame_ms_.data(), static_cast<int>(frame_ms_.size()), static_cast<int>(frame_ms_pos_),
-                     "frame ms", 0.0f, 40.0f, ImVec2(-1, 50));
+                     "frame ms", 0.0f, 40.0f, ImVec2(-1, 50 * scale_));
+    ImGui::Checkbox("FPS overlay (top right)", &fps_);
+    if (renderer_ != nullptr) {
+        const render::Renderer::Stats& rs = renderer_->LastStats();
+        ImGui::Text("Renderer CPU: GS %.2f ms, record %.2f ms", rs.gs_ms, rs.record_ms);
+        ImGui::Text("Textures: %u drawn, %u GPU decodes, %u CPU uploads, %u memory updates, %.0f KiB", rs.textures.textures,
+                    rs.textures.decodes, rs.textures.uploads, rs.textures.memory_updates,
+                    static_cast<double>(rs.textures.upload_bytes) / 1024.0);
+        ImGui::Text("Texture images: %u (%.0f MiB)", rs.textures.images,
+                    static_cast<double>(rs.textures.image_bytes) / (1024.0 * 1024.0));
+    }
     ImGui::Separator();
     ImGui::Text("Simulation: %s, 59.94 Hz fixed step", data.game_running ? "running" : "stopped");
     ImGui::Text("Steps this frame: %u   total: %llu", data.ticks_run, static_cast<unsigned long long>(data.vblank_count));
@@ -259,8 +351,8 @@ void DebugOverlay::DrawPerformance(const OverlayFrameData& data) {
 }
 
 void DebugOverlay::DrawScene() {
-    ImGui::SetNextWindowPos(ImVec2(360, 8), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(380, 0), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(Scaled(460, 8), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(Scaled(470, 440), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Scene", &show_scene_)) {
         ImGui::End();
         return;
@@ -278,17 +370,22 @@ void DebugOverlay::DrawScene() {
         ImGui::Text("frame_count %u   unpaused %u", PeekOr<u32>(ctx + 0x28, 0), PeekOr<u32>(ctx + 0x2C, 0));
         ImGui::Text("scene_frame %u   unpaused %u", PeekOr<u32>(ctx + 0x30, 0), PeekOr<u32>(ctx + 0x34, 0));
         const u32 game = PeekOr<u32>(kGameStatePointer, 0);
-        if (game != 0) ImGui::Text("Mission id (game+0x27): %u", PeekOr<u8>(game + 0x27, 0));
+        if (game != 0) {
+            const u8 mission_id = PeekOr<u8>(game + 0x27, 0);
+            ImGui::Text("Mission id (game+0x27): 0x%02X (%u)", mission_id, mission_id);
+        }
     }
     ImGui::Separator();
     const debug::SceneRequestLog& log = debug::SceneRequests();
     ImGui::Text("Requests (%llu total, newest first)", static_cast<unsigned long long>(log.total));
+    // The table fills the rest of the window; the request column gets the most room.
     if (ImGui::BeginTable("requests", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY,
-                          ImVec2(0, 160))) {
-        ImGui::TableSetupColumn("step");
-        ImGui::TableSetupColumn("frame");
-        ImGui::TableSetupColumn("from");
-        ImGui::TableSetupColumn("request");
+                          ImVec2(0, std::max(ImGui::GetContentRegionAvail().y, 120.0f * scale_)))) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("step", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableSetupColumn("frame", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableSetupColumn("from", ImGuiTableColumnFlags_WidthStretch, 0.6f);
+        ImGui::TableSetupColumn("request", ImGuiTableColumnFlags_WidthStretch, 2.6f);
         ImGui::TableHeadersRow();
         const u64 n = std::min<u64>(log.total, debug::SceneRequestLog::kSize);
         for (u64 i = 0; i < n; ++i) {
@@ -343,13 +440,13 @@ void DebugOverlay::LoadSymbols() {
 }
 
 void DebugOverlay::DrawMemory() {
-    ImGui::SetNextWindowPos(ImVec2(360, 330), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(640, 380), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(Scaled(940, 8), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(Scaled(800, 440), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Memory", &show_memory_)) {
         ImGui::End();
         return;
     }
-    ImGui::SetNextItemWidth(220);
+    ImGui::SetNextItemWidth(220 * scale_);
     const bool go = ImGui::InputTextWithHint("##goto", "address (hex) or symbol name", goto_text_, sizeof(goto_text_),
                                              ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
@@ -359,10 +456,12 @@ void DebugOverlay::DrawMemory() {
         char* end = nullptr;
         const unsigned long a = std::strtoul(text.c_str(), &end, 16);
         if (!text.empty() && end != text.c_str() && *end == 0) {
-            mem_address_ = static_cast<u32>(a) & ~0xFu;
+            mem_target_ = static_cast<u32>(a);
+            mem_address_ = mem_target_ & ~0xFu;
         } else {
             auto it = std::find_if(symbols_.begin(), symbols_.end(), [&](const Symbol& s) { return s.name == text; });
             if (it != symbols_.end()) {
+                mem_target_ = it->address;
                 mem_address_ = it->address & ~0xFu;
             } else {
                 goto_error_ = "not found";
@@ -370,7 +469,7 @@ void DebugOverlay::DrawMemory() {
         }
     }
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(90);
+    ImGui::SetNextItemWidth(90 * scale_);
     ImGui::Combo("##view", &mem_view_, "bytes\0u32\0f32\0");
     ImGui::SameLine();
     if (ImGui::Button("-0x100")) mem_address_ -= 0x100;
@@ -410,7 +509,12 @@ void DebugOverlay::DrawMemory() {
                     }
                 }
             }
-            ImGui::TextUnformatted(text);
+            // The row holding the address last looked up is highlighted.
+            if (mem_target_ - a < 16) {
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1), "%s", text);
+            } else {
+                ImGui::TextUnformatted(text);
+            }
             if (label != nullptr && label->address + 0x10000 > a) {
                 ImGui::SameLine();
                 if (label->address >= a) {
@@ -426,18 +530,18 @@ void DebugOverlay::DrawMemory() {
 }
 
 void DebugOverlay::DrawLog() {
-    ImGui::SetNextWindowPos(ImVec2(8, 420), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(760, 260), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(Scaled(8, 480), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(Scaled(920, 300), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Session log", &show_log_)) {
         ImGui::End();
         return;
     }
-    ImGui::SetNextItemWidth(240);
-    ImGui::InputTextWithHint("##filter", "filter (module or text)", log_filter_, sizeof(log_filter_));
+    ImGui::SetNextItemWidth(240 * scale_);
+    ImGui::InputTextWithHint("##filter", "filter (module or text, any case)", log_filter_, sizeof(log_filter_));
     if (ImGui::BeginChild("lines", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
         const bool at_bottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f;
         for (const std::string& line : log::RecentLines(400)) {
-            if (log_filter_[0] != 0 && line.find(log_filter_) == std::string::npos) continue;
+            if (!ContainsNoCase(line, log_filter_)) continue;
             const bool error = line.find("] ERROR") != std::string::npos;
             const bool warn = line.find("] WARN") != std::string::npos;
             if (error) {

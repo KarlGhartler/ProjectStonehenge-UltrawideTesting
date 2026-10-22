@@ -42,7 +42,6 @@ constexpr u32 kIconSprites = 0x003A5550;      // per unit type {u16 w, u16 h, ..
 constexpr u32 kFactionColours = 0x003A55C0;   // u32 per faction
 constexpr u32 kEnemyCounts = 0x003A54B8;      // s16[4] per mission: AIR, GROUND, SEA, TARGET
 
-f32 K(u32 address) { return GRef<f32>(address); }
 u64 Sx(s64 v) { return static_cast<u64>(v); }
 u32 MovieRequest() { return GRef<u32>(g_GameState().addr + 0x20); }
 

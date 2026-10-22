@@ -1,0 +1,360 @@
+{
+ "_comment": "PCSX2 screenshots of the slice batches (Slices folder) against the port; tools/research/pcsx2_compare.py. Windows are the vblanks searched for the best match (the PCSX2 shots were taken by hand). Pad scripts from docs/port/validation.md.",
+ "exe": "build/windows/src/RelWithDebInfo/ProjectStonehenge.exe",
+ "iso": "",
+ "memcard": "out/cards/S",
+ "timeout": 1800,
+ "runs": [
+  {
+   "name": "s1_cardS",
+   "shots": [
+    {
+     "ref": "Slice1/s1_S_splash1.png",
+     "from": 100,
+     "to": 700,
+     "step": 10,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice1/s1_S_splash0.png",
+     "from": 100,
+     "to": 700,
+     "step": 10,
+     "blend_fields": true
+    }
+   ]
+  },
+  {
+   "name": "s1_cardE",
+   "memcard": "out/cards/E",
+   "shots": [
+    {
+     "ref": "Slice1/s1_E_splash0.png",
+     "from": 100,
+     "to": 700,
+     "step": 10,
+     "blend_fields": true
+    }
+   ]
+  },
+  {
+   "name": "s1_nocard",
+   "memcard": "",
+   "args": [
+    "--no-memcard",
+    "--pad-script",
+    "320:cross"
+   ],
+   "shots": [
+    {
+     "ref": "Slice1/s1_N_msg_1.png",
+     "from": 100,
+     "to": 310,
+     "step": 10,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice1/s1_N_msg_2.png",
+     "from": 330,
+     "to": 600,
+     "step": 10,
+     "blend_fields": true
+    }
+   ]
+  },
+  {
+   "name": "s2b",
+   "args": [
+    "--pad-script",
+    "1200:start,1300:down,1330:down,1360:down,1390:down,1420:cross,1500:cross,1850:down,1880:down,1910:down,1940:left,1970:cross,2050:down,2080:down,2110:cross,2350:down,2380:left,2410:left,2440:up,2470:left,2500:cross,2560:down,2590:cross,2850:down,2880:down,2910:down,3000:triangle,3060:triangle,3120:up,3150:up,3180:up,3210:cross,3500:cross,3600:cross,3900:down,3930:down,3960:down,3990:cross,4050:up,4080:up,4110:cross,4300:down,4330:cross,4360:cross,4420:down,4450:cross,4480:down,4510:cross,4620:triangle,4760:up,4790:cross"
+   ],
+   "shots": [
+    {
+     "ref": "Slice2b/s2b_ctrl.png",
+     "from": 1700,
+     "to": 1840,
+     "step": 10,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice2b/s2b_snd.png",
+     "from": 2200,
+     "to": 2340,
+     "step": 10,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice2b/s2b_rec.png",
+     "from": 2650,
+     "to": 2840,
+     "step": 10,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice2b/s2b_rec_2.png",
+     "from": 2920,
+     "to": 2990,
+     "step": 10,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice2b/s2b_load.png",
+     "from": 3300,
+     "to": 3490,
+     "step": 10,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice2b/s2b_menu_loaded.png",
+     "from": 3700,
+     "to": 3890,
+     "step": 10,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice2b/s2b_opt.png",
+     "from": 4200,
+     "to": 4290,
+     "step": 10,
+     "blend_fields": true
+    }
+   ]
+  },
+  {
+   "name": "s2b_169",
+   "args": [
+    "--pad-script",
+    "1200:start,1300:down,1400:cross,1600:cross,1700:cross,2000:down,2040:down,2080:down,2200:cross,2400:down,2550:cross,2750:down,2850:down,2950:cross,3100:down,3250:cross,3450:triangle,3650:up,3750:cross"
+   ],
+   "_comment": "LOAD slot 1 (brightness of the save, CONTINUE in the menu, as the User's run), OPTIONS > SCREEN SETTINGS > SCREEN RATIO 16:9 > leave > CONTROLLER SETUP",
+   "shots": [
+    {
+     "ref": "Slice2b/s2b_opt_changed.png",
+     "from": 3260,
+     "to": 3440,
+     "step": 10,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice2b/s2b_menu_169.png",
+     "from": 3460,
+     "to": 3740,
+     "step": 10,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice2b/s2b_ctrl_169.png",
+     "from": 3760,
+     "to": 4100,
+     "step": 10,
+     "blend_fields": true
+    }
+   ]
+  },
+  {
+   "name": "s2a",
+   "args": [
+    "--pad-script",
+    "1200:start,1450:cross"
+   ],
+   "shots": [
+    {
+     "ref": "Slice2a/s2a_title.png",
+     "from": 700,
+     "to": 740,
+     "step": 4,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice2a/s2a_menu.png",
+     "from": 1360,
+     "to": 1392,
+     "step": 4,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice2a/s2a_menu_open.png",
+     "from": 1980,
+     "to": 2012,
+     "step": 4,
+     "blend_fields": true
+    }
+   ]
+  },
+  {
+   "name": "s3",
+   "args": [
+    "--pad-script",
+    "1200:start,1500:cross,1700:cross"
+   ],
+   "shots": [
+    {
+     "ref": "Slice3/s3_ss01_a.png",
+     "from": 1960,
+     "to": 2140,
+     "step": 4,
+     "blend_fields": false
+    },
+    {
+     "ref": "Slice3/s3_ss01_b.png",
+     "from": 2900,
+     "to": 3020,
+     "step": 4,
+     "blend_fields": false
+    }
+   ]
+  },
+  {
+   "name": "s4_flow",
+   "args": [
+    "--pad-script",
+    "700:start,850:cross,950:cross,1166:start,1438:cross,9918:start,10844:cross"
+   ],
+   "shots": [
+    {
+     "ref": "Slice4/s4_title.png",
+     "from": 1232,
+     "to": 1300,
+     "step": 4,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice3/s3_m1_movie.png",
+     "from": 1440,
+     "to": 2400,
+     "step": 10,
+     "blend_fields": false
+    },
+    {
+     "ref": "Slice4/s4_brief.png",
+     "from": 5100,
+     "to": 8000,
+     "step": 20,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice4/s4_map.png",
+     "from": 7900,
+     "to": 9900,
+     "step": 20,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice4/s4_campaign.png",
+     "from": 9925,
+     "to": 10000,
+     "step": 4,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice4/s4_hangar_a.png",
+     "from": 10861,
+     "to": 11300,
+     "step": 10,
+     "blend_fields": false
+    }
+   ]
+  },
+  {
+   "name": "s4_shop",
+   "args": [
+    "--pad-script",
+    "1200:start,1500:down,1560:cross,1800:cross,1950:cross,2150:up,2200:cross,2600:start,3100:start,3600:start,3800:down,3830:down,3900:cross,4100:cross,4600:cross,4800:cross,5200:triangle"
+   ],
+   "shots": [
+    {
+     "ref": "Slice4/s4_shop.png",
+     "from": 6340,
+     "to": 6380,
+     "step": 4,
+     "blend_fields": true
+    }
+   ]
+  },
+  {
+   "name": "s4_vs",
+   "args": [
+    "--pad-script",
+    "1200:start,1500:down,1530:down,1560:down,1620:cross,2300:right"
+   ],
+   "shots": [
+    {
+     "ref": "Slice4/s4_vs.png",
+     "from": 2160,
+     "to": 2200,
+     "step": 4,
+     "blend_fields": true
+    },
+    {
+     "ref": "Slice4/s4_vs_right.png",
+     "from": 2520,
+     "to": 2560,
+     "step": 4,
+     "blend_fields": true
+    }
+   ]
+  },
+  {
+   "name": "s5_m3",
+   "args": [
+    "--pad-script",
+    "1200:start,1500:down,1560:cross,1800:cross,1950:cross,2150:up,2200:cross,2600:start,3100:start,3600:start,4200:cross,4700:cross,5000:cross"
+   ],
+   "shots": [
+    {
+     "ref": "Slice5/s5_m3_loading.png",
+     "from": 5200,
+     "to": 5400,
+     "step": 10,
+     "blend_fields": false
+    }
+   ]
+  },
+  {
+   "name": "s5_m4",
+   "args": [
+    "--pad-script",
+    "1200:start,1500:down,1560:cross,1650:down,1680:down,1710:down,1800:cross,1950:cross,2150:up,2200:cross,2600:start,3100:start,3600:start,4200:cross,4700:cross,5000:cross"
+   ],
+   "shots": [
+    {
+     "ref": "Slice5/s5_m4_loading.png",
+     "from": 5200,
+     "to": 5400,
+     "step": 10,
+     "blend_fields": false
+    }
+   ]
+  },
+  {
+   "name": "gsdump_m1",
+   "gsdump": "out/gs/s5_m1_frame.gs",
+   "shots": [
+    {
+     "ref": "Slice5/s5_m1_frame.png",
+     "blend_fields": true
+    }
+   ]
+  },
+  {
+   "name": "gsdump_m3",
+   "gsdump": "out/gs/s5_m3_frame.gs",
+   "shots": [
+    {
+     "ref": "Slice5/s5_m3_frame.png",
+     "blend_fields": true
+    }
+   ]
+  },
+  {
+   "name": "gsdump_m4",
+   "gsdump": "out/gs/s5_m4_frame.gs",
+   "shots": [
+    {
+     "ref": "Slice5/s5_m4_frame.png",
+     "blend_fields": true
+    }
+   ]
+  }
+ ]
+}

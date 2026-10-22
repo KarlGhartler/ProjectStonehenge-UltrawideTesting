@@ -1,6 +1,6 @@
 // Radio / message system set-up for a mission (block A of S5): the radio database from mission
 // blocks 34 and 35, voice channels and request queues, tutorial control hints, the subtitle
-// timeline, the vibration slots and the periodic chatter timers. docs/subsystems/mission-load.md
+// timeline, the vibration slots and the periodic chatter timers. docs/subsystems/mission-flow.md
 // "Message system"; random reads (libc rand, three per call of func_002594F0): docs/game/random.md.
 #include "game/game.h"
 

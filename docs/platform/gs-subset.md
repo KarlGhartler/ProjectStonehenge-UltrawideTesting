@@ -98,7 +98,7 @@ Tag modes: PACKED (NREG 1–6), REGLIST (NREG 1–15; used for fast register set
 
 ## Measured in GS dumps
 
-Eight single-frame PCSX2 GS dumps (`../pcsx2/sessions-04.md`): title screen, main menu, first briefing, story intro movie, an in-engine cutscene labelled "first boot" in the capture (mission 0x23 no-save intro or 0x25 opening sequence, not recorded), in-engine demonstration, hangar (F-4E), and gameplay (bombers, explosions, HUD). Parsed with `tools/research/gsdump.py` (counts of drawn primitives by GS state; PCSX2 2.8 records the merged GIF-unit output, so the three GIF paths cannot be told apart in the dump).
+Eight single-frame PCSX2 GS dumps (`../pcsx2/sessions.md` run 04): title screen, main menu, first briefing, story intro movie, an in-engine cutscene labelled "first boot" in the capture (mission 0x23 no-save intro or 0x25 opening sequence, not recorded), in-engine demonstration, hangar (F-4E), and gameplay (bombers, explosions, HUD). Parsed with `tools/research/gsdump.py` (counts of drawn primitives by GS state; PCSX2 2.8 records the merged GIF-unit output, so the three GIF paths cannot be told apart in the dump).
 
 | Feature | Seen |
 |---|---|
@@ -144,7 +144,7 @@ Added in S4 (hangar 3D models, 2026-10-16):
 - **VIF1 + VU1**: `src/platform/render/vu1/` consumes the VIF1 code stream (UNPACK with CL/WL, masks, modes, FLG/USN; MPG source tracking; BASE/OFFSET/TOPS double buffer; DIRECT; MSCAL/MSCNT) and runs programs A, B, C, E and the terrain program T (`.vudata`) as CPU reimplementations (A, E, T since 2026-10-16, not yet checked against PCSX2) whose XGKICK output joins the GIF stream (`../subsystems/vu-programs.md`). Their output was compared with the PCSX2 hangar GS dump (`tools/research/gifstrips.py`): packet and vertex counts per texture, screen and Z ranges and mean vertex colours agree.
 - **Depth buffer**: every colour target has a D32 depth image; vertex Z is the GS Z divided by the size of the ZBUF format (exact for Z24/Z16), interpolated linearly in screen space; TEST.ZTE/ZTST (NEVER, ALWAYS, GEQUAL, GREATER) and ZBUF.ZMSK become the pipeline depth state. AFAIL ZB_ONLY still writes no depth.
 - **Z buffer cleared as a colour buffer**: the viewer clears Z by drawing a sprite with FRAME_2 = the ZBP (0xDC). A Z buffer that draws really test (ZTE with GEQUAL/GREATER) is remembered with its target; later untextured sprites whose FBP is that ZBP fill the target's depth image with their colour as Z (RGB = bits 0-23, A = 24-31) instead of drawing colour. Menus keep ZTE with ALWAYS and are not counted (their ZBP aliases other buffers).
-- **Triangles decode their whole texture** (one decode and one atlas entry per texture instead of per triangle, so a model merges into a few draws); the atlas is 4096².
+- **Triangles decode their whole texture** (one decode and one texture image per texture instead of per triangle, so a model merges into a few draws). (Until 2026-10-22 the decodes were packed into an atlas; now one image each: `../port/renderer.md` §2.)
 - Not yet: fog (FGE; the hangar's 3D prims set it), the glow pass's half-resolution copy (program D, S5f).
 
 ### Frame buffer read as texture: target selection (2026-10-16)
@@ -170,4 +170,26 @@ Found by drawing the PCSX2 dumps of missions 1, 3 and 4 with `--play-gsdump` (`.
 - **Presented height.** At most 448 lines (the flight scissor includes line 448).
 Result: the three mission dumps match PCSX2's screenshots to 1.5–2.0 (mission 1) and 1.2–1.8 (mission 4) mean per channel; mission 3's remaining difference is camera motion between the dump and the screenshot. The title-to-hangar screenshots are unchanged pixel for pixel.
 
-Still logged when used: PABE, COLCLAMP 0, partial FBMSK, CLUT CSM2, texture PSM 0x5, PRIM 7, local→host transfer, the blend equations with Ad other than `(Cs−0)·Ad+Cd`.
+Still logged when used: PABE, COLCLAMP 0, partial FBMSK, CLUT CSM2, texture PSM 0x5, PRIM 7, local→host transfer.
+
+### CLUT format CT24, texture keys, PSMT8 rows 2-3 (2026-10-22, `../port/validation.md` §2r, S2a-6)
+- **CPSM 1 (PSMCT24)** in TEX0, used by the no-save intro's cloud transition, reads 32-bit palette entries with their alpha, like CT32 (only CPSM bit 1 selects 16-bit entries; PCSX2's CLUT writers treat CT24 as CT32). Before, it was read as CT16: orange noise over the picture.
+- **PSMT8 column order:** rows 2-3 of the 8-bit block table had pixels 2-5 and 10-13 swapped; corrected against PCSX2's GS memory (`gs_memory.cpp` `kCol8`).
+- **Texture keys:** a decoded texture is keyed by the content of the GS pages under its decoded rectangle (`GsMemory::RectHash`, also for each mip level), not of every page in the address span from its first to its last texel; uploads into other pages of a large texture no longer force a new decode.
+- **Triangles with REGION_CLAMP** decode only the clamped range of that axis when the texture has no mip levels (the intro's seagulls: 1024 × 1024 T4 textures clamped to 16 × 16).
+
+### Texture decode on the GPU (2026-10-22, `../port/renderer.md` §2)
+- Textures are decoded on the GPU (`shaders/gs_decode.comp`) from a 4 MiB GPU copy of local memory, texel for texel as the CPU decoder (`DecodeOnCpu`, kept as the reference: `--cpu-texture-decode`, `--verify-texture-decode`). Each decoded texture gets its own image (no atlas).
+- Ordering: a draw sees its texture as local memory held it at the kick. `GsState` emits the GPU work in stream order (`TextureOp`): before a decode that reads a block written since the last update, every block written since then is copied (as it is at that point); decodes that read none of them go without a copy. Draws that read later uploads in the same frame (the terrain streams tiles into its 512×512 T8 texture between draws) get one decode per memory state, as before.
+- Cache: a decode is reused while every 256-byte block it read keeps its generation (`GsMemory::BlockGeneration`); the content hashes of pages are gone.
+
+### All blend equations (2026-10-22)
+The no-save intro uses `(Cs−Cd)·Ad+Cd` (ALPHA 0x54) and `(Cs−Cd)·Ad` (0x56), which were drawn as a normal alpha blend. Now:
+- Fixed-function, added: the forms linear in Cs and Cd with factors C, 1 − C, 1 or 0: `(Cs−Cd)·C` (0x06, SUBTRACT), `(Cd−Cs)·C` (0x12, REVERSE_SUBTRACT), `Cd·C` (0x1A), `Cs−Cs·C` (0x20), `Cs−Cd·C` (0x24), and `−Cs·C`, `−Cd·C` (0x22, 0x26: 0 after the clamp), with C = As or FIX.
+- Shader blend (flag 28) for the rest (C = Ad except 0x58, and `(A−B)·C+A` forms such as `Cs·C+Cs`): as for DATE, the target region the draw covers is copied first; `gs.frag` reads Cd and Ad from the copy, computes the GS integer blend `((A−B)·C >> 7) + D` clamped to 0–255 and writes it with blending off. Limit as for DATE: primitives that overlap within one draw see the copy, not each other. The intro draws up to 22 such draws per frame (of about 3,100), with no measurable change in the recording time.
+- No blend equation is logged as unmapped any more. Not compared with PCSX2 yet.
+
+### Textures in the bits a frame buffer never writes (2026-10-20)
+The mission 1 opening draws a 512 × 224 RGB picture into FBP 0x70 with FBMSK 0xFF000000 (alpha kept) and samples the same memory, block 0xE00, as the player aircraft's **T8H** texture: the texture indices live in the top byte that the draw never writes. The port read every texture at a frame buffer's address from the GPU target, whose top byte never held the uploaded indices, so the F-4E came out almost black. `GsState` now records, per FBP, which pixel bits any draw has ever written (from FBMSK and the frame format: CT24 leaves the top byte, 16-bit formats count as all bits). A T8H, T4HL or T4HH texture whose bits no draw has written is decoded from local memory like any uploaded texture. Other formats, and buffers whose top byte was ever drawn, are read from the target as before (`../port/validation.md` §2l).
+
+Decode cost (same date): textures are re-decoded only in the 256-byte blocks written since their last decode (per-block generations in `GsMemory`); the decoded-texture cache is bounded by 256 MiB as well as 4096 entries (`../port/port-features.md` §6).

@@ -23,8 +23,6 @@ constexpr u32 kPacketMark = 0x004117A4;  // gp-0x424C: start of the packet being
 
 u32& CurBuf() { return Ctx()->cur_buf.addr; }
 
-void Put(u32 p, u32 i, u32 v) { GRef<u32>(p + 4 * i) = v; }
-
 }  // namespace
 
 // EE: 0x00101060
@@ -807,7 +805,6 @@ u32 BuildSpriteStripsUv(u32 p, u64 xy0, u64 xy1, u64 uv0, u64 uv1) {
     GRef<u64>(p) = static_cast<u64>(static_cast<s64>(count)) | 0x8000 | 0x4400000000000000ull;
     return q;
 }
-
 
 // EE: 0x00112A10
 // As BuildSpriteStripsUv, clipped to the rectangle `clip0`..`clip1` (XYZ2-style x/y words): the

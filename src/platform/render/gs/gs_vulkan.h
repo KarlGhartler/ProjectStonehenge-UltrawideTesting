@@ -1,7 +1,15 @@
 // Vulkan backend of the GS renderer (ADR-003): replays the draw commands of GsState into render
 // targets (one RGBA8 image per frame buffer address, each with a D32 depth image for the GS Z
-// buffer drawn with it), with the textures of the frame packed into an atlas, and provides the image to present (ADR-006 §4: the draw buffer as it stands when the field
-// copy reads it).
+// buffer drawn with it), with one image per decoded texture (decoded on the GPU from a copy of GS
+// local memory, or uploaded as decoded on the CPU: docs/port/renderer.md §2), and provides the image to
+// present (ADR-006 §4: the draw buffer as it stands when the field copy reads it).
+//
+// Internal resolution (docs/port/renderer.md §1): each target has a scale factor (the
+// internal scale N for frame-sized buffers, 1 for the small off-screen targets of the shadow and
+// glow chains). A target holds its native GS region (native_w x native_h pixels) at scale x that
+// size. Everything that addresses target pixels goes through the target's scale (viewport,
+// scissor, depth fills, DATE copies, frame-as-texture reads); textures from local memory and
+// format conversions stay native. At N = 1 every rule is the identity.
 #pragma once
 
 #include <array>
@@ -24,15 +32,40 @@ class GsBackend {
 public:
     static constexpr int kFrames = 2;  // frames in flight (as the renderer)
 
+    GsBackend();
     ~GsBackend();
     bool Init(VkContext& ctx, std::string& error);
     void Shutdown();
 
+    // Internal scale N (1-8). Changing it rebuilds the targets at the new scale (their colour is
+    // resampled, depth cleared). Waits idle.
+    void SetScale(int n);
+    int Scale() const { return scale_; }
+
+    // Movie upscaling stage output (ADR-006 §5) for draws whose texture came from the movie image
+    // buffer: the game's image buffer (guest address, size, picture height) and the upscaled picture
+    // (view in SHADER_READ_ONLY layout, picture size in native pixels). Used only at N > 1;
+    // `view` null = not available (the game's own upload is drawn).
+    struct MovieSource {
+        std::uint32_t guest_addr = 0, guest_bytes = 0;
+        int width = 0, height = 0;
+        VkImageView view = VK_NULL_HANDLE;
+    };
+    void SetMovieSource(const MovieSource& m) { movie_ = m; }
+
     // True when a frame buffer at block pointer `tbp` has been drawn (texture reads come from it).
     bool IsFrameBuffer(std::uint32_t tbp) const;
 
-    // Records the draws into `cmd` (outside any render pass); `frame` selects the per-frame buffers.
-    void Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCommand>& draws);
+    // Records the texture work and then the draws into `cmd` (outside any render pass); `frame`
+    // selects the per-frame buffers. Every op of `ops` must reach Record once, in stream order (the
+    // GPU copy of local memory follows them); draws may only use textures whose decode op came in
+    // this or an earlier call, or that carry their CPU-decoded rgba.
+    void Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCommand>& draws, const std::vector<TextureOp>& ops);
+
+    // --verify-texture-decode (development builds): every GPU decode is read back and compared with
+    // the CPU decode the texture carries (GsState in TextureDecode::kBoth); differences are logged
+    // (the first few in detail) and counted in the shutdown summary.
+    void SetVerifyDecode(bool on) { verify_ = on; }
 
     // Display registers of the last sceGsPutDispEnv (DISPFB2, DISPLAY2). The image to present is the
     // source of the field copy (ADR-006 §4): the first draw that reads a frame buffer as a texture
@@ -43,16 +76,38 @@ public:
         dispfb_ = dispfb;
         display_ = display;
     }
-    // Size of the image to present (0 when nothing has been drawn yet).
+    // Native size of the image to present (0 when nothing has been drawn yet).
     void PresentSize(int& w, int& h) const;
-    // Copies the image to present into `dst` (layout SHADER_READ_ONLY before and after), at most
-    // `dst_w` x `dst_h` pixels.
+    // Copies the image to present into `dst` (layout SHADER_READ_ONLY before and after), which is
+    // `dst_w` x `dst_h` pixels: the native size x N. A source at another scale is resampled.
     void CopyPresent(VkCommandBuffer cmd, VkImage dst, int dst_w, int dst_h);
     // Colour scale of the field copy that read the presented image (GS MODULATE with the copy's
     // vertex colour / 128; 1.0 without a copy): the game's brightness option (ADR-006 §4).
     void PresentScale(float out[3]) const {
         for (int c = 0; c < 3; ++c) out[c] = present_scale_[c];
     }
+
+    // Texture statistics of the last Record (debug overlay, session summary).
+    struct TextureStats {
+        std::uint32_t textures = 0;        // distinct decoded textures drawn
+        std::uint32_t decodes = 0;         // textures decoded on the GPU
+        std::uint32_t uploads = 0;         // textures uploaded as decoded on the CPU
+        std::uint32_t memory_updates = 0;  // copies into the GPU's local memory (one before each decode that needs one)
+        std::uint64_t upload_bytes = 0;    // bytes copied to the GPU (memory blocks, CPU-decoded texels, palettes)
+        std::uint32_t images = 0;          // texture images held (in use and free)
+        std::uint64_t image_bytes = 0;     // their size
+    };
+    const TextureStats& LastTextureStats() const { return texture_stats_; }
+    // --verify-texture-decode results so far: textures compared, and those that differed.
+    std::uint64_t VerifiedDecodes() const { return verify_count_; }
+    std::uint64_t VerifyMismatches() const { return verify_mismatches_; }
+
+    // Optional anti-aliasing (presentation.antialiasing, gs_antialias.cpp): at each flight view's
+    // anti-aliasing point (DrawCommand::aa_point, after the view's 3D, before its HUD) the view's
+    // rectangle of the frame buffer is anti-aliased in place with FXAA 3.11 or SMAA 1x. RGB only:
+    // the GS alpha in the frame buffer is kept.
+    enum class AntiAlias { kOff, kFxaa, kSmaa };
+    void SetAntiAlias(AntiAlias mode) { aa_mode_ = mode; }
 
 private:
     struct Image {
@@ -70,7 +125,9 @@ private:
         std::uint32_t fbp = 0, fbw = 0;
         std::uint32_t psm = 0;  // layout class: 0 (CT32/CT24), kPsmCt16 or kPsmCt16S
         std::uint64_t last_write = 0;  // draw clock of the last draw into it (the newest data wins)
-        int used_height = 0;
+        int used_height = 0;  // native rows drawn
+        int scale = 1;        // host pixels per GS pixel
+        int native_w = 0, native_h = 0;  // GS region held (img is native_w*scale x native_h*scale)
     };
     struct Buffer {
         VkBuffer buffer = VK_NULL_HANDLE;
@@ -83,10 +140,34 @@ private:
     const Target* DisplayTarget() const;
     bool CreateImage(Image& img, int w, int h, VkImageUsageFlags usage, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM);
     void DestroyImage(Image& img);
-    bool EnsureBuffer(Buffer& b, std::size_t size, VkBufferUsageFlags usage);
+    // A host-visible buffer of at least `size` bytes (write-combined; `readback`: cached for CPU reads).
+    bool EnsureBuffer(Buffer& b, std::size_t size, VkBufferUsageFlags usage, bool readback = false);
     void DestroyBuffer(Buffer& b);
     void Transition(VkCommandBuffer cmd, Image& img, VkImageLayout layout);
-    Target* GetTarget(VkCommandBuffer cmd, std::uint32_t fbp, std::uint32_t fbw, std::uint32_t psm);
+    // The target for (fbp, fbw, psm), created or grown so that it holds at least `rows` native rows.
+    Target* GetTarget(VkCommandBuffer cmd, int frame, std::uint32_t fbp, std::uint32_t fbw, std::uint32_t psm,
+                      int rows = 0);
+    // Scale of a new target `native_w` pixels wide (TargetScale policy, renderer.md §1.4.5).
+    int TargetScale(int native_w) const;
+    bool CreateTargetImages(Target& t, int frame, VkCommandBuffer cmd);
+    // Destroys `img` once the frame slot `frame` comes round again (in-flight commands may use it).
+    void Retire(int frame, Image& img);
+    // feedback_, date_ and present_ hold at least w x h host pixels.
+    bool EnsureScratch(int frame, VkCommandBuffer cmd, int w, int h);
+    // Texture images (docs/port/renderer.md §2.3). An image for `t` (from the free pool when one of a
+    // fitting size is free again), with its set-1 descriptor set; null when it cannot be created.
+    struct TexImage;
+    TexImage* AcquireTexImage(const std::shared_ptr<const DecodedTexture>& t);
+    // Images of textures nobody holds any more go to the free pool; the pool is trimmed to its budget.
+    void ReleaseUnusedTextures();
+    void DestroyTexImage(TexImage& t);
+    bool InitTextures(std::string& error);
+    // Step 1 of Record: the texture work of `ops` (GPU memory updates and decodes, in order) and the
+    // uploads of CPU-decoded textures that `draws` use for the first time.
+    void RecordTextureWork(VkCommandBuffer cmd, int frame, const std::vector<DrawCommand>& draws,
+                           const std::vector<TextureOp>& ops);
+    // --verify-texture-decode: compares the read-back decodes of the frame slot's last use.
+    void CheckVerifyReadback(int frame);
     // Builds the texture of draw `d` (TEX0 format, address, width) from target `src`, which holds
     // that memory in another format or width, into feedback_ (gs_conv.comp).
     void Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawCommand& d);
@@ -100,28 +181,71 @@ private:
     bool ConvertCore(VkCommandBuffer cmd, int frame, Target& src, const ConvRequest& r);
     // The newest other view of `t`'s memory (same base page) drawn after `t`, or null.
     Target* NewerView(const Target& t);
-    // Before a draw into `t`: converts `newer` into it.
+    // Before a draw into `t`: converts `newer` into it (at native resolution, then scaled into t).
     void Sync(VkCommandBuffer cmd, int frame, Target& t, Target& newer);
     bool InitConvert(std::string& error);
+    // Anti-aliasing (gs_antialias.cpp): pipelines and the SMAA lookup textures; working images the
+    // size of the target being processed (recreated when that changes, after a device wait).
+    bool InitAntiAlias(std::string& error);
+    void ShutdownAntiAlias();
+    bool EnsureAntiAliasImages(int w, int h);
+    void ApplyAntiAlias(VkCommandBuffer cmd, Target& t, const DrawCommand& d);
     VkPipeline GetPipeline(std::uint64_t key);
     void LogOnce(const char* key, const char* text);
 
     VkContext* ctx_ = nullptr;
     VkRenderPass pass_ = VK_NULL_HANDLE;
-    VkDescriptorSetLayout set_layout_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout set_layout_ = VK_NULL_HANDLE;      // set 0: feedback, DATE copy, movie
+    VkDescriptorSetLayout tex_set_layout_ = VK_NULL_HANDLE;  // set 1: the draw's texture
     VkPipelineLayout layout_ = VK_NULL_HANDLE;
     VkDescriptorPool pool_ = VK_NULL_HANDLE;
-    VkDescriptorSet set_ = VK_NULL_HANDLE;
+    VkDescriptorSet sets_[kFrames]{};  // per frame: set 0 (rewritten per Record)
     VkSampler sampler_ = VK_NULL_HANDLE;
+    VkSampler linear_sampler_ = VK_NULL_HANDLE;  // the upscaled movie picture
     VkShaderModule vs_ = VK_NULL_HANDLE, fs_ = VK_NULL_HANDLE;
     std::unordered_map<std::uint64_t, VkPipeline> pipelines_;
 
-    Image atlas_;
+    // Texture images, one per decoded texture (by DecodedTexture::serial), kept while GsState's cache
+    // or a draw still holds the texture. Sizes are rounded up to kTexAlign so that freed images fit
+    // later textures; a freed image waits in free_textures_ until the frames in flight that may read
+    // it are done (record_count_), and the pool is trimmed to kFreeTextureBytes.
+    struct TexImage {
+        Image img;
+        VkDescriptorSet set = VK_NULL_HANDLE;  // set 1: img with the nearest sampler
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        std::weak_ptr<const DecodedTexture> texture;
+        std::uint64_t free_after = 0;  // reusable from this Record on (free pool only)
+    };
+    std::unordered_map<std::uint64_t, TexImage> textures_;
+    std::multimap<std::pair<int, int>, TexImage> free_textures_;
+    std::uint64_t free_texture_bytes_ = 0;
+    std::vector<VkDescriptorPool> tex_pools_;  // set-1 sets, kTexSetsPerPool each, freed one by one
+    TexImage dummy_texture_;                   // 1 x 1, bound for draws without a texture image
+    std::uint64_t record_count_ = 0;
+    TextureStats texture_stats_;
+    // GPU decode (gs_decode.comp): the GPU's copy of GS local memory, the pipeline, per-frame
+    // descriptor pools (one set per decoded rectangle's texture) and palette buffers.
+    Buffer gs_memory_;  // device local, 4 MiB
+    VkDescriptorSetLayout decode_set_layout_ = VK_NULL_HANDLE;
+    VkPipelineLayout decode_layout_ = VK_NULL_HANDLE;
+    VkPipeline decode_pipeline_ = VK_NULL_HANDLE;
+    std::vector<VkDescriptorPool> decode_pools_[kFrames];
+    Buffer decode_palettes_[kFrames];
+    // --verify-texture-decode: per frame slot, the GPU decodes read back and what to compare them with.
+    bool verify_ = false;
+    struct VerifyItem {
+        std::shared_ptr<const DecodedTexture> texture;
+        std::size_t offset = 0;  // of its rectangles, tightly packed in order, in verify_buffer_
+    };
+    std::vector<VerifyItem> verify_items_[kFrames];
+    Buffer verify_buffer_[kFrames];
+    std::uint64_t verify_count_ = 0, verify_mismatches_ = 0;
     Image feedback_;
     Image date_;  // destination alpha test: copy of the target region a DATE draw covers
     Image present_;
     bool present_valid_ = false;
-    int present_w_ = 0, present_h_ = 0;
+    int present_w_ = 0, present_h_ = 0;  // native
+    int present_src_scale_ = 1;           // scale of the target present_ was copied from
     float present_scale_[3] = {1.0f, 1.0f, 1.0f};
     std::uint32_t present_fbp_ = 0;
     std::uint64_t dispfb_ = 0, display_ = 0;
@@ -129,6 +253,15 @@ private:
     Buffer vertices_[kFrames];
     std::map<std::uint64_t, Target> targets_;
     std::uint64_t write_clock_ = 0;
+    int scale_ = 1;
+    int max_image_dim_ = 16384;
+    MovieSource movie_;
+    std::vector<Image> retired_[kFrames];
+    std::vector<VkFramebuffer> retired_fb_[kFrames];
+    // Per-frame working lists of Record (texture placement, uploads, vertices), kept so their
+    // memory is reused from frame to frame.
+    struct RecordScratch;
+    std::unique_ptr<RecordScratch> scratch_;
     // Format conversion (gs_conv.comp): layout tables, per-frame descriptor pools and CLUT buffers.
     static constexpr std::uint32_t kMaxConversions = 512;  // per frame
     VkDescriptorSetLayout conv_set_layout_ = VK_NULL_HANDLE;
@@ -142,6 +275,18 @@ private:
     // points at a Z buffer (the game clears Z by drawing into it as a colour buffer) fills the
     // depth image of that target instead.
     std::map<std::uint32_t, std::pair<std::uint64_t, std::uint64_t>> zbuf_owner_;
+    // Anti-aliasing state (gs_antialias.cpp).
+    AntiAlias aa_mode_ = AntiAlias::kOff;
+    bool aa_ready_ = false;
+    Image aa_color_, aa_edges_, aa_weights_, aa_out_, aa_area_, aa_search_;
+    VkRenderPass aa_pass_rg_ = VK_NULL_HANDLE, aa_pass_rgba_ = VK_NULL_HANDLE;
+    VkFramebuffer aa_fb_edges_ = VK_NULL_HANDLE, aa_fb_weights_ = VK_NULL_HANDLE, aa_fb_out_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout aa_set_layout_ = VK_NULL_HANDLE;
+    VkPipelineLayout aa_layout_ = VK_NULL_HANDLE;
+    VkDescriptorPool aa_pool_ = VK_NULL_HANDLE;
+    VkDescriptorSet aa_sets_[4]{};      // SMAA edges, SMAA weights, SMAA blend, FXAA
+    VkPipeline aa_pipelines_[4]{};
+    int aa_w_ = 0, aa_h_ = 0;
 };
 
 }  // namespace ac04::render::gs

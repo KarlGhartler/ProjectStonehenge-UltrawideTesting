@@ -33,8 +33,6 @@ constexpr u32 kMovieLengths = 0x003AF880;  // s32 frames per page n
 constexpr u32 kSubtitleTables = 0x003A6038;
 constexpr u32 kVagSlots = 0x00353BF8;
 
-f32 K(u32 address) { return GRef<f32>(address); }
-u64 Sx(s32 v) { return static_cast<u64>(static_cast<s64>(v)); }
 u32 MovieRequest() { return GRef<u32>(g_GameState().addr + 0x20); }
 
 // TBP0 of the draw buffer from its FRAME register value: FBP * 32.

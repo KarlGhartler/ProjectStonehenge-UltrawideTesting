@@ -1,6 +1,6 @@
 # EE ↔ IOP interface (game-owned IRX modules)
 
-What the EE sends to and receives from the game's own IOP modules. The IOP-side handlers (command semantics, voice record layout, stream channels) are in `../subsystems/iop-sound.md`; the EE sound API built on top is in `../subsystems/sound.md`.
+What the EE sends to and receives from the game's own IOP modules. The IOP-side handlers (command semantics, voice record layout, stream channels) are in `../subsystems/sound.md`; the EE sound API built on top is in `../subsystems/sound.md`.
 
 ## Modules and RPC server ids
 
@@ -33,7 +33,7 @@ Client state: struct at `*0x004117FC` (set in `BindSoundRpc`):
 | 0 | `BindSoundRpc` (from the sound init loop `InitSoundRpc` 0x00219030 in `InitSubsystems`) | 0x2400 bytes: word 0 = 0 commands, word 1 = init parameter | 0x600 bytes | once at boot |
 | 1 | `SendSoundCommands` 0x00217428 (from `UpdateSoundRpc` 0x00218F18, main loop, every frame) | 0x2400 bytes: word 0 = command count, then the command records | 0x600 bytes: reply list | every frame, only when the previous call has completed |
 
-The command records (ids 1–0xE, sizes, EE writers, IOP handlers) are listed in `../subsystems/iop-sound.md`. Command 0xA returns a **ticket**; completion is reported in the reply (type 10) and polled by `func_00217858`.
+The command records (ids 1–0xE, sizes, EE writers, IOP handlers) are listed in `../subsystems/sound.md`. Command 0xA returns a **ticket**; completion is reported in the reply (type 10) and polled by `func_00217858`.
 
 **Reply list** (read by `UpdateSoundRpc`): word 0 = count, then 3-word records `{type, a, b}`. Type 6 → `func_00218EE8(a)` (reverb work-area address), type 10 → transfer done (ticket `b`, `func_002177F8` / `func_00217838`), type 0xF → voice status block: 48 status bytes copied into 0x00424FD0 (`UpdateSoundVoiceStatus` 0x00217A88). Types 1–4 and 7–9 are skipped.
 
@@ -46,11 +46,11 @@ Client state around 0x00353BF8–0x00353FC0: per-slot structs 6 × 0x94 bytes at
 | 0 | `InitVagStream` (stream init `func_0021E2D8`) | 4 words: first SPU voice per IOP channel | IOP base of the stream area at +0; the EE derives the ring addresses (slots 0–1: 3 × 0x20000 bytes each, slots 2–5: 3 × 0x10000 each, from base + 0x180), stored at 0x00353BF8 + slot × 0x94 | once |
 | 1 | `SendVagCommands` 0x0021E8F0 (from `UpdateVagStream` 0x0021FE60, main loop, every frame, after `func_0021F448` builds the slot commands) | word 0 = command count (0x00353F70), word 1 = slot-ready bitmask (0x00353F90; bit n = slot n's disc data has arrived), then 20-byte commands | per-slot status (play position at +0x24 + slot·4, flags at +0x14 + slot·4) | every frame, when the previous call has completed |
 
-The IOP maps EE slots 0–3 onto channels 0–3, slot 4 onto channel 2 and slot 5 onto channel 3 (`../subsystems/iop-sound.md`). Channels 0/1 are stereo 44.1 kHz, channels 2/3 mono 22.05 kHz.
+The IOP maps EE slots 0–3 onto channels 0–3, slot 4 onto channel 2 and slot 5 onto channel 3 (`../subsystems/sound.md`). Channels 0/1 are stereo 44.1 kHz, channels 2/3 mono 22.05 kHz.
 
 **Data path:** VAG.IRX never reads the disc. The EE queues `QueueCdRead(queue 0, lsn, flags = 1, dest = IOP ring address, …)` (`func_0021EAB8`, `func_0021F448`), which runs `sceCdReadIOPm` (H) and reads VPK data **straight into IOP RAM**, then marks the slot ready in the bitmask. Slot requests come from a 32-entry EE-side queue (0x0042CEBC): `RequestStreamPlay` (H) 0x0021FD40`(slot, track)` (10 callers), `func_0021FC80(slot, a, b)` (3 callers), stop/fade commands (types 3/4). `func_0021F190(vol, slot, l, r, fade)` (27 callers) sets per-slot volume and pan for the next update.
 
-**SMV movie audio** does not use VAG.IRX: the movie player borrows the IOP address `*0x00353BF8` (VAG channel 0's first ring segment) as a 2 × 0x4000-byte PCM double buffer, DMAs 0x4000-byte blocks into it with `sceSifSetDma` (`func_00213D10`), and plays it through **SOUND.IRX** command 0xA with `dst = 0` (core-0 sound-data input), stopped with 0xA `{0,0,0}` and faded with command 0xD (`../subsystems/iop-sound.md`).
+**SMV movie audio** does not use VAG.IRX: the movie player borrows the IOP address `*0x00353BF8` (VAG channel 0's first ring segment) as a 2 × 0x4000-byte PCM double buffer, DMAs 0x4000-byte blocks into it with `sceSifSetDma` (`func_00213D10`), and plays it through **SOUND.IRX** command 0xA with `dst = 0` (core-0 sound-data input), stopped with 0xA `{0,0,0}` and faded with command 0xD (`../subsystems/sound.md`).
 
 ## USBJOY.IRX (`0x80000210`): USB joystick polling
 
@@ -78,4 +78,4 @@ The reply is converted into the game's pad format (two ports), so USB joysticks 
 
 ## Open
 
-- VAG fno 1 per-slot command fields beyond the documented ones (`../subsystems/iop-sound.md`).
+- VAG fno 1 per-slot command fields beyond the documented ones (`../subsystems/sound.md`).

@@ -7,7 +7,7 @@ Usage:
 Reads <dir>/IRX/*.IRX (read-only), finds the loadcore import tables (magic 0x41E00000) and
 export tables (magic 0x41C00000) in the loaded image, and writes one CSV per module to the
 output directory (default out/irx/) plus a summary on stdout. It does not resolve function
-names: indices are per library; names come from research notes (docs/subsystems/iop-sound.md).
+names: indices are per library; names come from research notes (docs/subsystems/sound.md).
 
 IRX layout used here: ELF32 little-endian MIPS, e_type 0xFF80 (relocatable IOP module);
 program header 0 is the .iopmod info, program header 1 the loadable image at address 0.

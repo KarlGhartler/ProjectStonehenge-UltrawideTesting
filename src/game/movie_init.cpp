@@ -1,4 +1,4 @@
-// Movie playback state reset at boot (docs/formats/SMV.md, docs/subsystems/iop-sound.md). The
+// Movie playback state reset at boot (docs/formats/SMV.md, docs/subsystems/sound.md). The
 // player itself is translated in the movie milestone.
 #include "game/game.h"
 

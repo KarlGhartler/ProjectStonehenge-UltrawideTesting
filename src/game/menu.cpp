@@ -40,7 +40,6 @@ constexpr u32 kMenuBgm = 0x0042D1D0;       // u32 slot, u32, s16 track[2] (+8), 
 constexpr u32 kMainMenuColumns = 0x0039D5B0;
 constexpr u32 kProgressFlags = 0x002A0318;
 
-f32 K(u32 address) { return GRef<f32>(address); }
 u32 Progress() { return GRef<u32>(kProgressFlags); }
 u32& BgmSlot() { return GRef<u32>(kMenuBgm); }
 s16& BgmTrack(u32 slot) { return GRef<s16>(kMenuBgm + 8 + 2 * slot); }

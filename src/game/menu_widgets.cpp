@@ -27,9 +27,6 @@ using guest::GRef;
 
 namespace {
 
-f32 K(u32 address) { return GRef<f32>(address); }
-u64& Q(u32 p, u32 i) { return GRef<u64>(p + 8 * i); }
-u64 Sx(s32 v) { return static_cast<u64>(static_cast<s64>(v)); }
 u64 Lo32(u64 v) { return v & 0xFFFFFFFFull; }
 
 AC04_GUEST_VAR(u32, g_MenuTextList, 0x00410E8C)   // gp-0x4B64: text layer bucket list (0: closed)

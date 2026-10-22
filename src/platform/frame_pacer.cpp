@@ -3,7 +3,8 @@
 namespace ac04::platform {
 
 void FramePacer::SetCap(int frames_per_second) {
-    cap_ = frames_per_second > 0 ? frames_per_second : 360;
+    cap_ = frames_per_second > 0 ? frames_per_second : 0;
+    deadline_ = {};
 }
 
 FramePacer::Clock::time_point FramePacer::NextDeadline(Clock::time_point previous,
@@ -18,6 +19,7 @@ FramePacer::Clock::time_point FramePacer::NextDeadline(Clock::time_point previou
 }
 
 FramePacer::Clock::time_point FramePacer::WaitNextFrame() {
+    if (cap_ == 0) return Clock::now();  // no cap: v-sync paces the frames
     const auto interval = std::chrono::duration_cast<Clock::duration>(
         std::chrono::duration<double>(1.0 / cap_));
     deadline_ = NextDeadline(deadline_, Clock::now(), interval);

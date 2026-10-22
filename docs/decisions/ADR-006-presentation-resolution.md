@@ -1,12 +1,12 @@
 # ADR-006: Presentation resolution and output scaling
 
-Status: **Accepted** (owner decision, 2026-10-10; §3 and §4 decided 2026-10-11; §5 movie upscaling decided 2026-10-13). No open sub-decisions.
+Status: **Accepted** (User decision, 2026-10-10; §3 and §4 decided 2026-10-11; §5 movie upscaling decided 2026-10-13). No open sub-decisions.
 
 ## Context (confirmed facts)
 
 - `InitGraphics` 0x001044A8:
   - `sceGsResetGraph(0, 1, 2, 1)`, i.e. NTSC, interlaced, field mode;
-  - a **512×448 draw buffer** and a **512×224 display buffer** (`../game/main-context.md`: `draw_w/h`, `disp_w/h`).
+  - a **512×448 draw buffer** and a **512×224 display buffer** (`../game/boot.md`: `draw_w/h`, `disp_w/h`).
 - Every frame, `UpdateDisplayFrame` 0x00104950 calls `DrawDisplayTransfer` (H) 0x001049B0.
   - It copies or blends the 448-line draw buffer into the 224-line display buffer for the current field, in 32-pixel strips.
   - It uses `LerpRgba` with the factors at `ctx+0x80..0x88`, which looks like a flicker filter (H).
@@ -34,7 +34,7 @@ Status: **Accepted** (owner decision, 2026-10-10; §3 and §4 decided 2026-10-11
 - `sharp` = sharp bilinear (A below): integer nearest pre-scale, then bilinear to the final size;
 - `smooth` = plain bilinear (C below).
 
-Default: `sharp` (owner decision, 2026-10-11). There is no settings menu in the skeleton; the settings code is structured so one can be added later (see "Settings architecture").
+Default: `sharp` (User decision, 2026-10-11). There is no settings menu in the skeleton; the settings code is structured so one can be added later (see "Settings architecture").
 
 Options considered:
 
@@ -71,7 +71,7 @@ Reason for A: the game already renders a full progressive 448-line frame every t
 
 ## 5. Movie upscaling stage (decided 2026-10-13)
 
-**Decision (owner):** decoded movie pictures go through an **upscaling stage** before the output pass. Approved modern-port baseline feature (`port-baseline.md`).
+**Decision (User):** decoded movie pictures go through an **upscaling stage** before the output pass. Approved modern-port baseline feature (`port-baseline.md`).
 
 How the movie reaches the screen on the PS2 (`../formats/SMV.md`, `../subsystems/frontend.md`):
 - libmpeg/IPU decodes one picture into a guest RAM image buffer (0x118000 bytes = 640×448×4, RGBA32) inside the 0x600000-byte movie block.
@@ -82,22 +82,22 @@ Design:
 1. **Placement.** The stage sits between the decoder and the renderer's texture source, so it runs before the output pass and before any menu drawing that is composited over the movie.
    - The `sceMpeg*` implementation in `src/sce/` (libmpeg2, `dependencies.md`) still writes every decoded picture into the guest image buffer exactly as the PS2 does: game code and guest RAM are unchanged.
    - It also hands the same picture (host copy, with a picture serial number) to the upscaling stage.
-2. **Factor.** The output size is the source size × the renderer's internal-resolution factor N (`../port/internal-resolution.md`): 640N×448N or 640N×336N.
+2. **Factor.** The output size is the source size × the renderer's internal-resolution factor N (`../port/renderer.md` §1): 640N×448N or 640N×336N.
    - **At N = 1 (today) the stage is a passthrough** and the renderer uses the normal GS upload path, bit-exact with the guest data.
    - At N > 1 the renderer replaces the texture uploaded from the movie image buffer with the upscaled picture when it draws the movie sprites (identified by the source address range of the image buffer); everything else of the GS emulation is unchanged.
-3. **Algorithm.** AMD FidelityFX **FSR 1**: EASU (edge-adaptive spatial upsampling, 1×–4× area range, so N ≤ 2 per axis in one pass), followed by **RCAS** sharpening only if it improves the result (judged on the real movies in the movie slice; RCAS sharpness is a constant of the stage, not a user setting unless the owner adds one). The FSR 1 shader headers are a fetched dependency (`dependencies.md`).
+3. **Algorithm.** AMD FidelityFX **FSR 1**: EASU (edge-adaptive spatial upsampling, 1×–4× area range, so N ≤ 2 per axis in one pass), followed by **RCAS** sharpening only if it improves the result (judged on the real movies in the movie slice; RCAS sharpness is a constant of the stage, not a user setting unless the User adds one). The FSR 1 shader headers are a fetched dependency (`dependencies.md`).
 4. **Replaceable component.** The stage has one interface (`input picture + size + N → output image`), implemented in `src/platform/render/`; FSR 1 is its first implementation. Another algorithm can replace it without touching the decoder, the renderer's movie substitution or game code.
 5. **Both sizes.** 640×448 and 640×336 are handled the same way; the stage keeps the source aspect, and the game's own draw does the letterboxing.
 6. **Timing unchanged.** Movies are shown at 29.97 fps with the main loop at 59.94 Hz: each picture is held for exactly **2 game ticks**, paced by the game as on the PS2 (`../formats/SMV.md`, port notes). The stage runs once per new picture (keyed by its serial number) and its output is reused for the second tick. It never drops, repeats or re-times a picture, and presentation interpolation (ADR-002) does not apply to movie pictures.
 7. Presentation only: the stage never writes guest memory and never feeds anything back to the game (§Decision 4).
 
-**How the picture reaches the stage (owner decision 2026-10-14, option b).** The renderer does not see a movie picture as one image: the game uploads it as 40 IMAGE transfers of one 16-pixel column each (all to the same GS block, 0x2300) and draws a 16-pixel sprite after each. Two ways were considered: (a) the renderer recognises the movie texture block and rebuilds the picture from the uploads; (b) the decoder hands the decoded picture to the renderer directly as a presentation-only side path. Chosen: **(b)**, with the stage still scaled by the internal-resolution factor (passthrough at 1×, upscaling above 1×).
+**How the picture reaches the stage (User decision 2026-10-14, option b).** The renderer does not see a movie picture as one image: the game uploads it as 40 IMAGE transfers of one 16-pixel column each (all to the same GS block, 0x2300) and draws a 16-pixel sprite after each. Two ways were considered: (a) the renderer recognises the movie texture block and rebuilds the picture from the uploads; (b) the decoder hands the decoded picture to the renderer directly as a presentation-only side path. Chosen: **(b)**, with the stage still scaled by the internal-resolution factor (passthrough at 1×, upscaling above 1×).
 
 Implementation (S3, 2026-10-14):
 - Side path: `SceHost::movie_pictures` is set only when the factor is above 1. Then `sceMpegGetPicture` (`src/sce/libmpeg.cpp`) also writes a row-major host copy, with a serial number and the guest image-buffer range, to `DmaStats::movie_picture`. The DMA walker (`sceDmaSend`, GIF channel) marks the GIF data blocks it reads from that buffer (`render::gs::SourceMark`). At 1× none of this runs.
 - Identification: `GsState` records the guest source of each IMAGE upload that starts in marked data. A draw textured from that block carries `texture_guest_source`/`texture_guest_width`, and `MovieTexelOrigin` (`src/platform/render/movie_texel_map.h`) maps it to the picture pixel (column x, row y). Covered by a unit test.
 - Stage: `MovieUpscaler` interface plus `CreateFsr1MovieUpscaler` (`src/platform/render/movie_upscaler.*`, shader `shaders/fsr1_easu.comp`). It runs FSR 1 EASU in compute passes of at most 2× per axis (×3 and ×4 take two passes), once per new picture serial. RCAS is not applied yet: it is to be judged on the real movies.
-- Substitution: when the GS is drawn at N > 1, those draws sample the stage output at (x + u, y + v)·N instead of the uploaded texture. The GS backend has no N > 1 path yet (`../port/internal-resolution.md`), so this last step comes with the internal-resolution work. Until then the internal scale stays 1 and the stage does not run in normal use.
+- Substitution: when the GS is drawn at N > 1, those draws sample the stage output at (x + u, y + v)·N instead of the uploaded texture (built 2026-10-19 with the scaled GS backend, `../port/renderer.md` §1.7).
 - Test hook (development builds): `--movie-upscale <2-4>` runs the side path and the stage at that factor while the GS stays at 1×; screenshots taken during a movie also write the stage output (`movie_x<n>_<vblank>.png`). Checked on SS01 at ×2 (1 pass) and ×3 (2 passes): the ×2 output, averaged back 2×2, lands on the native picture at the letterbox offset (y 56) with a mean difference of 3 levels. Native frames are byte-identical with and without the stage.
 
 ## Consequences
@@ -107,13 +107,14 @@ Implementation (S3, 2026-10-14):
   - output is the swapchain image, with the selected filter, 4:3 and black bars.
 - The renderer's GS emulation stays at native resolution. ADR-003 option C is unaffected.
 - The movie upscaling stage (§5) is a separate component in `src/platform/render/`, fed by the `sceMpeg*` implementation; a passthrough until the internal-resolution factor is raised.
-- A higher internal resolution is studied in `../port/internal-resolution.md` (not approved; the renderer keeps a scale factor fixed at 1×). Widescreen stays in the modding layer (`port-baseline.md`).
+- A higher internal resolution (factor 1–8, default 1) is a baseline feature since 2026-10-19 (`../port/renderer.md` §1). Widescreen stays in the modding layer (`port-baseline.md`).
 
 ### Settings architecture
-- One `Settings` struct (plain data, defaults in code) owned by `src/platform/`; `settings.json` under `%LOCALAPPDATA%\AC04Port\` (ADR-005).
+- One `Settings` struct (plain data, defaults in code) owned by `src/platform/`; `settings.json` under `%LOCALAPPDATA%\ProjectStonehenge\` (ADR-005).
 - JSON load at startup and save on change; missing or invalid keys fall back to defaults and are logged; unknown keys are kept.
 - A change notification (subscribers per section: presentation, window, input, audio, debug) so a later settings menu or the debug overlay can change values at run time without restarting. The output pass re-reads the filter on notification.
 - No settings menu in the skeleton. Game code never sees settings.
+- Implementation note (2026-10-20, User decision): a file that cannot be read, is not valid JSON, has another `version`, an unknown key or an invalid value is now rejected as a whole and replaced with the defaults (unknown keys are no longer kept). The settings are changed in game through the GRAPHICS page under SCREEN SETTINGS (`../port/port-features.md` §3); game code still never reads settings (it goes through `src/common/port_hooks.h`).
 
 ## Research findings
 
@@ -122,6 +123,7 @@ Implementation (S3, 2026-10-14):
 - The options page has **SCREEN RATIO** (option byte 0x002A15CC bit 0). Turning it on sets ctx flag 0x10000.
 - Menu layouts, the aircraft-viewer camera aspect, text boxes and the briefing map all branch on that flag (`../subsystems/frontend.md`). On the PS2 this produces an **anamorphic 16:9** picture for widescreen TVs: the same 512/640-wide frame, drawn for a 16:9 display.
 - Consequence for this ADR: the output pass must use **16:9 when the in-game SCREEN RATIO option is on**, and 4:3 otherwise. That is original behaviour (category 1), not a new feature. The 4:3 rule above applies to the default setting.
+- Implementation (2026-10-19): after each frame the main loop reads ctx flag 0x10000 and sets the output pass's display aspect (`Renderer::SetDisplayAspect`: 16:9 or 4:3). Before this the call was missing and the port always presented 4:3. Native screenshots stay the anamorphic draw buffer, like PCSX2's (`../port/validation.md` IR-3).
 
 ### 16:9 mode in the flight scene
 

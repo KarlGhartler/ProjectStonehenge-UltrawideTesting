@@ -8,7 +8,7 @@
 // reproduces and chop does not (0x394CDFFE); validation.md S4-3. Unlike the EE FPU add.s, there is
 // no smaller-operand masking (PCSX2 uses SSE_ADDPS/ADDSS directly for VU add/sub).
 // Micro mode (namespace ac04::vu0::micro): VU micro programs run with the VU rounding setting,
-// chop (round toward zero) in the owner's PCSX2 configuration and PCSX2's default.
+// chop (round toward zero) in the User's PCSX2 configuration and PCSX2's default.
 // Both: a multiply-add (vmadd*, vmadda*) is a multiply and an add, each rounded separately;
 // denormals are flushed to zero and results are clamped to +-FLT_MAX.
 //

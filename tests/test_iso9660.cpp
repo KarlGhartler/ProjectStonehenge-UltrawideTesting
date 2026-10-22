@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
 #include "platform/iso9660.h"
+#include "platform/iso_image.h"
+#include "platform/message_text.h"
 #include "synthetic_iso.h"
 
 using namespace ac04::platform;
@@ -66,4 +68,31 @@ TEST_CASE("iso9660: rejects non-ISO data") {
     CHECK_FALSE(error.empty());
     auto tiny = std::make_shared<test::MemorySectorSource>(std::vector<std::uint8_t>(100, 0));
     CHECK_FALSE(iso.Open(tiny, error));
+}
+
+TEST_CASE("disc image messages: headline, steps and details in one layout") {
+    IsoCheck check;
+    check.result = IsoCheckResult::NoPathConfigured;
+    const MessageText m = DescribeIsoProblem(check, {}, "C:/user/settings.json");
+    CHECK(m.headline == "No disc image selected");
+    REQUIRE(m.steps.size() == 2);
+    CHECK(m.steps[0].find("Select ISO...") != std::string::npos);
+    const std::string text = FormatMessageText(m);
+    CHECK(text.rfind("No disc image selected\n\n", 0) == 0);
+    CHECK(text.find("\n\nWhat to do:\n    1.  ") != std::string::npos);
+    CHECK(text.find("\n    2.  Or start the port with  --iso") != std::string::npos);
+    CHECK(text.find("3,554,705,408 bytes") != std::string::npos);
+    CHECK(text.find("\n\nSettings file:\n    C:/user/settings.json") != std::string::npos);
+    // Every failed check has a headline and, except a cancelled check, something to do.
+    for (IsoCheckResult r : {IsoCheckResult::CannotOpen, IsoCheckResult::NotAnIso, IsoCheckResult::WrongImage,
+                             IsoCheckResult::HashMismatch, IsoCheckResult::Cancelled}) {
+        check.result = r;
+        const MessageText x = DescribeIsoProblem(check, "D:/a.iso", "C:/user/settings.json");
+        CHECK_FALSE(x.headline.empty());
+        CHECK((r == IsoCheckResult::Cancelled || !x.steps.empty()));
+    }
+    // Empty parts are left out.
+    MessageText only;
+    only.headline = "Done";
+    CHECK(FormatMessageText(only) == "Done");
 }

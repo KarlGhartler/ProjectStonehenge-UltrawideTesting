@@ -10,6 +10,10 @@
 // (0 list, 1 screen position, 2 brightness), +0x710 state, +0x714/+0x716 MenuGoTo target,
 // +0x718/+0x71C screen position dx/dy, +0x720/+0x724 their values on entry, +0x728 brightness,
 // +0x72C its value on entry.
+//
+// Port baseline (User approval 2026-10-20): GRAPHICS is appended to the list (graphics_page.h);
+// it opens view 3 through state 6. The game's tables and ids are unchanged; the "port:" lines are
+// the only additions.
 #include "game/game.h"
 
 #include <cstddef>
@@ -17,6 +21,7 @@
 #include "common/debug_hooks.h"
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "game/graphics_page.h"
 #include "sce/sce.h"
 
 namespace ac04::game {
@@ -31,9 +36,6 @@ AC04_GUEST_VAR(u16, g_MissionNo, 0x002A15B8)
 constexpr u32 kOptionBytes = 0x002A15CC;  // flags; +1 brightness; +2/+3 screen position dx/dy
 constexpr u32 kOptionColumns = 0x003AF2D8;  // menu tree columns (5 x 0x18, cursors kept here)
 
-f32 K(u32 address) { return GRef<f32>(address); }
-u64& Q(u32 p, u32 i) { return GRef<u64>(p + 8 * i); }
-u64 Sx(s32 v) { return static_cast<u64>(static_cast<s64>(v)); }
 s32& State(u32 obj) { return GRef<s32>(obj + 0x710); }
 u8& Flags() { return GRef<u8>(kOptionBytes); }
 
@@ -51,20 +53,30 @@ void MoveBrightnessCursor(u32 obj, s32 level) {
 // 1 in the screen position view, 5 in the brightness view; hidden while leaving or adjusting.
 void UpdateOptionsHelp(u32 obj) {
     const u32 state = GRef<u32>(obj + 0x710);
-    if (state == 0 || (state < 6 && 1 < state)) {
+    if (state == 0 || (state < 6 && 1 < state) || state == 6) {  // port: 6 = opening GRAPHICS
         GRef<u32>(obj + 0x6F0) = 0;
         return;
     }
     const s32 view = GRef<s32>(obj + 0x70C);
+    if (view == 3) {  // port: GRAPHICS view
+        const u32 mb = obj + 0x6E8;
+        if (GRef<s16>(mb + 0xC) != 2 || GRef<s16>(obj + 0x6F6) != 1) {
+            SetGraphicsHelp(mb);
+            GRef<f32>(obj + 0x6F0) = K(0x0041034C);
+        }
+        UpdateMessageBox(K(0x00410350), mb, static_cast<s32>(Ctx()->frame_count));
+        return;
+    }
     s16 id = -1;
     if (view == 1) {
         id = 1;
     } else if (view == 2) {
         id = 5;
     } else if (view == 0) {
-        const u64 sel = static_cast<u64>(static_cast<s64>(GetMenuTreeSelection(obj + 0x2E0)));
+        const s16 selection = OptionsSelection(obj + 0x2E0);  // port: GRAPHICS in the list
+        const u64 sel = static_cast<u64>(static_cast<s64>(selection));
         const u64 item = sel < 0xE ? sel : 0;
-        id = GRef<s16>(0x003AF440 + static_cast<u32>(item) * 2);
+        id = selection == kGraphicsItem ? -1 : GRef<s16>(0x003AF440 + static_cast<u32>(item) * 2);
         if (item == 2) id = (Flags() & 1) != 0 ? 10 : 8;
         else if (item == 3) id = (Flags() & 2) != 0 ? 0x12 : 0x10;
         else if (item == 4) id = (Flags() & 4) != 0 ? 0x18 : 0x16;
@@ -92,6 +104,10 @@ void SyncOptionToggles(u32 cols, u32 flags) {
 // Switches the view: 0 the list (CAPTIONS hidden before the first clear), 1 screen position
 // (frame rectangle for 4:3 or 16:9), 2 brightness.
 void SetOptionsView(u32 obj, s32 view) {
+    if (view == 3) {  // port: GRAPHICS view
+        EnterGraphicsView(obj);
+        return;
+    }
     State(obj) = 0;
     InitFade(obj + 0x230, 1);
     if (view == 1) {
@@ -116,6 +132,7 @@ void SetOptionsView(u32 obj, s32 view) {
         ee::memset(masks, 0, 0x14);
         if ((GRef<u32>(0x002A0318) & 1) == 0) GRef<u32>(masks) |= 0x20;
         SyncOptionToggles(kOptionColumns, kOptionBytes);
+        const GraphicsItemPatch patch(kOptionColumns);  // port: GRAPHICS in the list
         InitMenuTree(obj + 0x2E0, 5, kOptionColumns, 0x003AF350, masks, 0x004112C0);
     } else if (view == 2) {
         GRef<s32>(obj + 0x70C) = 2;
@@ -169,7 +186,7 @@ void OptionsBack(u32 obj, u32 tree) {
 // Confirm in the list: SCREEN POSITION / BRIGHTNESS fade to their views; the toggles open their
 // column on the stored setting, and a choice in a column closes it and stores it.
 void OptionsSelect(u32 obj, u32 tree) {
-    const s16 sel = GetMenuTreeSelection(tree);
+    const s16 sel = OptionsSelection(tree);  // port: GRAPHICS in the list
     const f32 duration = K(0x00410354);
     auto open = [tree](s32 col) {
         GRef<s32>(tree) = col;
@@ -188,6 +205,10 @@ void OptionsSelect(u32 obj, u32 tree) {
             break;
         case 1:
             State(obj) = 3;
+            StartFade(duration, obj + 0x230, 1);
+            break;
+        case kGraphicsItem:  // port: GRAPHICS view through state 6
+            State(obj) = 6;
             StartFade(duration, obj + 0x230, 1);
             break;
         case 2: open(1); break;
@@ -246,16 +267,22 @@ void OptionsListUpdate(u32 obj) {
         }
         case 2:
         case 3:
+        case 6:  // port: GRAPHICS
             if ((GRef<u32>(obj + 0x230) & 8) != 0) {
-                StoreMenuTreeCursors(kOptionColumns, 5, obj + 0x2E0);
-                SetOptionsView(obj, State(obj) != 2 ? 2 : 1);
+                {
+                    const GraphicsItemPatch patch(kOptionColumns);  // port: GRAPHICS in the list
+                    StoreMenuTreeCursors(kOptionColumns, 5, obj + 0x2E0);
+                }
+                SetOptionsView(obj, State(obj) == 6 ? 3 : (State(obj) != 2 ? 2 : 1));
             }
             break;
-        case 5:
+        case 5: {
             if ((GRef<u32>(obj + 0x230) & 8) == 0) return;
             MenuGoTo(GRef<s16>(obj + 0x714), GRef<u16>(obj + 0x716));
+            const GraphicsItemPatch patch(kOptionColumns);  // port: GRAPHICS in the list
             StoreMenuTreeCursors(kOptionColumns, 5, obj + 0x2E0);
             break;
+        }
         default:
             break;
     }
@@ -410,6 +437,8 @@ void OptionsUpdate(u32 obj) {
         OptionsListUpdate(obj);
     } else if (view == 2) {
         BrightnessUpdate(obj);
+    } else if (view == 3) {
+        GraphicsUpdate(obj);  // port: GRAPHICS view
     }
 }
 
@@ -601,6 +630,8 @@ void DrawOptionsPage(u32 obj) {
         if (1.0f < level) level = 1.0f;
         DrawBrightnessPatterns(level, obj, 1, obj);
         DrawPanel(obj, 1, obj + 0x27C);
+    } else if (view == 3) {
+        DrawGraphicsView(obj);  // port: GRAPHICS view
     }
     UploadMessageBoxGlyphs(obj, 0, obj + 0x6E8);
     DrawMessageBox(obj, 0, obj + 0x6E8);

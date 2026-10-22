@@ -1,4 +1,4 @@
-// Determinism checker (docs/port/s5-plan.md P1, docs/port/validation-strategy.md): a hash of guest
+// Determinism checker (docs/port/slices.md §B P1, docs/port/validation-strategy.md): a hash of guest
 // RAM per vblank, with one hash per 64 KiB block so `tools/research/hashdiff.py` can name the first
 // region where two runs differ. File format (little-endian): "AC4H", u32 version 1, u32 block size,
 // u32 block count (RAM blocks + 1 for the scratchpad), then per record: u64 vblank, u64 hash of

@@ -1,4 +1,4 @@
-// Aircraft viewer (hangar background; docs/port/s4-inventory.md §2): the hangar room, the selected
+// Aircraft viewer (hangar background; docs/port/slices.md §A.2): the hangar room, the selected
 // aircraft in its three colours with its floor reflection and shadow, the special weapons, the
 // ceiling light glows, and the 3D camera.
 //
@@ -34,19 +34,6 @@ namespace {
 AC04_GUEST_VAR(u32, g_pMenuFade, 0x00410E88)
 
 constexpr u32 kSpr = 0x70000000;  // scratchpad work area (matrices and vectors)
-
-f32 K(u32 address) { return GRef<f32>(address); }
-
-void StoreVf0(u32 a) {  // sqc2 vf0: (0, 0, 0, 1)
-    GRef<u32>(a) = 0;
-    GRef<u32>(a + 4) = 0;
-    GRef<u32>(a + 8) = 0;
-    GRef<u32>(a + 12) = 0x3F800000;
-}
-
-void CopyQword(u32 dst, u32 src) {
-    for (u32 i = 0; i < 16; i += 4) GRef<u32>(dst + i) = GRef<u32>(src + i);
-}
 
 u64 Sext(u32 v) { return static_cast<u64>(static_cast<s64>(static_cast<s32>(v))); }
 

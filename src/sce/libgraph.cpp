@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "common/guest_ref.h"
+#include "common/port_hooks.h"
 #include "platform/log.h"
 #include "platform/render/vu1/vif1.h"
 #include "sce/ee_hw.h"
@@ -294,6 +295,18 @@ s32 sceDmaSend(u32 chan, u32 tag) {
         qw = WalkChain(
             tag & 0x7FFFFFF0u, ok,
             [&](u32 t) {
+                // Anti-aliasing point (port_hooks.h): a flight view's overlay table starts here.
+                for (const ac04::port::RenderMarks::Point& m : ac04::port::Render().sending) {
+                    if (((m.tag ^ t) & 0x0FFFFFF0u) != 0) continue;  // any RAM alias
+                    ac04::render::gs::SourceMark mark;
+                    mark.offset = static_cast<u32>(gif.size());
+                    mark.kind = ac04::render::gs::SourceMark::kAntiAlias;
+                    mark.rect[0] = m.x0;
+                    mark.rect[1] = m.y0;
+                    mark.rect[2] = m.x1;
+                    mark.rect[3] = m.y1;
+                    dma.gs_step_marks.push_back(mark);
+                }
                 if (tte) {
                     if (dma.capture_active) {
                         for (u32 o : {8u, 12u}) {

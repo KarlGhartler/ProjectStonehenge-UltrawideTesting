@@ -1,4 +1,4 @@
-// Minimal PNG writer for the native screenshot (docs/port/debug-overlay.md §4.1): RGBA8, no
+// Minimal PNG writer for the native screenshot (docs/port/port-features.md §8.4.1): RGBA8, no
 // compression (stored deflate blocks), CRC-32 and Adler-32 computed here. No dependency.
 #pragma once
 

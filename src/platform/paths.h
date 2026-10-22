@@ -7,14 +7,14 @@
 namespace ac04::platform {
 
 struct Paths {
-    std::filesystem::path user_data;      // %LOCALAPPDATA%\AC04Port\ (or --user-data)
+    std::filesystem::path user_data;      // %LOCALAPPDATA%\ProjectStonehenge\ (or --user-data)
     std::filesystem::path saves;          // user_data\saves\  (PCSX2 folder memory card root)
     std::filesystem::path logs;           // user_data\logs\   (last session only)
     std::filesystem::path settings_file;  // user_data\settings.json
     std::filesystem::path exe_dir;        // folder of the executable (read only)
 };
 
-// Default per-user data folder for this OS (Windows: %LOCALAPPDATA%\AC04Port).
+// Default per-user data folder for this OS (Windows: %LOCALAPPDATA%\ProjectStonehenge).
 std::filesystem::path DefaultUserDataDir();
 std::filesystem::path ExecutableDir();
 

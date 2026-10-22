@@ -1,7 +1,7 @@
 // Small flight systems created and reset on the mission-load path (block A of S5): projectile
 // pools, HUD and centre-message records, replay recorder and buffer, mission event / waypoint /
 // proximity lists, trial ghost tables, replay HUD and pause menu. Order and sizes:
-// docs/subsystems/mission-load.md (the work heap is 98 % full, so every allocation counts).
+// docs/subsystems/mission-flow.md (the work heap is 98 % full, so every allocation counts).
 #include "game/game.h"
 
 #include "common/ee_math.h"

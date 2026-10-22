@@ -5,6 +5,7 @@
 #include "common/guest_call.h"
 #include "common/guest_ref.h"
 #include "common/types.h"
+#include "game/guest_helpers.h"
 #include "game/main_context.h"
 
 namespace ac04::game {
@@ -937,7 +938,6 @@ u32 func_00213C40(u32 feeder);
 void func_00214030();
 void func_002596F8();
 void func_00100188();
-
 
 // ---- Model library (model.cpp) -----------------------------------------------------------------
 f32 GetDistanceXZ(u32 a, u32 b);

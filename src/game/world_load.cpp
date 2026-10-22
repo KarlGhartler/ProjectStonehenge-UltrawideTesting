@@ -1,7 +1,7 @@
 // World render objects created on the mission-load path (block A of S5): terrain object
 // (*0x00410694), sea surface (*0x0041068C), the per-frame sequence-model list (*0x00410698) and
 // their packet templates. docs/subsystems/rendering.md "Terrain", "Sea"; allocation order:
-// docs/subsystems/mission-load.md (CreateFlightSystems).
+// docs/subsystems/mission-flow.md (CreateFlightSystems).
 #include "game/game.h"
 
 #include <cstring>

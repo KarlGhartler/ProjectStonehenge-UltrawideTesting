@@ -1,4 +1,4 @@
-# Third-party dependencies (approved by the owner on 2026-10-11, docs/decisions/dependencies.md).
+# Third-party dependencies (approved by the User on 2026-10-11, docs/decisions/dependencies.md).
 # Every one is fetched unmodified, pinned to a release archive with its SHA-256
 # (.claude/rules/third-party.md) and listed in THIRD_PARTY_NOTICES.md.
 # Header-only or hand-built dependencies use SOURCE_SUBDIR cmake-not-used so that their own
@@ -61,7 +61,7 @@ FetchContent_Declare(doctest
     URL_HASH SHA256=174ebc4e769928959614789c5b4e9c3d0a0f81a62bb608756b127bfebfb21331
     SOURCE_SUBDIR cmake-not-used)
 
-# --- Dear ImGui (MIT): debug overlay only (docs/port/debug-overlay.md), compiled by us --------
+# --- Dear ImGui (MIT): debug overlay only (docs/port/port-features.md §8), compiled by us --------
 FetchContent_Declare(imgui
     URL      https://github.com/ocornut/imgui/archive/refs/tags/v1.92.9b.tar.gz
     URL_HASH SHA256=21d8a0a565e85dce943e375db00812c2f3f0ab21f3f0f7964e364a63422d7f99
@@ -83,8 +83,27 @@ FetchContent_Declare(libmpeg2
     URL_HASH SHA256=dee22e893cb5fc2b2b6ebd60b88478ab8556cb3b93f9a0d7ce8f3b61851871d4
     SOURCE_SUBDIR cmake-not-used)
 
+# --- SMAA (MIT): optional anti-aliasing pass (presentation.antialiasing "smaa", User 2026-10-20) --
+# SMAA.hlsl is included by our GLSL shaders (SMAA_GLSL_4); Textures/AreaTex.h and SearchTex.h are the
+# precomputed lookup textures, compiled into the renderer. The demos are not built. The repository
+# has no releases: pinned to the last commit (2013-11-06).
+FetchContent_Declare(smaa
+    URL      https://github.com/iryoku/smaa/archive/71c806a838bdd7d517df19192a20f0c61b3ca29d.tar.gz
+    URL_HASH SHA256=046a435f5713f8bfe8148fe6305c2abf1409fc2122bee6070061c675e1e55f57
+    SOURCE_SUBDIR cmake-not-used)
+
+# --- NVIDIA FXAA 3.11 (BSD-3-Clause, NVIDIA GraphicsSamples 2014-2015 release): optional
+# anti-aliasing pass (presentation.antialiasing "fxaa"). One shader header, included by our GLSL
+# shader (FXAA_GLSL_130). NVIDIA's GraphicsSamples repository is no longer online; the file is taken
+# from a public fork of it, pinned to a commit and checked by its SHA-256.
+FetchContent_Declare(fxaa
+    URL      https://raw.githubusercontent.com/lyntel/GraphicsSamples/76fd049ed388628dfbf525397632c901fb925e30/samples/es3-kepler/FXAA/FXAA3_11.h
+    URL_HASH SHA256=ad82e2c292fa9ad91b8ad89dd5407f626766bcf3647b93556940353524b198c6
+    DOWNLOAD_NO_EXTRACT TRUE
+    SOURCE_SUBDIR cmake-not-used)
+
 FetchContent_MakeAvailable(SDL3 Vulkan-Headers volk VulkanMemoryAllocator glslang nlohmann_json doctest imgui
-    FidelityFX-FSR libmpeg2)
+    FidelityFX-FSR libmpeg2 smaa fxaa)
 
 # Group third-party targets in the Visual Studio solution.
 foreach(t IN ITEMS SDL3-static glslang glslang-standalone)
@@ -122,11 +141,16 @@ target_include_directories(ac04_doctest SYSTEM INTERFACE "${doctest_SOURCE_DIR}"
 
 # FSR 1 shader headers for cmake/Shaders.cmake (GLSL include path); no C++ target uses them.
 set(AC04_FSR1_INCLUDE_DIR "${fidelityfx-fsr_SOURCE_DIR}/ffx-fsr" CACHE INTERNAL "FSR 1 shader headers")
+# SMAA and FXAA shader headers (GLSL include path), and the SMAA lookup textures (C++ include path).
+set(AC04_SMAA_DIR "${smaa_SOURCE_DIR}" CACHE INTERNAL "SMAA sources")
+set(AC04_FXAA_DIR "${fxaa_SOURCE_DIR}" CACHE INTERNAL "FXAA 3.11 header")
+add_library(ac04_smaa_textures INTERFACE)
+target_include_directories(ac04_smaa_textures SYSTEM INTERFACE "${smaa_SOURCE_DIR}/Textures")
 
 # libmpeg2: the decoder core only (decode, header, slice, idct, motion_comp, alloc, cpu_*).
 set(AC04_MPEG2_CONFIG_DIR "${CMAKE_BINARY_DIR}/libmpeg2-config")
 file(WRITE "${AC04_MPEG2_CONFIG_DIR}/config.h"
-"/* config.h for libmpeg2 0.5.1, written by cmake/Dependencies.cmake (AC04 port): portable C only. */
+"/* config.h for libmpeg2 0.5.1, written by cmake/Dependencies.cmake (ProjectStonehenge): portable C only. */
 #define HAVE_STDLIB_H 1
 #define HAVE_STRING_H 1
 #define STDC_HEADERS 1

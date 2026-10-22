@@ -2,7 +2,7 @@
 
 Container format: `count + offsets` (`CDP.md`). All 100 entries have **36 sub-blocks**.
 
-Loading: `LoadFlightDataEntry` 0x0010AF10 (scene 2, sub-state 2). The index is `id + 1` or `id + 0x52` (`../game/scenes.md`, confirmed in PCSX2 session 7, `../pcsx2/sessions-02.md`). `StoreFlightDataPointers` 0x0010B038 turns the 36 offsets into a pointer table at **flight work + 0x1694 + 4·k** (flight work = `*gp 0x004104C4`). Every consumer reads its block from that table.
+Loading: `LoadFlightDataEntry` 0x0010AF10 (scene 2, sub-state 2). The index is `id + 1` or `id + 0x52` (`../game/boot.md`, confirmed in PCSX2 session 7, `../pcsx2/sessions.md` run 02). `StoreFlightDataPointers` 0x0010B038 turns the 36 offsets into a pointer table at **flight work + 0x1694 + 4·k** (flight work = `*gp 0x004104C4`). Every consumer reads its block from that table.
 
 Method: per-block size, first word and container check over all 100 entries (`tools/research/cdp_blocks.py`); the code that reads each pointer slot; hash comparison across entries (distinct contents per block).
 
@@ -33,7 +33,7 @@ Roles come from the reading code. "H" marks interpretations not yet checked in P
 | 28 | +0x1704 | 240 – 2,336 | 40 | container (1 or 2) | `func_0010FA70` → `func_0011A3D8` (+ `func_0015E8C0` for the 2nd part) | (H) mission setup tables (called during sub-state init together with unit setup `SetupMissionUnits`) |
 | 29 | +0x1708 | 16 B – 2.2 MB | 9 | container | `SetupInEngineSequence` 0x00176DD0 | **in-engine sequence data**, indexed by `game[0x2C]`; each sequence has 4 parts (part 2 → `func_00107BD0`, part 3 → `func_00106938`). Mostly empty (87 entries start with 0); used by the opening/intro/ending ids 0x23/0x24/0x25 (which also start VAG tracks 0x30/0x33/0x32) |
 | 30 | +0x170C | 16,864 | 41 | container (16) | `InitEffects` 0x00154660 (mission init `StartFlightSystems` 0x0010AB58, `func_001704A0`) | (H) 16 sub-tables, e.g. effect or particle definitions |
-| 31 | +0x1710 | 16 B – 1.2 MB | 39 | container (some) | `SetupMapFromMissionData` (H) → `func_00139718(map, block, 1)` | **second map entry** (confirmed from the code, `../subsystems/mission-load.md`): a container of 15 items with the roles of blocks 5–18 for map entry 0 (items 0–6, 8 → words 0–7; 7 → the 4 lists; 9, 10; 11 models; 12 groups; 13 GIM; 14 pointer list); an empty block means no second entry |
+| 31 | +0x1710 | 16 B – 1.2 MB | 39 | container (some) | `SetupMapFromMissionData` (H) → `func_00139718(map, block, 1)` | **second map entry** (confirmed from the code, `../subsystems/mission-flow.md`): a container of 15 items with the roles of blocks 5–18 for map entry 0 (items 0–6, 8 → words 0–7; 7 → the 4 lists; 9, 10; 11 models; 12 groups; 13 GIM; 14 pointer list); an empty block means no second entry |
 | 32 | +0x1714 | 64 | 38 | `0x6F` | `SetupMapFromMissionData` (H) (copied to map `+0xB8`) | second versioned header (0x6F) |
 | 33 | +0x1718 | 512 | 38 | `0x02000004` | `SetupMapFromMissionData` (H) (copied to map `+0xC0`) | same form as block 24 |
 | 34 | +0x171C | 17 – 33 KB | 41 | `0x00000030` | `StartFlightSystems` → `func_00250C30(block34, block35)` | (H) mission message/radio system data: tables of offsets resolved into a 0xA80-entry table at 0x004BA570 |
@@ -45,7 +45,7 @@ Notes:
 
 ## Terrain blocks 5–18 (from the draw code)
 
-Chain: `SetupMapFromMissionData` copies the blocks into map entry 0 (`../subsystems/mission-load.md`), `func_00139FE8` copies the entry into the terrain object T (`*0x00410694`) and `func_00144CC0` into the static-object object O (`*0x0041069C`) each frame. The map is 256 × 256 cells of 2048 units, grouped in 16 × 16 blocks of 16 × 16 cells; each cell has a 3 × 3 grid of half-cell samples (32 × 32 per block). Readers: `../subsystems/rendering.md` (Terrain).
+Chain: `SetupMapFromMissionData` copies the blocks into map entry 0 (`../subsystems/mission-flow.md`), `func_00139FE8` copies the entry into the terrain object T (`*0x00410694`) and `func_00144CC0` into the static-object object O (`*0x0041069C`) each frame. The map is 256 × 256 cells of 2048 units, grouped in 16 × 16 blocks of 16 × 16 cells; each cell has a 3 × 3 grid of half-cell samples (32 × 32 per block). Readers: `../subsystems/rendering.md` (Terrain).
 
 | Block | Entry word → T / O field | Format (as read) |
 |---|---|---|
@@ -70,7 +70,7 @@ Block 31 holds the same set for map entry 1. The per-entry render settings (bloc
 
 ## Blocks 22, 28, 30, 34, 35 (from the reading code)
 
-- **22** (unit placement): header + 18 typed sub-table pointers; unit records of 0x18 bytes (type, index, position, angles); type records per sub-table (sizes in the table above); full read order in `../subsystems/mission-load.md` (`SetupMissionUnits`).
+- **22** (unit placement): header + 18 typed sub-table pointers; unit records of 0x18 bytes (type, index, position, angles); type records per sub-table (sizes in the table above); full read order in `../subsystems/mission-flow.md` (`SetupMissionUnits`).
 - **28** (mission rules): part 1 = event script tables (0x13 section offsets, three level-sorted lists, three unit link lists; `func_0011A3D8`); part 2 = 16 halfwords of map-explored bits (`func_0015E8C0`).
 - **30** (effects): 16 sub-tables at offsets +4…+0x40 relative to the block (`func_00184C20`, stored at 0x002B8530…0x002B856C), used by the effect pools.
 - **34** (radio database): header section offsets and u16 counts → 0x004BA300…0x004BA32F; record sections of 8, 12 and 8 bytes resolved into the 0xA80-entry table at 0x004BA570 (`func_00250C30`).

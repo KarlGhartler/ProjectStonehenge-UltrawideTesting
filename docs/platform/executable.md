@@ -1,8 +1,82 @@
-# Toolchain of SLUS_201.52
+# The executable and the supported disc image
+
+Merged 2026-10-22 from `supported-version.md`, `elf-sections.md` and `toolchain.md` (no content removed): the supported disc image, then the ELF sections, then the toolchain.
+
+## Supported game version
+
+The port supports exactly one disc image: the user's own copy of the original NTSC-U disc, as an ISO 9660 image (2048-byte sectors). The port verifies the image at startup and refuses to run on anything else. A clear error message names the expected version.
+
+### Reference image (computed from the User's ISO)
+
+| Property | Value |
+|---|---|
+| Title | Ace Combat 04: Shattered Skies |
+| Region / serial | NTSC-U, `SLUS-20152` (`SLUS_201.52`) |
+| Image format | ISO 9660, 2048-byte user-data sectors (no raw 2352-byte sectors) |
+| Size | 3,554,705,408 bytes = 1,735,696 sectors |
+| **SHA-1 (whole image)** | **`aaa707214aea7f8f9c2904c4b5e00c372c943533`** |
+| MD5 (whole image) | `8c7cbadb78b2eebeabbf546e0c1d0372` |
+| Primary volume descriptor | system id `PLAYSTATION`, volume id `ACECOMBAT04`, volume space 1,735,696 blocks, created `2001-09-02 04:00:00` |
+| SHA-1 of `SLUS_201.52` | `4ac3e7ad5ee79d318c134e12484115de059f4bf8` |
+| SHA-1 of `SYSTEM.CNF` | `8f3a29ea1a854311f8e80b0317529d61a9081ef3` |
+
+How these were computed: `sha1sum`/`md5sum` over the whole ISO file, and over the files extracted from it. The volume descriptor is sector 16 of the image.
+
+### Startup check (planned behaviour)
+
+1. Read the ISO path from configuration. There is no default path and no searching of the disk.
+2. Fast check: file size = 3,554,705,408 and primary volume descriptor ids match. This gives an immediate clear error for wrong images.
+3. Full check: SHA-1 of the whole image = the value above. It reads 3.3 GB once, so cache the result keyed on path + size + modification time, and offer a "verify again" option.
+4. Optional extra check: SHA-1 of `SLUS_201.52` inside the image. The port loads the executable's initialised data (`.data`, `.rodata`, `.vutext`, `.vudata`) from it at runtime, so this hash protects the translated code's assumptions about addresses.
+
+Images that differ only in raw sector format (e.g. `.bin` 2352-byte dumps) are not supported in the first version. Converting to ISO is the user's job.
+
+### Notes
+
+- The hash identifies the image; it is not a secret and not copyrighted data. No game data is stored in the repo.
+- Cross-check against an independent disc-preservation database (e.g. Redump) is still to do. Record the result here.
+
+## SLUS_201.52 ELF sections
+
+Source: Ghidra memory map (Elf Loader + ghidra-emotionengine-reloaded).
+
+### Loaded sections
+
+| Section | Start | End | Size | Flags | Notes |
+|---|---|---|---|---|---|
+| `.text` | 0x00100000 | 0x00297B33 | 0x197B34 | R X | Game code + Sony SDK + libc/libgcc |
+| `.vutext` | 0x00297C00 | 0x0029C8FF | 0x4D00 | R X | VU microcode (~2,464 64-bit instructions); not R5900 |
+| `.data` | 0x0029C980 | 0x004021E7 | 0x165868 | RW | ~1.4 MB, unexplored |
+| `.vudata` | 0x004021F0 | 0x004036EF | 0x1500 | RW | VU data |
+| `.rodata` | 0x00403700 | 0x0040D7D7 | 0xA0D8 | R | Constants, strings |
+| `.gcc_except_table` | 0x0040D800 | 0x0040D9CF | 0x1D0 | RW | GCC C++ exception tables |
+| `.lit4` | 0x0040DA00 | 0x0041046F | 0x2A70 | RW | ~2,716 float literals (GCC/MIPS) |
+| `.sdata` | 0x00410480 | 0x0041172B | 0x12AC | RW | gp-relative small data |
+| `.sbss` | 0x00411780 | 0x0041193B | 0x1BC | RW | gp-relative small zero-init data |
+| `.bss` | 0x00411980 | 0x004CC74B | 0xBADCC | RW | ~765 KB zero-init data |
+
+### Not-loaded sections
+
+| Section | File offset | Size | Notes |
+|---|---|---|---|
+| `.reginfo` | 0x3127C4 | 0x18 | MIPS register info; `ri_gp_value` at offset 0x14 |
+| `.DVP.ovlytab` | 0x3127DC | 0xCC | VU overlay table |
+| `.DVP.ovlystrtab` | 0x3128A8 | 0x22C | VU overlay names |
+| `.DVP.overlay.*` (17 sections) | 0x312AD4–0x318A8B | 0x60–0x800 each | VU microcode overlays; names contain `0x0` or `unknvma` as VU load address |
+| `.shstrtab` | 0x318A8C | 0x2BD | Section names |
+
+### Absent sections (meaning)
+
+- `.symtab`, `.strtab`: stripped, no symbol names.
+- `.mdebug`: no STABS debug info.
+- `.comment`: no compiler version string.
+- `.lit8`: no double-precision literals.
+
+## Toolchain of SLUS_201.52
 
 Evidence comes from scanning the loaded segment of the ELF for strings and from the ELF headers. Research scripts: `../../tools/research/`.
 
-## gp register
+### gp register
 
 | Source | Value |
 |---|---|
@@ -12,7 +86,7 @@ Evidence comes from scanning the loaded segment of the ELF for strings and from 
 
 Conclusion: Ghidra's `gp` is correct. It is set as one register-context range (`gp_qw` = 0x004159F0) over 0x00100000–0x00297B30, and the decompiler resolves all sampled gp-relative globals. The only instruction in the program that writes `gp` is crt0 `entry` @ 0x0010005C (instruction search over the whole program). No interrupt handler or thread entry reloads gp; threads get gp through the CreateThread parameter (`_InitSys` passes `_mips_gp0_value`). `.reginfo` `gprmask` = 0xA0000074. The gp window covers 0x0040D9F0–0x0041D9EF, which includes `.lit4`, `.sdata` and `.sbss`.
 
-## Sony SDK version: Runtime Library 2.3.x
+### Sony SDK version: Runtime Library 2.3.x
 
 Library ID strings (`PsII` + 8-char library name + 4-digit version):
 
@@ -36,7 +110,7 @@ Library ID strings (`PsII` + 8-char library name + 4-digit version):
 - IOP module load list at 0x00403710: `cdrom0:\IOPRP23.IMG;1`, then SIO2MAN, MCMAN, MCSERV, PADMAN, LIBSD, SOUND, VAG, USBD, USBJOY. `IOPRP23` matches the 2.3 SDK.
 - `host0:%s` (0x00403B10) and `host0:` (0x00410C80, 0x00410DB0) are leftover dev-kit host file paths.
 
-## Compiler: GCC 2.9x `ee-gcc` with g++ and libio-based libstdc++
+### Compiler: GCC 2.9x `ee-gcc` with g++ and libio-based libstdc++
 
 - No `.comment` section and no `GCC:`/`GNU` version string. The exact version is unknown.
 - GCC 2.x RTTI and exception type-name strings, length-prefixed with the old (pre-3.x ABI) mangling, at 0x0040B9A0–0x0040D2D8: `9type_info`, `17__class_type_info`, `14__si_type_info`, `16__user_type_info`, `17__array_type_info`, `16__ptmd_type_info`, `16__ptmf_type_info`, `16__func_type_info`, `19__builtin_type_info`, `16__attr_type_info`, `19__pointer_type_info`, `9exception`, `13bad_exception`, `9bad_alloc`, `10bad_typeid`, `8bad_cast`.
@@ -44,11 +118,11 @@ Library ID strings (`PsII` + 8-char library name + 4-digit version):
 - libio iostream classes: `22_IO_ostream_withassign`, `12ostdiostream`, `7filebuf`, `9streambuf`, `3ios`, `11_ios_fields`, `8_IO_FILE`. This is GCC 2.x libstdc++ built on libio. The iostream code is linked in, but whether the game uses it is unverified.
 - No SN Systems/ProDG, Metrowerks or Cygnus/newlib strings.
 
-## Source filenames
+### Source filenames
 
 - None. No `.c/.cc/.cpp/.h/.s` strings exist, and no `__FILE__`-style assert messages either. Module boundaries have to come from other evidence, for example the `bad_alloc` markers below.
 
-## C vs C++
+### C vs C++
 
 Conclusion: game modules are compiled as C++ (g++), but written in "C with classes" style. The game has no virtual dispatch, no `new`/`delete` and no exceptions. A plain C++17 translation, with free functions or non-virtual members, is enough for the port.
 

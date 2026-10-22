@@ -1,9 +1,11 @@
 #version 450
 // GS pixel pipeline subset (docs/platform/gs-subset.md): texture fetch with the GS wrap modes and
-// nearest/bilinear filtering done by hand (texelFetch from the per-frame atlas or a frame-buffer
+// nearest/bilinear filtering done by hand (texelFetch from the draw's texture image or a frame-buffer
 // copy), the texture function (MODULATE/DECAL/HIGHLIGHT/HIGHLIGHT2) in 8-bit integer arithmetic,
 // fog (FGE), the alpha test and the destination alpha test (DATE). Blending is fixed-function with dual-source blending: output 0 is the colour
-// and the alpha written to the frame buffer, output 1 the blend factor (As/128 or FIX/128).
+// and the alpha written to the frame buffer, output 1 the blend factor (As/128 or FIX/128). Blend
+// equations the fixed-function stage cannot express are done here from a copy of the target
+// (flag 28) and written with blending off.
 
 layout(location = 0) in vec4 v_color;
 layout(location = 1) noperspective in vec3 v_tex;
@@ -12,13 +14,14 @@ layout(location = 2) in float v_fog;
 layout(location = 0, index = 0) out vec4 o_color;
 layout(location = 0, index = 1) out vec4 o_factor;
 
-layout(binding = 0) uniform sampler2D atlas;
+layout(set = 1, binding = 0) uniform sampler2D tex;  // the draw's decoded texture (gs_state.h DecodedTexture)
 layout(binding = 1) uniform sampler2D feedback;
-layout(binding = 2) uniform sampler2D dst_copy;  // target region before a DATE draw (flag 22)
+layout(binding = 2) uniform sampler2D dst_copy;  // target region before a DATE draw (flag 22) or a shader blend (flag 28)
+layout(binding = 3) uniform sampler2D movie;     // upscaled movie picture, bilinear (flag 27)
 
 layout(push_constant) uniform Params {
     vec2 target_size;
-    ivec4 rect;      // decoded texels in the atlas: x, y, width, height
+    ivec4 rect;      // decoded texels: x, y unused (0), width, height of level 0; flag 27: see main
     ivec2 origin;    // texture coordinate of the rect's first texel
     ivec2 tex_size;  // 2^TW, 2^TH
     ivec4 region;    // MINU, MAXU, MINV, MAXV
@@ -27,6 +30,9 @@ layout(push_constant) uniform Params {
     float fix;
     int fogcol;      // FOGCOL (flag 20)
     int tex1;        // MMIN 0-2, mip levels 3-5, LCM 6, L 7-8, K 9-20 (signed 1/16), MMAG 21
+    int scale;       // internal scale of the target: host pixels per GS pixel
+    int tex_scale;   // host texels per GS texel of the frame-buffer copy (flag 16)
+    int alpha;       // ALPHA bits 0-7: A, B, C, D (flag 28)
 } pc;
 
 int Wrap(int c, int mode, int size, int mn, int mx) {
@@ -36,29 +42,44 @@ int Wrap(int c, int mode, int size, int mn, int mx) {
     return (c & mn) | mx;
 }
 
+// Wrap of a host texel of a frame-buffer copy held at `s` host texels per GS texel: the wrap mode
+// applies to the GS texel, the position inside it is kept.
+int WrapScaled(int c, int mode, int size, int mn, int mx, int s) {
+    if (s == 1) return Wrap(c, mode, size, mn, mx);
+    if (mode == 1) return clamp(c, 0, size * s - 1);
+    if (mode == 2) return clamp(c, mn * s, mx * s + s - 1);
+    int n = c >= 0 ? c / s : -((s - 1 - c) / s);
+    return Wrap(n, mode, size, mn, mx) * s + (c - n * s);
+}
+
 // Texel t of mipmap level `level`. Level 0 is the decoded rectangle (or the frame-buffer copy);
 // levels 1.. are stored whole to the right of level 0, stacked top to bottom (gs_state.h
 // DecodedTexture). HYPOTHESIS: the region clamp/repeat values scale with the level (>> level).
 vec4 Fetch(ivec2 t, int level) {
     ivec2 size = max(pc.tex_size >> level, ivec2(1));
+    if (level == 0 && (pc.flags & (1 << 16)) != 0) {
+        // Frame-buffer copy, `tex_scale` host texels per GS texel.
+        t.x = WrapScaled(t.x, (pc.flags >> 12) & 3, size.x, pc.region.x, pc.region.y, pc.tex_scale);
+        t.y = WrapScaled(t.y, (pc.flags >> 14) & 3, size.y, pc.region.z, pc.region.w, pc.tex_scale);
+        return floor(texelFetch(feedback, t, 0) * 255.0 + 0.5);
+    }
     t.x = Wrap(t.x, (pc.flags >> 12) & 3, size.x, pc.region.x >> level, pc.region.y >> level);
     t.y = Wrap(t.y, (pc.flags >> 14) & 3, size.y, pc.region.z >> level, pc.region.w >> level);
     if (level == 0) {
-        if ((pc.flags & (1 << 16)) != 0) {
-            return floor(texelFetch(feedback, t, 0) * 255.0 + 0.5);
-        }
         ivec2 a = clamp(t - pc.origin, ivec2(0), pc.rect.zw - 1);
-        return floor(texelFetch(atlas, pc.rect.xy + a, 0) * 255.0 + 0.5);
+        return floor(texelFetch(tex, a, 0) * 255.0 + 0.5);
     }
     int y = 0;
     for (int k = 1; k < level; ++k) y += max(pc.tex_size.y >> k, 1);
     ivec2 a = clamp(t, ivec2(0), size - 1);
-    return floor(texelFetch(atlas, pc.rect.xy + ivec2(pc.rect.z, y) + a, 0) * 255.0 + 0.5);
+    return floor(texelFetch(tex, ivec2(pc.rect.z, y) + a, 0) * 255.0 + 0.5);
 }
 
-// Level `level` sampled at level-0 texel coordinates uv, nearest or bilinear.
+// Level `level` sampled at level-0 texel coordinates uv, nearest or bilinear. A scaled
+// frame-buffer copy is sampled on its own (host) texel grid.
 vec4 Sample(vec2 uv, int level, bool linear) {
     vec2 u = uv / float(1 << level);
+    if (level == 0 && (pc.flags & (1 << 16)) != 0) u *= float(pc.tex_scale);
     if (linear) {
         vec2 b = u - 0.5;
         ivec2 i = ivec2(floor(b));
@@ -71,6 +92,15 @@ vec4 Sample(vec2 uv, int level, bool linear) {
 }
 
 void main() {
+    // Flag 26: a 2D sprite drawn at internal scale > 1 samples at the UV of the native pixel the
+    // host pixel lies in (native sample point floor(g), g = the host pixel's GS position), so its
+    // texels map 1:1 to native pixels as on the PS2. Derivatives first (uniform control flow).
+    vec2 tex_xy = v_tex.xy;
+    if ((pc.flags & (1 << 26)) != 0) {
+        vec2 g = gl_FragCoord.xy / float(pc.scale) - 0.5;
+        vec2 dg = (floor(g) - g) * float(pc.scale);
+        tex_xy += dFdx(v_tex.xy) * dg.x + dFdy(v_tex.xy) * dg.y;
+    }
     // Flag 22: destination alpha test. The pixel is drawn only when bit 7 of the stored alpha equals
     // DATM (flag 23).
     if ((pc.flags & (1 << 22)) != 0) {
@@ -80,7 +110,7 @@ void main() {
     vec4 c = floor(v_color + 0.5);
     if ((pc.flags & 1) != 0) {
         bool fst = (pc.flags & 2) != 0;
-        vec2 uv = fst ? v_tex.xy : v_tex.xy / v_tex.z * vec2(pc.tex_size);
+        vec2 uv = fst ? tex_xy : tex_xy / v_tex.z * vec2(pc.tex_size);
         // The GS addresses texels in fixed point with 4 fractional bits. Rounding to that grid
         // removes float interpolation error: a 1:1 sprite gives exact integers at pixel positions,
         // and 0.9999 would pick the texel on the left (seams every 16 pixels in movies).
@@ -96,7 +126,11 @@ void main() {
         float lod = ((pc.tex1 >> 6) & 1) != 0 ? k : log2(1.0 / max(q, 1e-30)) * float(1 << ((pc.tex1 >> 7) & 3)) + k;
         bool min_linear = mmin == 1 || mmin == 4 || mmin == 5;
         vec4 t;
-        if (lod <= 0.0) {
+        if ((pc.flags & (1 << 27)) != 0) {
+            // Movie column (ADR-006 §5): rect.xy = picture pixel of texel (0, 0), rect.zw = picture
+            // size; the upscaled picture is sampled bilinearly at that position.
+            t = floor(texture(movie, (vec2(pc.rect.xy) + uv) / vec2(pc.rect.zw)) * 255.0 + 0.5);
+        } else if (lod <= 0.0) {
             t = Sample(uv, 0, ((pc.tex1 >> 21) & 1) != 0);
         } else if (mmin < 2 || levels == 0) {
             t = Sample(uv, 0, min_linear);
@@ -146,6 +180,18 @@ void main() {
     }
     // Flag 25: PRIM.AA1 without ABE blends with As = coverage, 1.0 inside the primitive.
     float factor = ((pc.flags >> 17) & 1) != 0 ? pc.fix / 128.0 : (((pc.flags >> 25) & 1) != 0 ? 1.0 : c.a / 128.0);
+    // Flag 28: the GS blend (A - B) * C >> 7 + D with A, B, D in {Cs, Cd, 0} and C in {As, Ad, FIX},
+    // clamped to 0-255 (COLCLAMP 1), on the target copied before the draw. Alpha is not blended.
+    if ((pc.flags & (1 << 28)) != 0) {
+        vec4 dst = floor(texelFetch(dst_copy, ivec2(gl_FragCoord.xy), 0) * 255.0 + 0.5);
+        int sa = pc.alpha & 3, sb = (pc.alpha >> 2) & 3, sc = (pc.alpha >> 4) & 3, sd = (pc.alpha >> 6) & 3;
+        vec3 ca = sa == 0 ? c.rgb : (sa == 1 ? dst.rgb : vec3(0.0));
+        vec3 cb = sb == 0 ? c.rgb : (sb == 1 ? dst.rgb : vec3(0.0));
+        vec3 cd = sd == 0 ? c.rgb : (sd == 1 ? dst.rgb : vec3(0.0));
+        float as = ((pc.flags >> 25) & 1) != 0 ? 128.0 : c.a;
+        float k = sc == 0 ? as : (sc == 1 ? dst.a : pc.fix);
+        c.rgb = clamp(floor((ca - cb) * k / 128.0) + cd, 0.0, 255.0);
+    }
     // Flag 24: 16-bit frame buffer (CT16/CT16S). The GS stores the colour's top 5 bits and alpha
     // bit 7; the RGBA8 target keeps them as multiples of 8 and 0x80/0 (gs_conv.comp reads them back).
     if ((pc.flags & (1 << 24)) != 0) c = vec4(floor(c.rgb / 8.0) * 8.0, c.a >= 128.0 ? 128.0 : 0.0);

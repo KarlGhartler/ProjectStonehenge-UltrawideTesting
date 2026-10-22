@@ -1,6 +1,6 @@
 # Aircraft entries (DATA.CDP 101–172)
 
-72 entries = 24 aircraft × 3 variants. Index = `0x65 + a`, `0x7D + a` or `0x95 + a` for variant 0/1/2 (`LoadFlightDataEntry` 0x0010AF10 sub-states 3/4: `a` = aircraft id `game[0x00]`/`game[0x10]`, variant `game[0x01]`/`game[0x11]`). Confirmed in PCSX2 (session 7, `../pcsx2/sessions-02.md`): aircraft 2 variant 0 → DATA 103 (0x67); the opening sequence id 0x25 used aircraft 0x17 → DATA 124 (0x7C).
+72 entries = 24 aircraft × 3 variants. Index = `0x65 + a`, `0x7D + a` or `0x95 + a` for variant 0/1/2 (`LoadFlightDataEntry` 0x0010AF10 sub-states 3/4: `a` = aircraft id `game[0x00]`/`game[0x10]`, variant `game[0x01]`/`game[0x11]`). Confirmed in PCSX2 (session 7, `../pcsx2/sessions.md` run 02): aircraft 2 variant 0 → DATA 103 (0x67); the opening sequence id 0x25 used aircraft 0x17 → DATA 124 (0x7C).
 
 Container: `count + offsets`, **9 sub-blocks** in all 72 entries. `StoreFlightDataPointers` 0x0010B038 stores them at flight work + **0x1754 + 4·k** (player, sub-state 3) and **0x1794 + 4·k** (second aircraft, sub-state 4). Loaders index the two by `unit · 0x40`.
 

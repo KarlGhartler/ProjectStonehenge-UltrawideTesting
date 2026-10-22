@@ -28,7 +28,6 @@ AC04_GUEST_VAR(u16, g_MissionNo, 0x002A15B8)
 constexpr u32 kColumns = 0x0039D920;      // 6 columns
 constexpr u32 kHelpMessages = 0x0039DA28;  // s16 per menu item (19)
 
-f32 K(u32 address) { return GRef<f32>(address); }
 s32& State(u32 obj) { return GRef<s32>(obj + 0x66C); }
 
 }  // namespace

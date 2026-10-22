@@ -44,7 +44,6 @@ constexpr u32 kMovieTable = 0x002BBA10;
 constexpr u32 kAudio = 0x002BBCB8;
 constexpr u32 kVagSlots = 0x00353BF8;  // VAG.IRX client slots, 0x94 bytes each
 
-f32 K(u32 address) { return GRef<f32>(address); }
 u32 MovieEntry(s32 id, u32 field) { return GRef<u32>(kMovieTable + static_cast<u32>(id) * 0x14 + field * 4); }
 s32& SlotPlaying(u32 slot) { return GRef<s32>(kVagSlots + slot * 0x94 + 0x58); }
 

@@ -36,6 +36,9 @@ struct SceHost {
     // (internal scale > 1). sceMpegGetPicture then also hands each decoded picture to
     // DmaStats::movie_picture, and GIF transfers from its image buffer get source marks.
     bool movie_pictures = false;
+    // Vibration (scePadSetActDirect): per port the small motor (0 off, 1 on) and the large motor
+    // (0-255) as the game last set them. The host passes them to the gamepad between steps.
+    std::array<std::array<u8, 2>, 2> pad_motors{};
 };
 
 // A decoded movie picture handed to the renderer (presentation only; never read back by the game).

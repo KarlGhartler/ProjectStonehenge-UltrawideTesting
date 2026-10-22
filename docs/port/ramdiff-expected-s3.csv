@@ -18,7 +18,7 @@ start,end,category,reason
 0x004CC564,0x004CC568,sdk,libmpeg pointer into its work area
 0x00CD4A58,0x00CD4A5C,sdk,SMV reader +0x18 = sceMpeg frameCount: PCSX2 one lower (46 vs 47 pictures returned in the chunk); not read by the game (open-questions.md)
 0x00CD4A70,0x00CD4A78,sdk,SMV reader +0x30 = sceMpeg flags (PCSX2 0x19B; port 0): picture flags not modelled; not read by the game
-0x00CD4ACC,0x00CD4AD0,timing,SMV reader +0x8C CD read ticket: the queue's ticket counter depends on how many reads ran before (menu BGM streaming time differs from the owner's session)
+0x00CD4ACC,0x00CD4AD0,timing,SMV reader +0x8C CD read ticket: the queue's ticket counter depends on how many reads ran before (menu BGM streaming time differs from the User's session)
 0x00FD8B00,0x01114300,sdk,libmpeg work area (0x13B800 bytes; IPU buffers and decoder state; not reproduced)
 0x01114300,0x0122C300,decode,movie image buffer (RGBA32 macroblocks): same picture; libmpeg2 IDCT vs IPU rounding (mean 0.5 level; max 10; alpha 0x80 identical); validation.md S3-3
 0x70000000,0x70002800,sdk,scratchpad used by libmpeg during movies: macroblock samples and DCT coefficient buffers of its IPU path (the port's libmpeg2 decodes in host memory); left behind after the movie until the game overwrites them

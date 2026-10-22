@@ -18,10 +18,6 @@ namespace {
 
 vu0::Vec4 Load(u32 p) { return {GRef<f32>(p), GRef<f32>(p + 4), GRef<f32>(p + 8), GRef<f32>(p + 12)}; }
 
-void CopyQword(u32 dst, u32 src) {
-    for (u32 o = 0; o < 16; o += 4) GRef<u32>(dst + o) = GRef<u32>(src + o);
-}
-
 // The sign test of the three edge products (cvt.w.s, so |k| < 1 counts as 0): inside when all are
 // >= 0 or all are <= 0.
 bool InsideTriangle(f32 k0, f32 k1, f32 k2) {

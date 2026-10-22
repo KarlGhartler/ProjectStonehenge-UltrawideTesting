@@ -4,6 +4,7 @@
 
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "common/port_hooks.h"
 #include "sce/ee_hw.h"
 #include "sce/sce.h"
 
@@ -33,6 +34,9 @@ s32 Main() {
     InitWorkHeap();
     InitGameStateGlobals();
     InitOptionData();
+    // port: SCREEN RATIO 16:9 by default on a wide monitor (port baseline, User request
+    // 2026-10-20; common/port_hooks.h). Save data loaded later replaces the option byte.
+    if (port::Boot().wide_screen_ratio) GRef<u8>(0x002A15CC) = static_cast<u8>(GRef<u8>(0x002A15CC) | 1);
     InitRandomTable();
     InitSubsystems();
     ApplyOptionSettings();
@@ -45,6 +49,9 @@ s32 Main() {
     while (sceGsSyncV(0) == 0) {
     }
     for (;;) {
+        // port: the overlay start points of the lists about to be sent (anti-aliasing, port_hooks.h).
+        port::Render().sending.swap(port::Render().built);
+        port::Render().built.clear();
         SendDmaPacketList(1, g_pMainContext().addr + offsetof(MainContext, vif1_list), 1);
         SendDmaPacketList(2, g_pMainContext().addr + offsetof(MainContext, gif_list), 0);
         const u32 buf = SwapDoubleBuffer(g_pMainContext().addr + offsetof(MainContext, dbuf));
@@ -166,7 +173,7 @@ void InitMainContext() {
 
 // EE: 0x001006C0
 // HYPOTHESIS: InitGameStateGlobals. Defaults of the game-state block 0x0029F350
-// (docs/game/main-context.md): per-player entries, mission id, flags.
+// (docs/game/boot.md): per-player entries, mission id, flags.
 void InitGameStateGlobals() {
     GRef<u8>(0x0029F379) = 1;
     GRef<u8>(0x0029F378) = 2;

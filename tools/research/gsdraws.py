@@ -8,6 +8,7 @@ Usage: python -I tools/research/gsdraws.py FILE [--gs] [--region X0 Y0 X1 Y1] [-
   --region  only draws whose screen box (pixels, after XYOFFSET) overlaps this box
   --date    only draws with the destination alpha test on
   --from/--count  index range of the listing
+  --verts   also print each listed draw's vertices (x, y in pixels; u, v in texels for FST = 1)
 
 Prints register values and counts only; nothing from the dump is written anywhere.
 """
@@ -42,6 +43,7 @@ class Gs:
         self.fogcol = 0
         self.draws = []
         self.cur = None
+        self.uv = (0, 0)
 
     def key(self):
         c = self.ctx[bits(self.prim, 9, 1)]
@@ -58,6 +60,7 @@ class Gs:
             self.draws.append(self.cur)
         d = self.cur
         d["verts"] += 1
+        d.setdefault("xy", []).append((px, py, self.uv[0], self.uv[1]))
         if kick:
             d["kicks"] += 1
         b = d["box"]
@@ -73,6 +76,8 @@ class Gs:
             self.pabe = v & 1
         elif addr == 0x46:
             self.colclamp = v & 1
+        elif addr == 0x03:
+            self.uv = (bits(v, 0, 14) / 16.0, bits(v, 16, 14) / 16.0)
         elif addr == 0x05:
             self.vertex(bits(v, 0, 16), bits(v, 16, 16), True)
         elif addr == 0x04:
@@ -107,6 +112,8 @@ def parse(data):
                         gs.vertex(a & 0xFFFF, (a >> 32) & 0xFFFF, False)
                     elif r == 0:
                         gs.prim = a & 0x7FF
+                    elif r == 3:
+                        gs.uv = ((a & 0x3FFF) / 16.0, ((a >> 32) & 0x3FFF) / 16.0)
                     elif r in (6, 7, 8, 9):
                         gs.write(r, a)
         elif flg == 1:
@@ -169,6 +176,9 @@ def main():
         if region and (b[2] < region[0] or b[0] > region[2] or b[3] < region[1] or b[1] > region[3]):
             continue
         print(describe(i, d))
+        if "--verts" in args:
+            for x, y, u, v in d.get("xy", []):
+                print(f"        xy {x:8.4f} {y:8.4f}  uv {u:8.4f} {v:8.4f}")
         shown += 1
     print(f"{len(gs.draws)} draws, {shown} listed")
 

@@ -1,5 +1,5 @@
 // Sound RPC client for SOUND.IRX (RPC 0x81000101; docs/game/iop-interface.md,
-// docs/subsystems/iop-sound.md, docs/subsystems/sound.md): command batches double-buffered and sent
+// docs/subsystems/sound.md, docs/subsystems/sound.md): command batches double-buffered and sent
 // once per frame, the 48-voice table, voice command builders, sound bank table, bank loading and
 // category volumes. The IOP side is the port's SOUND service (ADR-004).
 //

@@ -1,12 +1,14 @@
-// AC04 port entry point. Startup order: command line -> paths -> log -> settings -> window ->
+// ProjectStonehenge entry point. Startup order: command line -> paths -> log -> settings -> window ->
 // renderer -> disc image check -> executable into guest memory -> audio -> input -> main loop.
 // Milestone B: no game code runs yet; the window shows the test pattern through the output pass.
 #include <algorithm>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <functional>
@@ -19,6 +21,7 @@
 #include "build_info.h"
 #include "common/guest_memory.h"
 #include "common/debug_hooks.h"
+#include "common/port_hooks.h"
 #include "common/guest_stack.h"
 #include "game/game.h"
 #include "platform/audio.h"
@@ -57,7 +60,7 @@ struct ScriptedPress {
     std::uint16_t bit;
 };
 
-// The pads each game tick reads (docs/port/s5-plan.md P1). The main thread latches both pads before
+// The pads each game tick reads (docs/port/slices.md §B P1). The main thread latches both pads before
 // it releases a tick, so the game sees exactly one state per tick whatever the host frame rate:
 // live devices in normal play; with a pad script or an input log only those (validation runs, no
 // live device can leak in). Every latched tick can be written to an input log and replayed.
@@ -74,6 +77,9 @@ struct TickInputFeed {
     bool use_replay = false;
     bool use_p2m2 = false;
     bool p2m2_end_logged = false;
+    // Modern control types per player (settings input.modern_controls): live devices only; scripts,
+    // input logs and PCSX2 recordings already hold what the game reads.
+    std::array<bool, 2> modern{};
     platform::PadState latched[2];
 
     bool Live() const { return !use_replay && !use_p2m2 && script.empty(); }
@@ -103,6 +109,8 @@ struct TickInputFeed {
         } else {
             pads[0] = input->Port(0);
             pads[1] = input->Port(1);
+            for (int p = 0; p < 2; ++p)
+                if (modern[p]) platform::SwapShoulderButtons(pads[p]);
         }
         for (const ScriptedPress& sp : script) {
             if (vblank >= sp.vblank && vblank < sp.vblank + 6) {
@@ -116,7 +124,7 @@ struct TickInputFeed {
     }
 };
 
-constexpr const char* kAppTitle = "AC04 Port";
+constexpr const char* kAppTitle = "ProjectStonehenge";
 
 std::string VersionText() {
     return std::string(kAppTitle) + " " + AC04_VERSION_STRING + " (" + AC04_GIT_COMMIT + ", " +
@@ -127,6 +135,48 @@ std::string VersionText() {
 // reason has been shown and logged). `unverified` is set when a development build continues
 // with --allow-unverified-iso.
 // Research aid (development builds): guest RAM + scratchpad for tools/research/ramdiff.py.
+// Averages each n x n block of an RGBA8 image (rounded); w and h become the reduced size.
+void BoxDownscale(std::vector<uint8_t>& rgba, int& w, int& h, int n) {
+    const int ow = w / n, oh = h / n;
+    std::vector<uint8_t> out(static_cast<size_t>(ow) * oh * 4);
+    for (int y = 0; y < oh; ++y) {
+        for (int x = 0; x < ow; ++x) {
+            for (int c = 0; c < 4; ++c) {
+                unsigned sum = 0;
+                for (int j = 0; j < n; ++j) {
+                    const uint8_t* row = &rgba[(static_cast<size_t>(y * n + j) * w + static_cast<size_t>(x) * n) * 4 + c];
+                    for (int i = 0; i < n; ++i) sum += row[i * 4];
+                }
+                out[(static_cast<size_t>(y) * ow + x) * 4 + c] = static_cast<uint8_t>((sum + n * n / 2) / (n * n));
+            }
+        }
+    }
+    rgba.swap(out);
+    w = ow;
+    h = oh;
+}
+
+// Writes the native image as `<stem>.png`. At internal scale N > 1 the image as rendered goes to
+// `<prefix>internal_x<N><suffix>.png` and `<stem>.png` is its N x N box average at the native size,
+// for the comparisons with PCSX2's native screenshots (tools/research/imgdiff.py).
+bool WriteNativeScreenshot(render::Renderer& renderer, const std::filesystem::path& dir, const std::string& stem,
+                           const std::string& scaled_stem) {
+    std::vector<uint8_t> rgba;
+    int w = 0, h = 0;
+    if (!renderer.CaptureNative(rgba, w, h)) return false;
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    bool ok = true;
+    const int scale = renderer.NativeScale();
+    if (scale > 1) {
+        ok = WritePng(dir / (scaled_stem + ".png"), rgba.data(), w, h);
+        BoxDownscale(rgba, w, h, scale);
+    }
+    ok = WritePng(dir / (stem + ".png"), rgba.data(), w, h) && ok;
+    if (!ok) AC04_LOG_ERROR("renderer", "cannot write the screenshot %s", stem.c_str());
+    return true;
+}
+
 // Written to the user data folder, never into the repo: it contains game data.
 void DumpGuestRam(const Paths& paths, const char* name) {
     const auto dir = paths.user_data / "dumps";
@@ -173,26 +223,29 @@ int PlayGsDump(const CommandLine& cl, const Paths& paths, render::Renderer& rend
         }
     }
     const auto dir = paths.user_data / "screenshots";
-    std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    std::vector<uint8_t> rgba;
-    int w = 0, h = 0;
-    if (renderer.CaptureNative(rgba, w, h)) WritePng(dir / "gsdump_native.png", rgba.data(), w, h);
+    WriteNativeScreenshot(renderer, dir, "gsdump_native",
+                          "gsdump_internal_x" + std::to_string(renderer.NativeScale()));
     if (!dump.shot_rgba.empty())
         WritePng(dir / "gsdump_pcsx2.png", dump.shot_rgba.data(), dump.shot_width, dump.shot_height);
-    AC04_LOG_INFO("renderer", "GS dump drawn: screenshots/gsdump_native.png (%dx%d), gsdump_pcsx2.png", w, h);
+    AC04_LOG_INFO("renderer", "GS dump drawn: screenshots/gsdump_native.png, gsdump_pcsx2.png");
     return 0;
 }
 #endif
 
+// `chosen` receives the path the user picked with "Select ISO..." in the problem message (the
+// caller saves it and calls again); empty when the user quit.
 bool PrepareDisc(const CommandLine& cl, const Paths& paths, const Settings& settings, Window& window,
-                 render::Renderer& renderer, IsoImage& image, LoadedExecutable& exe, bool& unverified) {
+                 render::Renderer& renderer, IsoImage& image, LoadedExecutable& exe, bool& unverified,
+                 std::string& chosen) {
     unverified = false;
+    chosen.clear();
     const std::filesystem::path iso_path = PathFromUtf8(settings.paths.iso);
     auto fail = [&](const IsoCheck& check) {
-        const std::string text = DescribeIsoProblem(check, iso_path, paths.settings_file);
-        AC04_LOG_ERROR("iso", "%s", text.c_str());
-        ShowErrorBox(kAppTitle, text, &window);
+        const MessageText text = DescribeIsoProblem(check, iso_path, paths.settings_file);
+        AC04_LOG_ERROR("iso", "%s", FormatMessageText(text).c_str());
+        const int button = ShowChoiceBox(std::string(kAppTitle) + " - Disc image", text,
+                                         {"Select ISO...", "Quit"}, true, &window);
+        if (button == 0) chosen = ChooseFile(&window, "PlayStation 2 disc image (*.iso)", "iso");
         return false;
     };
 
@@ -252,7 +305,13 @@ bool PrepareDisc(const CommandLine& cl, const Paths& paths, const Settings& sett
     guest::ResetStack();
     if (!LoadGameExecutable(image.Iso(), guest::Mem(), unverified, exe, error)) {
         AC04_LOG_ERROR("loader", "%s", error.c_str());
-        ShowErrorBox(kAppTitle, "The game executable could not be loaded from the disc image.\n\n" + error, &window);
+        MessageText m;
+        m.headline = "The game could not be started";
+        m.explanation = "The game program (SLUS_201.52) could not be loaded from the disc image.";
+        m.steps = {"Make a new, unmodified dump of your disc and choose it in settings.json (\"paths\": \"iso\").",
+                   "If the problem stays, keep the session log for a bug report."};
+        m.details = {{"Reason", error}, {"Disc image", PathToUtf8(iso_path)}, {"Session log", PathToUtf8(log::FilePath())}};
+        ShowErrorBox(std::string(kAppTitle) + " - Error", m, &window);
         return false;
     }
     for (const auto& seg : exe.segments)
@@ -266,8 +325,49 @@ bool PrepareDisc(const CommandLine& cl, const Paths& paths, const Settings& sett
     return true;
 }
 
-// Reloads settings.json when it changes on disk, so values can be edited while the port runs
-// (there is no settings menu yet). Checked once per second.
+// The desktop mode of a display (the monitor the port starts on): size and refresh rate.
+DisplayInfo QueryDisplay(SDL_DisplayID id) {
+    DisplayInfo d;
+    if (const SDL_DisplayMode* m = SDL_GetDesktopDisplayMode(id)) {
+        d.width = m->w;
+        d.height = m->h;
+        d.refresh_hz = static_cast<int>(std::lround(m->refresh_rate));
+    }
+    return d;
+}
+
+// The frame cap in force: none with v-sync on (the presentation engine paces the frames).
+int EffectiveFrameCap(const PresentationSettings& p) { return p.vsync ? 0 : p.frame_cap; }
+
+// A rejected settings.json: what was wrong, and that the file is being replaced.
+void ReportRejected(const std::vector<std::string>& problems) {
+    for (const auto& w : problems) AC04_LOG_WARN("settings", "%s", w.c_str());
+    AC04_LOG_WARN("settings", "settings.json rejected; deleted and replaced with the defaults");
+}
+
+// The GRAPHICS page's view of the presentation settings (port_hooks.h).
+port::GraphicsOptions ToGraphicsOptions(const PresentationSettings& p) {
+    port::GraphicsOptions g;
+    g.fullscreen = p.window_mode == WindowMode::Fullscreen;
+    g.vsync = p.vsync;
+    g.frame_cap = p.frame_cap;
+    g.internal_scale = p.internal_scale;
+    g.smooth_filter = p.filter == ScaleFilter::Smooth;
+    g.antialiasing = static_cast<s32>(p.antialiasing);
+    return g;
+}
+
+void ApplyGraphicsOptions(const port::GraphicsOptions& g, PresentationSettings& p) {
+    p.window_mode = g.fullscreen ? WindowMode::Fullscreen : WindowMode::Windowed;
+    p.vsync = g.vsync;
+    if (IsValidFrameCap(g.frame_cap)) p.frame_cap = g.frame_cap;
+    p.internal_scale = std::clamp(static_cast<int>(g.internal_scale), 1, platform::kMaxInternalScale);
+    p.filter = g.smooth_filter ? ScaleFilter::Smooth : ScaleFilter::Sharp;
+    if (g.antialiasing >= 0 && g.antialiasing <= 2) p.antialiasing = static_cast<AntiAliasing>(g.antialiasing);
+}
+
+// Reloads settings.json when it changes on disk, so values can be edited while the port runs.
+// Checked once per second.
 class SettingsWatcher {
 public:
     // `overrides` re-applies the session-only command-line values to the reloaded settings.
@@ -286,8 +386,13 @@ public:
         last_time_ = time;
         SettingsStore fresh;
         std::vector<std::string> warnings;
-        fresh.Load(store_.File(), warnings);
-        for (const auto& w : warnings) AC04_LOG_WARN("settings", "%s", w.c_str());
+        if (fresh.Load(store_.File(), warnings) == SettingsStore::LoadResult::Rejected) {
+            ReportRejected(warnings);
+            std::string error;
+            if (!fresh.ReplaceWithDefaults(&error))
+                AC04_LOG_ERROR("settings", "cannot save settings.json: %s", error.c_str());
+            Remember();
+        }
         AC04_LOG_INFO("settings", "settings.json changed on disk, reloaded");
         Settings next = fresh.Get();
         overrides_(next);
@@ -328,7 +433,13 @@ int Run(int argc, char** argv) {
     Paths paths;
     std::string error;
     if (!ResolvePaths(PathFromUtf8(cl.options.user_data_dir), paths, error)) {
-        ShowErrorBox(kAppTitle, "The port cannot create its data folder.\n\n" + error);
+        MessageText m;
+        m.headline = "The port cannot create its data folder";
+        m.explanation = "Settings, saves and the session log are kept in this folder.";
+        m.steps = {"Check that the drive has free space and that the folder can be written.",
+                   "Or start the port with  --user-data \"<another folder>\""};
+        m.details = {{"Reason", error}};
+        ShowErrorBox(std::string(kAppTitle) + " - Error", m);
         return 1;
     }
     log::Open(paths.logs);
@@ -336,13 +447,33 @@ int Run(int argc, char** argv) {
     AC04_LOG_INFO("startup", "OS: %s", OperatingSystemDescription().c_str());
     AC04_LOG_INFO("startup", "user data: %s", PathToUtf8(paths.user_data).c_str());
 
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
+        AC04_LOG_ERROR("startup", "SDL_Init failed: %s", SDL_GetError());
+        MessageText m;
+        m.headline = "The port could not start";
+        m.explanation = "The window, sound and controller system (SDL) could not be initialised.";
+        m.steps = {"Update the graphics and audio drivers, then restart the computer."};
+        m.details = {{"Reason", SDL_GetError()}};
+        ShowErrorBox(std::string(kAppTitle) + " - Error", m);
+        return 1;
+    }
+    // Defaults follow the monitor the port starts on (the primary display, where the window opens):
+    // fullscreen, v-sync at 60 / 120 Hz, the SCREEN RATIO default (settings.h DefaultSettings).
+    const DisplayInfo start_display = QueryDisplay(SDL_GetPrimaryDisplay());
+    SetDefaultsDisplay(start_display);
+    AC04_LOG_INFO("startup", "display: %dx%d, %d Hz (%s)", start_display.width, start_display.height,
+                  start_display.refresh_hz, start_display.Wide() ? "wider than 4:3" : "4:3");
+
     SettingsStore settings;
     {
         std::vector<std::string> warnings;
-        settings.Load(paths.settings_file, warnings);
-        for (const auto& w : warnings) AC04_LOG_WARN("settings", "%s", w.c_str());
-        if (!std::filesystem::exists(paths.settings_file) || !warnings.empty()) {
-            // First run, or problems found: write a complete file (unknown keys are kept).
+        const auto result = settings.Load(paths.settings_file, warnings);
+        if (result == SettingsStore::LoadResult::Rejected) {
+            // Unreadable, invalid or incompatible: deleted and replaced with the defaults.
+            ReportRejected(warnings);
+            if (!settings.ReplaceWithDefaults(&error))
+                AC04_LOG_ERROR("settings", "cannot save settings.json: %s", error.c_str());
+        } else if (result == SettingsStore::LoadResult::Missing) {
             if (!settings.Save(&error)) AC04_LOG_ERROR("settings", "cannot save settings.json: %s", error.c_str());
         }
     }
@@ -350,6 +481,12 @@ int Run(int argc, char** argv) {
     const auto apply_overrides = [&cl](Settings& s) {
         if (cl.options.debug_overlay.has_value()) s.debug.overlay_enabled = *cl.options.debug_overlay;
         if (!cl.options.iso_path.empty()) s.paths.iso = cl.options.iso_path;
+        if (cl.options.internal_scale) s.presentation.internal_scale = static_cast<int>(*cl.options.internal_scale);
+        if (cl.options.fps_overlay.has_value()) s.debug.fps_overlay = *cl.options.fps_overlay;
+        if (!cl.options.antialiasing.empty())
+            s.presentation.antialiasing = cl.options.antialiasing == "smaa"   ? AntiAliasing::Smaa
+                                          : cl.options.antialiasing == "fxaa" ? AntiAliasing::Fxaa
+                                                                              : AntiAliasing::Off;
     };
     {
         Settings s = settings.Get();
@@ -358,25 +495,32 @@ int Run(int argc, char** argv) {
     }
     AC04_LOG_INFO("startup", "settings in effect:\n%s", settings.ToText().c_str());
 
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
-        AC04_LOG_ERROR("startup", "SDL_Init failed: %s", SDL_GetError());
-        ShowErrorBox(kAppTitle, std::string("Initialisation failed: ") + SDL_GetError());
-        return 1;
-    }
-
     Window window;
     if (!window.Create(VersionText(), settings.Get().presentation, error)) {
         AC04_LOG_ERROR("startup", "%s", error.c_str());
-        ShowErrorBox(kAppTitle, error);
+        MessageText m;
+        m.headline = "The game window could not be opened";
+        m.steps = {"Update the graphics driver.", "If it happens again, keep the session log for a bug report."};
+        m.details = {{"Reason", error}, {"Session log", PathToUtf8(log::FilePath())}};
+        ShowErrorBox(std::string(kAppTitle) + " - Error", m);
         return 1;
     }
 
     render::Renderer renderer;
     if (!renderer.Init(window.Handle(), settings.Get().presentation, cl.options.vk_validation, error)) {
         AC04_LOG_ERROR("renderer", "%s", error.c_str());
-        ShowErrorBox(kAppTitle, "The renderer could not start.\n\n" + error, &window);
+        MessageText m;
+        m.headline = "The graphics renderer could not start";
+        m.explanation = "The port needs a graphics card (GPU) with Vulkan 1.2 support.";
+        m.steps = {"Update the graphics driver.",
+                   "On a computer with two GPUs, make sure the port runs on the dedicated one (Windows graphics settings)."};
+        m.details = {{"Reason", error}, {"Session log", PathToUtf8(log::FilePath())}};
+        ShowErrorBox(std::string(kAppTitle) + " - Error", m, &window);
         return 1;
     }
+    // GS textures are decoded on the GPU; the CPU reference decoder in development builds only.
+    if (cl.options.verify_texture_decode) renderer.SetTextureDecode(render::gs::TextureDecode::kBoth);
+    else if (cl.options.cpu_texture_decode) renderer.SetTextureDecode(render::gs::TextureDecode::kCpu);
 
 #if AC04_DEV_BUILD
     if (!cl.options.play_gsdump.empty()) {
@@ -388,15 +532,34 @@ int Run(int argc, char** argv) {
         return rc;
     }
 #endif
-    IsoImage disc;
+    // Disc image check; a problem message can let the user pick another image, which is saved to
+    // settings.json (file values) and checked again.
+    std::unique_ptr<IsoImage> disc;
     LoadedExecutable executable;
     bool unverified_disc = false;
-    if (!PrepareDisc(cl.options, paths, settings.Get(), window, renderer, disc, executable, unverified_disc)) {
-        renderer.Shutdown();
-        window.Destroy();
-        SDL_Quit();
-        log::Close();
-        return 1;
+    for (;;) {
+        disc = std::make_unique<IsoImage>();
+        std::string chosen;
+        if (PrepareDisc(cl.options, paths, settings.Get(), window, renderer, *disc, executable, unverified_disc, chosen))
+            break;
+        if (chosen.empty()) {
+            renderer.Shutdown();
+            window.Destroy();
+            SDL_Quit();
+            log::Close();
+            return 1;
+        }
+        AC04_LOG_INFO("iso", "disc image chosen: %s", chosen.c_str());
+        Settings next = settings.Get();
+        next.paths.iso = chosen;
+        settings.Replace(next);
+        SettingsStore saved;
+        std::vector<std::string> ignored;
+        saved.Load(paths.settings_file, ignored);  // file values (a rejected file gives the defaults)
+        Settings file = saved.Get();
+        file.paths.iso = chosen;
+        saved.Replace(file);
+        if (!saved.Save(&error)) AC04_LOG_ERROR("settings", "cannot save settings.json: %s", error.c_str());
     }
 
     AudioOutput audio;
@@ -413,16 +576,32 @@ int Run(int argc, char** argv) {
     input.Start();
 
     FramePacer pacer;
-    pacer.SetCap(settings.Get().presentation.frame_cap);
+    pacer.SetCap(EffectiveFrameCap(settings.Get().presentation));
 
+    // Fixed-step clock of the simulation (ADR-002).
+    sce::TickClock clock;
+    // Presented frames since the last presentation change (its log line reports their rate).
+    u64 period_frames = 0;
+    u64 period_dropped = 0;
+    auto period_start = std::chrono::steady_clock::now();
     // Change notifications: the platform modules follow settings.json at run time.
     settings.Subscribe(SettingsSection::Presentation, [&](const Settings& s) {
+        const auto now = std::chrono::steady_clock::now();
+        const double secs = std::chrono::duration<double>(now - period_start).count();
+        AC04_LOG_INFO("settings", "previous presentation: %llu frames in %.1f s (%.1f fps), %llu ticks dropped",
+                      static_cast<unsigned long long>(period_frames), secs,
+                      secs > 0.0 ? static_cast<double>(period_frames) / secs : 0.0,
+                      static_cast<unsigned long long>(clock.DroppedTicks() - period_dropped));
+        period_frames = 0;
+        period_dropped = clock.DroppedTicks();
+        period_start = now;
         renderer.ApplySettings(s.presentation);
         window.ApplyMode(s.presentation);
-        pacer.SetCap(s.presentation.frame_cap);
-        AC04_LOG_INFO("settings", "presentation: filter %s, vsync %s, cap %d, %s",
-                      ToString(s.presentation.filter), s.presentation.vsync ? "on" : "off",
-                      s.presentation.frame_cap, ToString(s.presentation.window_mode));
+        pacer.SetCap(EffectiveFrameCap(s.presentation));
+        AC04_LOG_INFO("settings", "presentation: filter %s, vsync %s, cap %d%s, %s, internal scale %d, anti-aliasing %s",
+                      ToString(s.presentation.filter), s.presentation.vsync ? "on" : "off", s.presentation.frame_cap,
+                      s.presentation.vsync ? " (not used)" : "", ToString(s.presentation.window_mode),
+                      s.presentation.internal_scale, ToString(s.presentation.antialiasing));
     });
     settings.Subscribe(SettingsSection::Audio, [&](const Settings& s) { audio.ApplySettings(s.audio); });
     settings.Subscribe(SettingsSection::Input, [&](const Settings& s) { input.ApplySettings(s.input); });
@@ -437,6 +616,36 @@ int Run(int argc, char** argv) {
             AC04_LOG_ERROR("overlay", "debug overlay unavailable: %s", overlay_error.c_str());
     });
     SettingsWatcher watcher(settings, apply_overrides);
+    // What the CONTROLLER SETUP and GRAPHICS pages changed in a tick (port_hooks.h): applied at
+    // once; saved to settings.json on ACCEPT (file values, so session-only overrides are not saved).
+    // The GRAPHICS page hands over every change while it is open (save_graphics only on ACCEPT).
+    const auto apply_menu_requests = [&]() {
+        port::MenuOptions& menu = port::Menu();
+        if (!menu.set_modern_controls && !menu.set_graphics) return;
+        const auto modern = menu.set_modern_controls;
+        const auto graphics = menu.set_graphics;
+        const bool save = modern.has_value() || menu.save_graphics;
+        menu.set_modern_controls.reset();
+        menu.set_graphics.reset();
+        menu.save_graphics = false;
+        const auto change = [&](Settings& s) {
+            if (modern) s.input.modern_controls = *modern;
+            if (graphics) ApplyGraphicsOptions(*graphics, s.presentation);
+        };
+        Settings next = settings.Get();
+        change(next);
+        settings.Replace(next);
+        if (!save) return;
+        SettingsStore saved;
+        std::vector<std::string> ignored;
+        saved.Load(paths.settings_file, ignored);  // a rejected file gives the defaults
+        Settings file = saved.Get();
+        change(file);
+        saved.Replace(file);
+        std::string save_error;
+        if (!saved.Save(&save_error)) AC04_LOG_ERROR("settings", "cannot save settings.json: %s", save_error.c_str());
+        watcher.Remember();
+    };
 
     // Game thread (ADR-002): SDK layer wired to the disc, the pads and the IOP stand-ins, then the
     // crt0 equivalent runs until its first vsync wait.
@@ -460,7 +669,7 @@ int Run(int argc, char** argv) {
     sce::EeRegisters::Get().Install(guest::Mem());
     {
         sce::SceHost& host = sce::Host();
-        host.iso = &disc.Iso();
+        host.iso = &disc->Iso();
         // Movie upscaling side path (ADR-006 §5): only when the stage runs (factor above 1).
         if (cl.options.movie_upscale) renderer.SetMovieUpscaleFactor(static_cast<int>(*cl.options.movie_upscale));
         host.movie_pictures = renderer.MovieUpscaleFactor() > 1;
@@ -567,7 +776,19 @@ int Run(int argc, char** argv) {
             AC04_LOG_INFO("saves", "memory card: %s (%s)", cl.options.memcard_dir.c_str(),
                           !host.memcard->Present() ? "no card" : host.memcard->Formatted() ? "formatted" : "unformatted");
         } else {
+            // The port's own card: when the saves folder holds no card yet (first start), a new,
+            // formatted PCSX2 folder card is created at once (`_pcsx2_superblock`), so the folder
+            // is a valid card for PCSX2 too before the game's first save (PCSX2 treats a folder
+            // without the superblock as unformatted). An existing card is used as it is.
             host.memcard = std::make_unique<memcard::FolderCard>(paths.saves, true);
+            std::error_code ec;
+            if (!std::filesystem::exists(paths.saves / "_pcsx2_superblock", ec)) {
+                if (host.memcard->Format() == 0)
+                    AC04_LOG_INFO("saves", "no memory card in %s: a new one was created (PCSX2 folder card, 8 MB, formatted)",
+                                  PathToUtf8(paths.saves).c_str());
+                else
+                    AC04_LOG_ERROR("saves", "cannot create the memory card in %s", PathToUtf8(paths.saves).c_str());
+            }
         }
     }
     sce::GameRuntime& game = sce::GameRuntime::Get();
@@ -606,6 +827,19 @@ int Run(int argc, char** argv) {
             });
         }
     }
+    {
+        // SCREEN RATIO default (port baseline, User request 2026-10-20): 16:9 when the window's
+        // monitor is wider than 4:3, unless settings say "game". Validation runs (development
+        // builds: a pad script, an input log, a PCSX2 recording, --memcard or --no-memcard) keep the
+        // PS2 default, so their guest RAM stays comparable with PCSX2.
+        const DisplayInfo window_display = QueryDisplay(SDL_GetDisplayForWindow(window.Handle()));
+        const bool by_monitor = settings.Get().presentation.default_screen_ratio == ScreenRatioDefault::Monitor;
+        const bool validation = !g_feed->Live() || !cl.options.memcard_dir.empty() || cl.options.no_memcard;
+        port::Boot().wide_screen_ratio = by_monitor && window_display.Wide() && !validation;
+        AC04_LOG_INFO("startup", "SCREEN RATIO default: %s (%s)", port::Boot().wide_screen_ratio ? "16:9" : "4:3",
+                      !by_monitor ? "settings: game" : validation ? "validation run: PS2 default"
+                                                     : window_display.Wide() ? "monitor wider than 4:3" : "4:3 monitor");
+    }
     game.Start([] { game::Entry(); });
     AC04_LOG_INFO("game", "boot reached the first vsync wait (%zu translated functions registered)",
                   guest::RegisteredGuestFunctionCount());
@@ -623,7 +857,6 @@ int Run(int argc, char** argv) {
     }
     std::mt19937 stress_rng(std::random_device{}());
 
-    sce::TickClock clock;
     auto last_time = std::chrono::steady_clock::now();
     bool game_end_logged = false;
     bool running = true;
@@ -676,7 +909,7 @@ int Run(int argc, char** argv) {
         // speed, because what a frame shows depends on how the ticks were grouped into frames.
         const bool fast = fast_until != 0 && game.VBlankCount() < fast_until;
         const u32 ticks = fast ? 0xFFFFFFFFu : clock.Advance(elapsed);
-        // One tick at a time: the pads are sampled and latched before each tick (s5-plan.md P1).
+        // One tick at a time: the pads are sampled and latched before each tick (slices.md §B P1).
         u32 ticks_run = 0;
         for (u32 t = 0; t < ticks; ++t) {
             if (fast) {
@@ -699,12 +932,21 @@ int Run(int argc, char** argv) {
                 SDL_PumpEvents();
                 input.Update(/*keyboard_captured=*/overlay.WantsKeyboard());
             }
+            {
+                // Port options the menu pages show (port_hooks.h), current before the tick.
+                port::MenuOptions& menu = port::Menu();
+                menu.modern_controls = settings.Get().input.modern_controls;
+                menu.graphics = ToGraphicsOptions(settings.Get().presentation);
+                menu.graphics_defaults = ToGraphicsOptions(DefaultSettings(DefaultsDisplay()).presentation);
+                g_feed->modern = menu.modern_controls;
+            }
             g_feed->Latch(game.VBlankCount() + 1);
             if (!game.RunTicks(1)) {
                 if (!game_end_logged) AC04_LOG_WARN("game", "the game thread has ended");
                 game_end_logged = true;
                 break;
             }
+            apply_menu_requests();
             if (hash_log.IsOpen())
                 hash_log.Write(game.VBlankCount(), guest::Mem().Ram(), guest::kRamSize,
                                guest::Mem().Scratchpad(), guest::kScratchpadSize);
@@ -723,10 +965,27 @@ int Run(int argc, char** argv) {
         // The game is parked: its GS data and the latest movie picture (side path) can be taken.
         renderer.SubmitGsSteps(sce::Dma().gs_steps, sce::Dma().gs_steps_marks, sce::Dma().gs_step_pool);
         renderer.SetDisplay(sce::Dma().dispenv[2], sce::Dma().dispenv[3]);
+        // Vibration as the game last set it (scePadSetActDirect), on the live gamepads only: runs
+        // fed from a script or a recording leave the pads still.
+        for (int port = 0; port < 2; ++port) {
+            const auto& motors = sce::Host().pad_motors[static_cast<size_t>(port)];
+            const bool live = g_feed->Live();
+            input.SetVibration(port, live && motors[0] != 0, live ? motors[1] : 0);
+        }
+        // Display aspect (ADR-006, original behaviour): 16:9 while the game's SCREEN RATIO option is
+        // on (main context flag 0x10000: the game draws an anamorphic picture), otherwise 4:3.
+        {
+            const bool wide = (game::g_MainContext().flags & 0x10000u) != 0;
+            renderer.SetDisplayAspect(wide ? 16 : 4, wide ? 9 : 3);
+        }
         {
             sce::MoviePicture& mp = sce::Dma().movie_picture;
-            if (mp.serial != 0) renderer.SubmitMoviePicture(mp.serial, mp.width, mp.height, mp.rgba);
+            if (mp.serial != 0)
+                renderer.SubmitMoviePicture(mp.serial, mp.guest_addr, mp.guest_bytes, mp.width, mp.height, mp.rgba);
         }
+        // Movie side path (ADR-006 §5) only while the upscaling stage runs (the internal scale can
+        // change at run time through settings.json).
+        sce::Host().movie_pictures = renderer.MovieUpscaleFactor() > 1;
         game.Interpolate(clock.Alpha());
         if (overlay.Active()) {
             const sce::DmaStats& dma = sce::Dma();
@@ -754,16 +1013,14 @@ int Run(int argc, char** argv) {
         }
         if (take_screenshot) {
             take_screenshot = false;
-            std::vector<uint8_t> rgba;
-            int w = 0, h = 0;
-            if (renderer.CaptureNative(rgba, w, h)) {
-                const auto dir = paths.user_data / "screenshots";
+            const auto dir = paths.user_data / "screenshots";
+            char name[64];
+            std::snprintf(name, sizeof(name), "%06llu", static_cast<unsigned long long>(game.VBlankCount()));
+            if (WriteNativeScreenshot(renderer, dir, std::string("native_") + name,
+                                      "internal_x" + std::to_string(renderer.NativeScale()) + "_" + name)) {
                 std::error_code ec;
-                std::filesystem::create_directories(dir, ec);
-                char name[64];
-                std::snprintf(name, sizeof(name), "native_%06llu.png", static_cast<unsigned long long>(game.VBlankCount()));
-                if (!WritePng(dir / name, rgba.data(), w, h))
-                    AC04_LOG_ERROR("renderer", "cannot write the screenshot %s", name);
+                std::vector<uint8_t> rgba;
+                int w = 0, h = 0;
                 // --dump-vram: the GS local memory as well (research only, contains game data).
                 if (cl.options.dump_vram) {
                     std::filesystem::create_directories(paths.user_data / "dumps", ec);
@@ -783,10 +1040,15 @@ int Run(int argc, char** argv) {
             }
         }
         if (!renderer.DrawFrame()) {
-            ShowErrorBox(kAppTitle, "The graphics device stopped working. See the session log:\n" +
-                                        PathToUtf8(log::FilePath()), &window);
+            MessageText m;
+            m.headline = "The graphics device stopped working";
+            m.explanation = "The GPU stopped responding while the game was running.";
+            m.steps = {"Restart the port.", "If it happens again, update the graphics driver and keep the session log."};
+            m.details = {{"Session log", PathToUtf8(log::FilePath())}};
+            ShowErrorBox(std::string(kAppTitle) + " - Error", m, &window);
             break;
         }
+        ++period_frames;
         if (!fast) pacer.WaitNextFrame();
         // --stress-host: random main-thread delays, so catch-up batches vary (determinism check).
         if (cl.options.stress_host)
@@ -802,6 +1064,7 @@ int Run(int argc, char** argv) {
             SettingsStore saved;
             std::vector<std::string> ignored;
             saved.Load(paths.settings_file, ignored);  // file values, without session overrides
+                                                       // (a rejected file gives the defaults)
             Settings s = saved.Get();
             s.presentation.window_width = w;
             s.presentation.window_height = h;

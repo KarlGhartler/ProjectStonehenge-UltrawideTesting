@@ -10,7 +10,7 @@ std::filesystem::path DefaultUserDataDir() {
     PWSTR local = nullptr;
     std::filesystem::path result;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &local))) {
-        result = std::filesystem::path(local) / L"AC04Port";
+        result = std::filesystem::path(local) / L"ProjectStonehenge";
     }
     CoTaskMemFree(local);
     return result;

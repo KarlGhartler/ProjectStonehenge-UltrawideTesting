@@ -3,7 +3,7 @@
 // V3-16 / V4-8, MPG of program S), and a C++ rewrite of the nine entries of program S, pair by
 // pair. Arithmetic is VU micro mode (vu0::micro, chop) inside a ChopScope; the results reach guest
 // RAM (the skinned vertex buffers), so they are checked against the PCSX2 vectors
-// (docs/pcsx2/sessions-05.md).
+// (docs/pcsx2/sessions.md run 05).
 #ifdef _MSC_VER
 #pragma fenv_access(on)
 #endif
@@ -317,7 +317,7 @@ void Environment(State& s, int entry) {
 u32 DmaAddress(u32 a) { return (a & 0x80000000u) != 0 ? 0x70000000u | (a & 0x3FF0u) : a & 0x01FFFFF0u; }
 
 // VIF0 code interpreter over a word stream: NOP, MPG (program S only), UNPACK V3-16 / V4-8 with
-// CL == WL (VIF0 CYCLE is 0x404 in the reference state, docs/pcsx2/sessions-05.md).
+// CL == WL (VIF0 CYCLE is 0x404 in the reference state, docs/pcsx2/sessions.md run 05).
 class Vif0 {
 public:
     void Feed(const u32* words, u32 n, u32 guest_src) {

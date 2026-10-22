@@ -2049,7 +2049,7 @@ address,name,subsystem,status,note
 0x00223E70,FUN_00223e70,sequence,dead,vertex morph from the motion data (0x00223F58); called only by the dead 0x00223D08
 0x00223F58,FUN_00223f58,sequence,dead,vertex morph blend of two key frames; called only by the dead 0x00223E70
 0x00224180,FUN_00224180,sequence,understood,"skin a part of type 0 (part +0x140 == 0, set from the character data; called by FUN_002236A0) on VU0 micro: lighting setup (0x00225048), then in batches of up to 128 vertices DMAs positions and normals into scratchpad 0x70002200/0x70002230 (0x00223CE8, wait 0x00223CC0), loads bone matrices (0x00225088) and runs the micro entries 0x002250E8 / 0x00225178 (and 0x00225210 for parts with normals)"
-0x00224410,FUN_00224410,sequence,understood,"skin a part of type 1 (part +0x140 == 1; called by FUN_002236A0) on VU0 micro, entries 0x00225110/0x002251A8/0x00225240 (PCSX2 hit, sessions-05.md): clears the scratchpad header, sets the light (colour 255, direction 0x00410024..0x0041002C, ambient 0x00410D74/0x00410D78) with 0x00225048, then per vertex batch (up to 64) DMAs the positions and normals into scratchpad and runs the micro program with the bone matrices; the output vertices go to the part's draw list"
+0x00224410,FUN_00224410,sequence,understood,"skin a part of type 1 (part +0x140 == 1; called by FUN_002236A0) on VU0 micro, entries 0x00225110/0x002251A8/0x00225240 (PCSX2 hit, sessions.md run 05): clears the scratchpad header, sets the light (colour 255, direction 0x00410024..0x0041002C, ambient 0x00410D74/0x00410D78) with 0x00225048, then per vertex batch (up to 64) DMAs the positions and normals into scratchpad and runs the micro program with the bone matrices; the output vertices go to the part's draw list"
 0x00224848,FUN_00224848,sequence,understood,"skin a part of type 3 (morph track active, set by FUN_00223F58, reset to 1 by FUN_00223E20) on VU0 micro, entries 0x00225140/0x002251D8/0x00225270: as 0x00224410 with light constants 0x00410030..0x00410038, but blends two vertex sets (+0x118/+0x11C and +0x120/+0x124) with weights (1 - t, t), t = track weight +0x138; 1 - t is computed in double precision through libgcc (__extendsfdf2, __subdf3, __truncdfsf2)"
 0x00224D50,FUN_00224d50,sequence,understood,"transform and send the skinned vertices (VU0 micro, scratchpad DMA, GIF): skin a type-2 (rigid, single bone) character part on VU0 micro: light constants 0x0041003C..0x00410044, positions only (+0x110), batches of up to 64 vertices with the bone matrix; output to the part draw list"
 0x00225048,FUN_00225048,sequence,understood,"load the VU0 registers for a skinning batch: matrix (4 qw), light and colour vectors, counts"
@@ -2868,7 +2868,7 @@ address,name,subsystem,status,note
 0x00260900,DrawCardMessages,startup,understood,draw the startup message window
 0x00260980,StartupSplashUpdate,startup,understood,"StartupSplashUpdate: splash images with fades; exits to the no-save intro (scene 2, mission 0x23; played when card slot 1 has no AC04 save directory) or the title menu"
 0x00260B90,DrawSplashImage,startup,understood,draw one splash sprite with fade
-0x00260E80,InitStartupScene,startup,understood,"scene 6 sub 0: display setup, work state, message window, double buffer (scenes.md)"
+0x00260E80,InitStartupScene,startup,understood,"scene 6 sub 0: display setup, work state, message window, double buffer (boot.md)"
 0x00260FC0,LoadStartupData,startup,understood,scene 6 sub 1: load DATA 333
 0x00260FE8,SetupStartupData,startup,understood,"scene 6 sub 2: split DATA 333 (splash textures, message window)"
 0x00261100,InitStartupCamera,startup,understood,scene 6 sub 3: camera init
@@ -2878,7 +2878,7 @@ address,name,subsystem,status,note
 0x00261378,RunStartupCardMessages,startup,understood,"scene 6 sub 7: evaluate card/HDD result, messages, confirm/cancel"
 0x00261398,StartStartupSplash,startup,understood,"scene 6 sub 8: start splash fade, sound bank load request (0x0025FEF8)"
 0x002613D0,RunStartupSplash,startup,understood,scene 6 sub 9: splash update + draw
-0x002613F0,SceneStartup,startup,understood,"SceneStartup: sub-state table 0x003F8708 (10 entries), see scenes.md"
+0x002613F0,SceneStartup,startup,understood,"SceneStartup: sub-state table 0x003F8708 (10 entries), see boot.md"
 0x00261428,FUN_00261428,hdd,understood,"scene 7 sub 0: stop audio, copy the message window resources embedded in the executable (0x003F8730, 0x2360 bytes; the disc may be unreadable), message window init, -> sub 1"
 0x00261530,FUN_00261530,hdd,understood,scene 7 sub 1: first frame display setup (640x224); then draw the window; pad 0x10 returns to the saved scene (scene 4 re-enters menu 1)
 0x00261680,SceneHddError,hdd,understood,SceneHddError (scene 7): dispatch table 0x00411720 (2 subs)

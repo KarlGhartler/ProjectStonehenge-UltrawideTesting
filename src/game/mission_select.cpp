@@ -1,4 +1,4 @@
-// Mission select (scene 4 subs 0x42-0x49; docs/port/s4-inventory.md §4): free mission, extra
+// Mission select (scene 4 subs 0x42-0x49; docs/port/slices.md §A.4): free mission, extra
 // missions and VS mission lists with their records, and the settings menu (aircraft, save/load,
 // VS weather) before a free mission.
 //
@@ -32,12 +32,7 @@ AC04_GUEST_VAR(u32, g_pMenuFade, 0x00410E88)
 
 constexpr u32 kLastIndex = 0x00411198;  // u16 per kind: the last mission index chosen
 
-f32 K(u32 address) { return GRef<f32>(address); }
 s32& State(u32 p) { return GRef<s32>(p + 0x734); }
-
-void CopyQword(u32 dst, u32 src) {
-    for (u32 i = 0; i < 16; i += 4) GRef<u32>(dst + i) = GRef<u32>(src + i);
-}
 
 u32 GameState() { return GRef<u32>(0x004104A4); }
 

@@ -40,7 +40,7 @@ Measured (walker):
 | SS01–SS12 | 18–75 | 640×336 (letterboxed), 30 fps | in every chunk |
 | STAFF | 131 | 640×448, 29.97 fps | 50 MB |
 
-Audio rate: SS01 has 26.7 MB of audio for 4170 pictures (139.0 s at 30 fps), i.e. ≈ 192,000 B/s = **48 kHz, 16-bit, stereo PCM**. The audio does not decode as SPU ADPCM (84 % of 16-byte blocks are invalid ADPCM). Playback path (`../subsystems/iop-sound.md`): the blocks are streamed by SOUND.IRX with `sceSdBlockTrans` into the SPU2 core-0 sound-data input, which takes **left and right in alternating 0x200-byte blocks** (256 samples each). Checked on the data (S3): read that way, SS01 chunk 0 is twice as smooth (mean |s[i+1] − s[i]| / mean |s| = 0.06) as read as plain L/R-interleaved samples (0.12). **Confirmed** against the PCSX2 capture of the S3 batch: the port mixing it this way correlates 0.97-0.995 per channel with PCSX2, with no drift (`../port/validation.md` S3-5).
+Audio rate: SS01 has 26.7 MB of audio for 4170 pictures (139.0 s at 30 fps), i.e. ≈ 192,000 B/s = **48 kHz, 16-bit, stereo PCM**. The audio does not decode as SPU ADPCM (84 % of 16-byte blocks are invalid ADPCM). Playback path (`../subsystems/sound.md`): the blocks are streamed by SOUND.IRX with `sceSdBlockTrans` into the SPU2 core-0 sound-data input, which takes **left and right in alternating 0x200-byte blocks** (256 samples each). Checked on the data (S3): read that way, SS01 chunk 0 is twice as smooth (mean |s[i+1] − s[i]| / mean |s| = 0.06) as read as plain L/R-interleaved samples (0.12). **Confirmed** against the PCSX2 capture of the S3 batch: the port mixing it this way correlates 0.97-0.995 per channel with PCSX2, with no drift (`../port/validation.md` S3-5).
 
 Each chunk's video is a **complete MPEG-2 sequence**: it starts with a sequence header and ends with a sequence end code (00 00 01 B7); SS01 chunk 0 holds 60 pictures in 4 GOPs. The decoder is reset per chunk (below).
 
@@ -90,4 +90,4 @@ All disc reads go through **queue 0** of the CD request system (`../game/file-lo
 
 - Demux: walk the chunks; concatenate `chunk[0x10 : 0x10 + video_bytes]` for the video ES and `chunk[audio_off : audio_off + audio_bytes]` for the audio.
 - MIS briefing videos have no audio track of their own. Their sound comes from the VPK stream track given in the movie table.
-- Audio path: SOUND.IRX block transfer into the SPU2 core-0 input (`../subsystems/iop-sound.md`): the port mixes the ring from IOP RAM at 48 kHz with the 0x200-byte L/R blocks (confirmed against the PCSX2 capture, `../port/validation.md` S3-5). The reply's transfer status word gives the half being played (confirmed, S3-3).
+- Audio path: SOUND.IRX block transfer into the SPU2 core-0 input (`../subsystems/sound.md`): the port mixes the ring from IOP RAM at 48 kHz with the 0x200-byte L/R blocks (confirmed against the PCSX2 capture, `../port/validation.md` S3-5). The reply's transfer status word gives the half being played (confirmed, S3-3).

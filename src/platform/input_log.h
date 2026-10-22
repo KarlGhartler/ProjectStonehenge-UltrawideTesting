@@ -1,4 +1,4 @@
-// Per-tick input stream (docs/port/s5-plan.md P1): the pad states each game tick read. It is the
+// Per-tick input stream (docs/port/slices.md §B P1): the pad states each game tick read. It is the
 // whole external input of a run, so feeding it back reproduces the run (determinism checks, and
 // later lockstep LAN play, ADR-008). File format (little-endian): "AC4I", u32 version 1, then one
 // record per tick: u64 vblank, two pads of {u8 connected, u16 buttons, u8 rx ry lx ly,
@@ -42,5 +42,9 @@ private:
 
 // The pads with live devices ignored: port 0 connected and neutral, port 1 not connected.
 void NeutralPads(PadState out[2]);
+
+// Modern control types (port baseline, User approval 2026-10-20): L1 <-> L2 and R1 <-> R2,
+// digital bits and pressures, so the game reads the Classic layout it was set to.
+void SwapShoulderButtons(PadState& pad);
 
 }  // namespace ac04::platform

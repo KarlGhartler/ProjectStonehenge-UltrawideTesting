@@ -964,7 +964,10 @@ void UpdatePlayerTrails(s32 p) {
         ZeroQ(sum_p);
         ZeroQ(sum_d);
         for (s32 e = 0; e < engines; ++e) {
-            const u32 m = sp + 0x70;  // node matrix (sp+0x140)
+            // Node matrix (sp+0x140 in the original layout). It must not overlap `one` (sp + 0xA0):
+            // the port's earlier sp + 0x70 put its translation row on `one`, which doubled the nozzle
+            // offset and drew the engine flames away from the nozzles.
+            const u32 m = sp + 0xD0;
             StoreVf0(one);
             func_00149EC8(m, p, e + 0x42, P);
             sceVu0ApplyMatrix(a, m, one);

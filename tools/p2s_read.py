@@ -31,7 +31,7 @@ SPR = 'Scratchpad.bin'
 INTERNAL = 'PCSX2 Internal Structures.dat'
 # Offset of VU0's VURegs (VF[32] 16 bytes each, then VI[] 16 bytes each) inside
 # INTERNAL for PCSX2 2.8.2. Found by matching the debugger's VU0f/VU0i tabs
-# against vu0_00225110_before.p2s (docs/pcsx2/sessions-05.md). Version-specific.
+# against vu0_00225110_before.p2s (docs/pcsx2/sessions.md run 05). Version-specific.
 VU0_REGS_OFF_282 = 0x36FE
 
 

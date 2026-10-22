@@ -26,7 +26,6 @@ namespace {
 AC04_GUEST_VAR(u32, g_HddInstallPage, 0x0041184C)  // gp-0x41A4
 AC04_GUEST_VAR(u32, g_pMenuFade, 0x00410E88)
 
-f32 K(u32 address) { return GRef<f32>(address); }
 s32& State(u32 obj) { return GRef<s32>(obj + 0x66C); }
 bool BoxDone(u32 obj) { return (GRef<u32>(obj + 0x648) & 2) != 0; }
 

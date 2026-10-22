@@ -1,6 +1,7 @@
 // Renderer front end for the skeleton (ADR-003, ADR-006).
-// - A native render target (512x448 x internal scale, scale fixed at 1) that the GS renderer will
-//   draw into; for now it holds a test pattern.
+// - A native render target (the presented draw buffer, 512x448 or 640x448, x internal scale) that
+//   the GS renderer's presented image is copied into; until the first frame a test pattern
+//   (development builds) or black (release builds).
 // - The output pass scales it into the window at the display aspect with the selected filter.
 // - An overlay hook draws after the output pass (debug overlay, milestone D).
 #pragma once
@@ -54,6 +55,13 @@ public:
     // Off: submitted steps update GS registers and local memory but produce no draws (--fast-until:
     // steps that are never shown).
     void SetGsDrawsEnabled(bool on) { gs_state_.SetDrawsEnabled(on); }
+    // Where GS textures are decoded (docs/port/renderer.md §2): on the GPU (default), on the CPU
+    // (--cpu-texture-decode), or both with the results compared (--verify-texture-decode). Set
+    // before the first SubmitGsSteps.
+    void SetTextureDecode(gs::TextureDecode mode) {
+        gs_state_.SetTextureDecode(mode);
+        gs_backend_.SetVerifyDecode(mode == gs::TextureDecode::kBoth);
+    }
     // GS local memory (4 MiB, gs_memory.h layout) for development dumps (--dump-vram).
     const std::uint8_t* GsLocalMemory() const { return gs_state_.Memory().Data(); }
     // Loads a 4 MiB GS memory image (--play-gsdump).
@@ -66,21 +74,38 @@ public:
     // decoder side path is not needed). Development builds can set it for the stage alone
     // (--movie-upscale), with the GS still drawn at 1x, to inspect the stage output.
     int MovieUpscaleFactor() const { return movie_factor_; }
-    void SetMovieUpscaleFactor(int factor) { movie_factor_ = factor < 1 ? 1 : factor; }
-    // A new decoded picture from the side path (row-major RGBA8; `rgba` is taken). Upscaled once,
-    // with the next frame, when the factor is above 1.
-    void SubmitMoviePicture(uint64_t serial, int width, int height, std::vector<uint8_t>& rgba);
+    void SetMovieUpscaleFactor(int factor) {
+        movie_factor_ = factor < 1 ? 1 : factor;
+        movie_factor_forced_ = true;
+    }
+    // A new decoded picture from the side path (row-major RGBA8; `rgba` is taken) with the game's
+    // image buffer it was written to (guest address and size). Upscaled once, with the next frame,
+    // when the factor is above 1; at internal scale > 1 the GS draws of that buffer sample it.
+    void SubmitMoviePicture(uint64_t serial, uint32_t guest_addr, uint32_t guest_bytes, int width, int height,
+                            std::vector<uint8_t>& rgba);
     // Reads back the last upscaled picture (RGBA8). False when there is none. Waits idle.
     bool CaptureMovieUpscaled(std::vector<uint8_t>& rgba, int& width, int& height);
-    // Native (pre-output-pass) image size: the draw buffer size the game uses.
+    // Native (pre-output-pass) image size in host pixels: the draw buffer size the game uses x the
+    // internal scale.
     int NativeWidth() const { return native_width_; }
+    // Internal scale of the native image (NativeWidth() = presented draw buffer width x this).
+    int NativeScale() const { return native_scale_; }
     int NativeHeight() const { return native_height_; }
     VkImage NativeImage() const { return native_image_; }
     // Reads back the native image (RGBA8, rows top to bottom) for the native screenshot. Waits idle.
     bool CaptureNative(std::vector<uint8_t>& rgba, int& width, int& height);
 
     // Display aspect of the game image (4:3, or 16:9 when the game's SCREEN RATIO flag is set).
-    void SetDisplayAspect(int w, int h) { aspect_w_ = w; aspect_h_ = h; }
+    void SetDisplayAspect(int w, int h);
+
+    // CPU cost of the renderer (debug overlay; averages logged at shutdown): GS processing of the
+    // submitted steps since the last frame, recording of the frame, and the texture work.
+    struct Stats {
+        double gs_ms = 0.0;      // SubmitGsSteps since the previous DrawFrame
+        double record_ms = 0.0;  // GsBackend::Record of the last frame
+        gs::GsBackend::TextureStats textures;
+    };
+    const Stats& LastStats() const { return last_stats_; }
 
 private:
     static constexpr int kFramesInFlight = 2;
@@ -113,7 +138,8 @@ private:
     VkImage native_image_ = VK_NULL_HANDLE;
     VmaAllocation native_alloc_ = nullptr;
     VkImageView native_view_ = VK_NULL_HANDLE;
-    int native_width_ = 0, native_height_ = 0;
+    int native_width_ = 0, native_height_ = 0;  // host pixels (native size x native_scale_)
+    int native_scale_ = 1;
 
     VkCommandPool command_pool_ = VK_NULL_HANDLE;
     VkCommandBuffer command_buffers_[kFramesInFlight]{};
@@ -123,11 +149,19 @@ private:
     int frame_ = 0;
 
     OverlayHook overlay_hook_;
+    Stats last_stats_;
+    double pending_gs_ms_ = 0.0;
+    // Session sums for the shutdown summary (frames with GS draws only).
+    std::uint64_t stat_frames_ = 0;
+    double stat_gs_ms_ = 0.0, stat_record_ms_ = 0.0;
+    std::uint64_t stat_upload_bytes_ = 0, stat_uploads_ = 0, stat_decodes_ = 0, stat_memory_updates_ = 0,
+                  stat_textures_ = 0;
 
     gs::GsState gs_state_;
     gs::GsBackend gs_backend_;
     bool gs_ready_ = false;
     std::vector<gs::DrawCommand> gs_pending_;
+    std::vector<gs::TextureOp> gs_ops_;  // texture work of the pending draws (all of it reaches Record, in order)
     int native_request_w_ = 0, native_request_h_ = 0;
     float present_scale_[3] = {1.0f, 1.0f, 1.0f};  // field-copy colour scale (brightness option)
 
@@ -136,7 +170,9 @@ private:
     bool movie_upscaler_ready_ = false;
     int movie_factor_ = 1;
     uint64_t movie_serial_ = 0, movie_done_serial_ = 0;
+    uint32_t movie_guest_addr_ = 0, movie_guest_bytes_ = 0;
     int movie_width_ = 0, movie_height_ = 0;
+    bool movie_factor_forced_ = false;  // --movie-upscale
     std::vector<uint8_t> movie_rgba_;
 };
 

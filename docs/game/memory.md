@@ -14,14 +14,16 @@ How game code uses memory and pointers, and what that means for a 64-bit port. C
 
 ## Allocation
 
-- **Work heap.** `InitWorkHeap` 0x00100F48 takes one `malloc` block (size probed by `ProbeLargestMallocSize` 0x00100EC8). `WorkHeapAlloc(size, align)` 0x00101000 is a bump allocator over it: it rounds the offset up to `align`, returns base + offset, and returns 0 when the block is exhausted (83 callers). Globals: base 0x00411788, size 0x00411784, offset 0x0041178C, mark 0x00411790. `func_00101060(n)` = `WorkHeapAlloc(n·16, 0x10)`. There is no `new`/`delete` and no per-object free (`../platform/toolchain.md`).
+- **Work heap.** `InitWorkHeap` 0x00100F48 takes one `malloc` block (size probed by `ProbeLargestMallocSize` 0x00100EC8). `WorkHeapAlloc(size, align)` 0x00101000 is a bump allocator over it: it rounds the offset up to `align`, returns base + offset, and returns 0 when the block is exhausted (83 callers). Globals: base 0x00411788, size 0x00411784, offset 0x0041178C, mark 0x00411790. `func_00101060(n)` = `WorkHeapAlloc(n·16, 0x10)`. There is no `new`/`delete` and no per-object free (`../platform/executable.md`).
 - **Scene lifetime.** `SetWorkHeapMark` 0x001010A8 stores the current offset once in `main`. `SceneStep` calls `ResetWorkHeapToMark` 0x001010F0 on every graphics reset request (`req & 4`), which `RequestScene` always sets. **Everything allocated after boot is freed on each scene change.** Both helpers also clear the 4 words at 0x00412198–0x004121A4.
 - Sub-scene rewinds also exist: the flight scene stores a mark at flight object +0x1664 for retries (`../subsystems/mission-flow.md`).
-- **Packet double buffer.** `ctx->dbuf` / `ctx->cur_buf` (`main-context.md`) is a second allocator: draw code bumps `cur_buf`. 61 functions read or write `cur_buf` directly, and about 233 go through the packet helpers (`../subsystems/rendering.md`).
+- **Packet double buffer.** `ctx->dbuf` / `ctx->cur_buf` (`boot.md`) is a second allocator: draw code bumps `cur_buf`. 61 functions read or write `cur_buf` directly, and about 233 go through the packet helpers (`../subsystems/rendering.md`).
 - DATA.CDP entries are loaded into work-heap buffers (`AllocAndLoadDataEntry` 0x00102668; `GetDataEntryAllocSize` rounds up to whole sectors).
 - Some sizes depend on the free heap: the replay ring takes the remaining heap (`../subsystems/mission-flow.md`), and the records page allocates `((frame_count & 0xF) + 1) · 0x10` bytes (`../subsystems/frontend.md`).
 
 Port consequence: lifetimes are scene-scoped, and the heap offsets must match the PS2 exactly where sizes depend on the free space. A port can keep the same arena model with 64-bit pointers; the arena itself does not need 32-bit addresses.
+
+- **Stack and the port-owned area.** The guest stack is the top 1 MiB of RAM, starting at sp 0x01FFED60 (`src/common/guest_stack.h`); the game never touches RAM above that. The port keeps the strings and tables of its menu additions in 0x01FFF800–0x01FFFFFF (`src/game/port_menu.h`, `../port/port-features.md` §5), written only while those pages are open.
 
 ## Pointers stored in structs and tables
 

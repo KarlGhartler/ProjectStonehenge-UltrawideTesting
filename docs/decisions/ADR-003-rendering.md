@@ -1,6 +1,6 @@
 # ADR-003: Rendering architecture
 
-Status: **Accepted** (owner decision, 2026-10-11): **Option C, own Vulkan renderer for the AC04 GS subset.** Addendum decided 2026-10-11: VU0 micro-mode skinning is a C++ rewrite of the 9 entry points, checked against PCSX2 test vectors (later phase). The renderer has an internal scale factor from day one, fixed at 1× (`../port/internal-resolution.md`).
+Status: **Accepted** (User decision, 2026-10-11): **Option C, own Vulkan renderer for the AC04 GS subset.** Addendum decided 2026-10-11: VU0 micro-mode skinning is a C++ rewrite of the 9 entry points, checked against PCSX2 test vectors (later phase). The renderer has an internal scale factor from day one, fixed at 1× (`../port/renderer.md` §1).
 
 ## Context
 
@@ -44,7 +44,7 @@ Embed PCSX2's GS (GIF/GS state, texture cache, Vulkan hardware renderer) and fee
 | Quality | Proven accuracy across thousands of games, including texture cache and render-target edge cases |
 | Scope | Far larger than AC04 needs (all GS features, all games' hacks and CRC fixes) |
 
-### C. Own lightweight Vulkan renderer for the AC04 GS subset, at the packet level (owner's proposal)
+### C. Own lightweight Vulkan renderer for the AC04 GS subset, at the packet level (User's proposal)
 Game code is unchanged; it builds the same packets in guest memory. At the DMA kick, our renderer walks the chains (DMA tags → VIF1 → VU1 HLE → GIF) and draws with Vulkan, implementing **only the GS features AC04 uses** (`../platform/gs-subset.md`, completed by GS dumps for the VU1 path).
 
 Effort estimate per feature (one experienced developer, working days, rough):
@@ -107,7 +107,7 @@ Input: eight PCSX2 GS dumps of whole frames, including the 3D path (`../platform
 - `src/platform/render/`: DMA walker, VIF1, VU1 HLE, GIF, GS state, Vulkan backend, GS-dump replay tool.
 - `tools/`: a research parser for `.gs` dump files (to list the registers, values and primitives actually used).
 - Output scaling to the screen is a baseline feature (ADR-006). Widescreen stays in the modding layer; MSAA is "later" (`port-baseline.md`).
-- The renderer carries an **internal scale factor from the start**, fixed at 1× until each draw path is validated at higher values (`../port/internal-resolution.md`, a proposal; higher internal resolution is not approved yet).
+- The renderer carries an **internal scale factor from the start**, fixed at 1× until each draw path is validated at higher values (`../port/renderer.md` §1, a proposal; higher internal resolution is not approved yet). Implementation note (2026-10-19): approved as a baseline feature and implemented for factors 1–8 (`../port/renderer.md` §1.7, `../port/validation.md` §2k).
 
 ## Research findings
 

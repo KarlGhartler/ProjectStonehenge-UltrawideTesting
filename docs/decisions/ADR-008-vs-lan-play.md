@@ -1,6 +1,6 @@
 # ADR-008: LAN play for VS mode
 
-Status: **Accepted: option A** (owner decision 2026-10-13, after the analysis of the same day). Lockstep input sharing, category 3 (optional layer), built after the VS slice S6 and after the gameplay slices have passed input-recording validation (`../port/slices.md`, slice S9). No networking code and no dependency has been added yet; a networking dependency, if one turns out to be needed, still needs the owner's approval.
+Status: **Accepted: option A** (User decision 2026-10-13, after the analysis of the same day). Lockstep input sharing, category 3 (optional layer), built after the VS slice S6 and after the gameplay slices have passed input-recording validation (`../port/slices.md`, slice S9). No networking code and no dependency has been added yet; a networking dependency, if one turns out to be needed, still needs the User's approval.
 
 ## Context
 
@@ -16,9 +16,9 @@ Both PCs run the full game from boot. Each step, each PC sends its local pad byt
 
 - **Outside game code:** a netplay layer in `src/platform/` between the input backend and `scePadRead` (input queue per port, step gate in the game-thread loop of ADR-002), session setup (discovery, handshake), desync detection, UI messages outside game rendering. The presentation decoupling of ADR-002 keeps rendering smooth while the game thread waits.
 - **Inside game code:** none. The game already reads two pads.
-- **Rollback:** not needed on a LAN. RTT on wired Ethernet is < 1 ms and on Wi-Fi typically 2–10 ms, i.e. < 1 step (16.7 ms). A fixed input delay of **D = 1–2 steps** (17–33 ms) hides it. Rollback would need a per-step snapshot of guest RAM (32 MB + scratchpad) **and** all service state (CD queue, SOUND/VAG stand-ins, pads, timers) plus re-simulation of several steps in one frame; that is the save-state feature of `../port/debug-overlay.md` §4.3 (effort L) and is only worth it over the internet.
+- **Rollback:** not needed on a LAN. RTT on wired Ethernet is < 1 ms and on Wi-Fi typically 2–10 ms, i.e. < 1 step (16.7 ms). A fixed input delay of **D = 1–2 steps** (17–33 ms) hides it. Rollback would need a per-step snapshot of guest RAM (32 MB + scratchpad) **and** all service state (CD queue, SOUND/VAG stand-ins, pads, timers) plus re-simulation of several steps in one frame; that is the save-state feature of `../port/port-features.md` §8.4.3 (effort L) and is only worth it over the internet.
 - **Determinism requirements** (everything that feeds the simulation must be bit-identical on both PCs):
-  - identical disc image (SHA-1 already verified at startup, `../platform/supported-version.md`), identical port build (build hash exchanged in the handshake);
+  - identical disc image (SHA-1 already verified at startup, `../platform/executable.md`), identical port build (build hash exchanged in the handshake);
   - identical starting state: both PCs boot from power-on in lockstep, and the **host's memory card image** is sent to the client and used for the session (VS offers the aircraft owned in the save; options such as SCREEN RATIO and vibration are save data too). The client's own card is not touched;
   - EE float arithmetic only through `src/common/ee_math.h`; no FMA contraction (MSVC `/fp:precise` without `/fp:contract`; GCC/Clang `-ffp-contract=off` when Linux comes); `/arch` level fixed in the build (no runtime dispatch in game math); libm functions translated (`sinf`/`cosf` bit-exact, `../port/coverage.md`);
   - the five random sources in guest memory, read in the original order (`../game/random.md`); the draw-list build runs exactly once per step on both PCs (ADR-002), since it consumes `rand`;
@@ -26,14 +26,14 @@ Both PCs run the full game from boot. Each step, each PC sends its local pad byt
   - frame pacing: irrelevant to the result (the step gate decides when a step runs); a slower PC slows both.
   - Settings never reach game code (ADR-006), so host settings differences (filter, frame cap, bindings) are safe.
 - **Desync detection:** the determinism checker's per-step hash (`../port/validation-strategy.md` §3.4) of the game RAM regions, exchanged every step (8 bytes) or every N steps. On mismatch: stop the session, write both hash streams and the step number to the log, show a message. Optional debug: dump RAM on both sides at the first bad step for `ramdiff.py`.
-- **Own view full screen:** the game always draws both halves. The only lockstep-safe way to show one player's view alone is a **presentation crop**: the output pass shows only the local player's 256×448 half, scaled to the window with its own aspect (2:3 at 4:3 settings, 8:9 with SCREEN RATIO). Forcing a single full-width view in game terms changes `game[0x26]`/the view count, which changes the draw-list build and its `rand` reads → desync. A crop at native resolution is soft (256 pixels wide); a higher internal resolution (`../port/internal-resolution.md`) would help. The original split (both halves) stays the default.
+- **Own view full screen:** the game always draws both halves. The only lockstep-safe way to show one player's view alone is a **presentation crop**: the output pass shows only the local player's 256×448 half, scaled to the window with its own aspect (2:3 at 4:3 settings, 8:9 with SCREEN RATIO). Forcing a single full-width view in game terms changes `game[0x26]`/the view count, which changes the draw-list build and its `rand` reads → desync. A crop at native resolution is soft (256 pixels wide); a higher internal resolution (`../port/renderer.md` §1) would help. The original split (both halves) stays the default.
 - **Latency:** D steps of input delay (17–33 ms), plus the normal presentation latency. Both players get the same delay.
 - **Network:** LAN only: UDP, one port, host/join by IP or by LAN discovery (UDP broadcast on the subnet). No NAT traversal. Windows Defender Firewall asks once to allow the executable (inbound UDP); document it. Packet loss handled by resending the last D+few inputs in every packet (redundancy), no separate reliability layer needed.
 - **Dependencies:** none required. Options:
   - plain BSD/Winsock UDP sockets in `src/platform/` (Winsock on Windows, POSIX sockets on Linux later; about 300–500 lines);
   - ENet (MIT): reliable/unreliable UDP channels, small, cross-platform;
   - SDL3_net (zlib): thin socket wrapper of the SDL family.
-  Recommendation within A: plain sockets (the protocol is tiny), ENet if reliability for the handshake/card transfer becomes tedious. Either needs the owner's approval as usual.
+  Recommendation within A: plain sockets (the protocol is tiny), ENet if reliability for the handshake/card transfer becomes tedious. Either needs the User's approval as usual.
 - **Effort:** M–L. Netplay layer and step gate ~1 week; session setup, card transfer, handshake, UI ~1 week; desync tooling reuses the determinism checker. Most of the risk is in determinism, which the validation strategy needs anyway.
 - **Risks:** a determinism gap in a rarely used path (double-precision soft-float, `cfc2` flag reads, an uninitialised stack read such as `validation.md` E-1 `stack-garbage`) shows up as a desync mid-match; mitigated by the per-step hash and by the input-recording validation of the mission slices. A PC that cannot hold 59.94 Hz slows both players.
 
@@ -75,4 +75,4 @@ LAN play is **not original behaviour** and **not intrinsic to a PC port** (categ
 - Timing: after the VS slice (`../port/slices.md` S5) and after the gameplay sub-slices have passed input-recording validation, because those prove determinism first.
 - B and C are not recommended: more work, dependencies or bandwidth, and worse latency for the client, with no benefit on a LAN.
 
-**Decision (owner, 2026-10-13): option A**, as recommended above: lockstep, fixed 1–2 step delay, no rollback, host's memory card image for the session, per-step RAM hash, optional crop to the local player's half; optional layer (category 3), off by default.
+**Decision (User, 2026-10-13): option A**, as recommended above: lockstep, fixed 1–2 step delay, no rollback, host's memory card image for the session, per-step RAM hash, optional crop to the local player's half; optional layer (category 3), off by default.

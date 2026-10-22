@@ -1,11 +1,15 @@
 // Port settings (ADR-005 §4, ADR-006 "Settings architecture").
-// - One struct with defaults; settings.json load/save; change notification per section, so a
-//   settings menu or the debug overlay can change values at run time later.
-// - Missing or invalid values fall back to the default and produce a warning. Unknown keys are
-//   kept when the file is saved again.
-// - Game code never reads settings.
+// - One struct with defaults; settings.json load/save; change notification per section, so the
+//   GRAPHICS page or the debug overlay can change values at run time.
+// - Missing keys take their default. A file that cannot be read, is not valid JSON, has another
+//   version, an unknown key or an invalid value is rejected as a whole: the defaults are used and
+//   the caller replaces the file (User decision 2026-10-20, docs/port/command-line.md).
+// - Only port settings live here; the game's own options (brightness, control type, ...) stay in
+//   the game's save data on the memory card.
+// - Game code never reads settings (the controller and GRAPHICS pages go through port_hooks.h).
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -15,17 +19,31 @@
 namespace ac04::platform {
 
 enum class ScaleFilter { Sharp, Smooth };
-enum class WindowMode { Windowed, Borderless };
+enum class WindowMode { Windowed, Fullscreen };  // fullscreen = borderless desktop-size window
 enum class FocusLossAudio { KeepPlaying, Mute };
+// The game's SCREEN RATIO option when no save data has been loaded: from the monitor's shape
+// (16:9 on a screen wider than 4:3), or the game's own default (4:3).
+enum class ScreenRatioDefault { Monitor, Game };
+// Anti-aliasing of the flight views' 3D before their HUD is drawn (presentation only).
+enum class AntiAliasing { Off, Fxaa, Smaa };
+
+// The display the port starts on (0 = unknown): the defaults depend on it.
+struct DisplayInfo {
+    int width = 0, height = 0;  // desktop mode in pixels
+    int refresh_hz = 0;         // rounded
+    bool Wide() const { return width > 0 && height > 0 && width * 3 > height * 4 + height / 10; }
+};
 
 struct PresentationSettings {
     ScaleFilter filter = ScaleFilter::Sharp;
     bool vsync = true;
-    int frame_cap = 360;            // presented frames per second: 60, 120, 144, 240 or 360
-    WindowMode window_mode = WindowMode::Windowed;
+    int frame_cap = 360;            // presented frames per second with v-sync off: 60, 120, 144, 240 or 360
+    WindowMode window_mode = WindowMode::Fullscreen;
     int window_width = 1280;        // windowed client size
     int window_height = 960;
-    int internal_scale = 1;         // renderer scale factor; only 1 is accepted for now
+    int internal_scale = 1;         // renderer scale factor 1-kMaxInternalScale (docs/port/renderer.md §1)
+    ScreenRatioDefault default_screen_ratio = ScreenRatioDefault::Monitor;
+    AntiAliasing antialiasing = AntiAliasing::Off;
 };
 
 struct PathSettings {
@@ -39,11 +57,15 @@ struct AudioSettings {
 struct InputSettings {
     // PS2 control name ("cross", "lx-", …) -> host inputs ("key:Z", "pad:south", "axis:leftx-").
     std::map<std::string, std::vector<std::string>> bindings;
+    // Per player: the Modern variant of the game's CONTROL TYPE (L1/L2 and R1/R2 swapped before
+    // the game reads the pad; the save data keeps the Classic type). Default on for both players.
+    std::array<bool, 2> modern_controls{true, true};
 };
 
 struct DebugSettings {
     bool overlay_enabled = AC04_DEV_BUILD != 0;  // on by default in development builds
     std::string overlay_toggle = "\\";           // typed character (or "key:<name>")
+    bool fps_overlay = false;                    // frame rate and frame time in the top right corner
 };
 
 struct Settings {
@@ -58,7 +80,16 @@ enum class SettingsSection { Presentation, Paths, Audio, Input, Debug };
 
 // Values accepted by the frame cap setting.
 bool IsValidFrameCap(int fps);
+constexpr int kFrameCaps[] = {60, 120, 144, 240, 360};
+constexpr int kSettingsVersion = 1;
+constexpr int kMaxInternalScale = 8;
 InputSettings DefaultInputSettings();
+// The defaults on `display`: fullscreen; v-sync on at 60 or 120 Hz (or an unknown rate), otherwise
+// off with the highest frame cap at or below the refresh rate.
+Settings DefaultSettings(const DisplayInfo& display);
+// The display every SettingsStore takes its defaults from (set once at startup).
+void SetDefaultsDisplay(const DisplayInfo& display);
+const DisplayInfo& DefaultsDisplay();
 
 class SettingsStore {
 public:
@@ -66,11 +97,15 @@ public:
 
     SettingsStore();
 
-    // Loads `file`. A missing file gives the defaults (and is written by Save()). Problems are
-    // appended to `warnings`; the store always ends up with a usable Settings value.
-    void Load(const std::filesystem::path& file, std::vector<std::string>& warnings);
-    // Parses JSON text (used by Load and by tests).
-    void LoadFromText(const std::string& text, std::vector<std::string>& warnings);
+    enum class LoadResult { Loaded, Missing, Rejected };
+    // Loads `file`. Missing: the defaults (the caller writes the file). Rejected: the problems are
+    // in `warnings` and the store holds the defaults; the caller replaces the file
+    // (ReplaceWithDefaults). The store always ends up with a usable Settings value.
+    LoadResult Load(const std::filesystem::path& file, std::vector<std::string>& warnings);
+    // Parses JSON text (used by Load and by tests). False (with warnings) when rejected.
+    bool LoadFromText(const std::string& text, std::vector<std::string>& warnings);
+    // Deletes the file and writes the defaults in its place.
+    bool ReplaceWithDefaults(std::string* error = nullptr);
 
     bool Save(std::string* error = nullptr) const;
     std::string ToText() const;
@@ -98,7 +133,6 @@ private:
 
     Settings settings_;
     std::filesystem::path file_;
-    std::string original_text_;  // last loaded file, so unknown keys survive Save()
     std::vector<Entry> listeners_;
     int next_id_ = 1;
 };
@@ -106,5 +140,7 @@ private:
 const char* ToString(ScaleFilter v);
 const char* ToString(WindowMode v);
 const char* ToString(FocusLossAudio v);
+const char* ToString(ScreenRatioDefault v);
+const char* ToString(AntiAliasing v);
 
 }  // namespace ac04::platform

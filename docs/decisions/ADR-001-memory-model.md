@@ -1,6 +1,6 @@
 # ADR-001: Memory model for translated game code
 
-Status: **Accepted** (owner decision, 2026-10-11): **Option B, guest memory with 32-bit PS2 addresses.**
+Status: **Accepted** (User decision, 2026-10-11): **Option B, guest memory with 32-bit PS2 addresses.**
 
 ## Context
 
@@ -25,7 +25,7 @@ From `../game/memory.md`, `../subsystems/rendering.md` and `../formats/MISSION.m
 ### A. Native 64-bit pointers in game structs
 Translate structs with native pointers. Fixed-layout data (files, DMA, IOP, saves) keeps `uint32_t` fields, and PS2 addresses that reach hardware become a separate `Ps2Addr` type resolved by the platform.
 
-### B. Guest memory (owner's proposal)
+### B. Guest memory (User's proposal)
 - **Memory:**
   - one 32 MB host buffer is PS2 main RAM;
   - game pointers stay 32-bit PS2 addresses, and host address = base + (addr & mask), handling the 0x2xxxxxxx/0x3xxxxxxx uncached aliases;
@@ -61,7 +61,7 @@ Where A is genuinely better: readability of math-heavy code, native tooling, and
 
 ## Decision
 
-**Option B (guest memory)**, accepted by the owner on 2026-10-11, with these rules:
+**Option B (guest memory)**, accepted by the User on 2026-10-11, with these rules:
 - `GuestMemory`: 32 MB RAM + 16 KB scratchpad. Address decode `0x0xxxxxxx`/`0x2xxxxxxx`/`0x3xxxxxxx` → RAM (mask 0x01FFFFFF), `0x70000000` → scratchpad, anything else → hardware handlers or a hard error.
 - The ELF segments from the ISO are loaded at their original addresses; `.bss` zeroed; `gp` value kept for reference.
 - `ps2ptr<T>`: a 32-bit value type with `operator->`/`operator*`/`operator[]`, alignment-preserving; `static_assert` on every guest struct's size and field offsets (shared with the Ghidra struct definitions).
@@ -79,9 +79,9 @@ Where A is genuinely better: readability of math-heavy code, native tooling, and
 
 ## Research findings
 
-The owner's working assumption is guest memory: one 32 MB buffer, 32-bit PS2 pointers, `ps2ptr<T>`, a function-pointer table and a guest stack.
+The User's working assumption is guest memory: one 32 MB buffer, 32-bit PS2 pointers, `ps2ptr<T>`, a function-pointer table and a guest stack.
 
-- **Work heap (`../pcsx2/sessions-03.md`).** `InitWorkHeap` gets base **0x004CC760** and size **0x01A318A4** (end 0x01EFE004). The port sets these values directly instead of running `ProbeLargestMallocSize` against the host libc.
+- **Work heap (`../pcsx2/sessions.md` run 03).** `InitWorkHeap` gets base **0x004CC760** and size **0x01A318A4** (end 0x01EFE004). The port sets these values directly instead of running `ProbeLargestMallocSize` against the host libc.
 - **The heap is almost full in play.** Mission 1 uses 0x019C5180 bytes (98.4 %), with only about 434 KiB free. `WorkHeapAlloc` returns 0 when exhausted, and callers do not check. This confirms the guest-memory design: every structure placed in the work heap must keep its exact PS2 size and alignment. A host-sized struct (e.g. with 64-bit pointers) would overflow the heap.
 - Boot-time allocations before `SetWorkHeapMark`: 0x3820 bytes. They persist across scenes.
 

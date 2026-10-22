@@ -143,6 +143,7 @@ void InputBackend::HandleEvent(const SDL_Event& event) {
                 AC04_LOG_INFO("input", "port %d: gamepad removed", i + 1);
                 SDL_CloseGamepad(pads_[i]);
                 pads_[i] = nullptr;
+                rumble_[i] = {};
             }
         }
     }
@@ -170,6 +171,37 @@ float InputBackend::Sample(const Binding& binding, SDL_Gamepad* pad, bool use_ke
         value = std::max(value, v);
     }
     return value;
+}
+
+void InputBackend::SetVibration(int port, bool small_on, std::uint8_t large) {
+    if (port < 0 || port > 1) return;
+    SDL_Gamepad* pad = pads_[port];
+    Rumble& r = rumble_[port];
+    if (!pad) {
+        r = {};
+        return;
+    }
+    // The large motor is the low-frequency one; the small motor has no strength, only on/off.
+    const std::uint16_t low = static_cast<std::uint16_t>(large * 257u);
+    const std::uint16_t high = small_on ? 0xFFFF : 0;
+    // SDL stops a rumble after its duration: running motors are sent again every 500 ms with a
+    // 1 s duration, so a stalled frame loop never leaves the pad shaking for long.
+    constexpr std::uint64_t kRefreshMs = 500;
+    constexpr std::uint32_t kDurationMs = 1000;
+    const std::uint64_t now = SDL_GetTicks();
+    const bool changed = low != r.low || high != r.high;
+    const bool running = low != 0 || high != 0;
+    if (!changed && !(running && now - r.sent_ms >= kRefreshMs)) return;
+    if (!changed && !running) return;
+    if (!SDL_RumbleGamepad(pad, low, high, running ? kDurationMs : 0)) {
+        log::WriteOnce("input:rumble", log::Level::Info, "input", "port %d: the gamepad has no rumble (%s)", port + 1,
+                       SDL_GetError());
+    } else if (running) {
+        log::WriteOnce("input:rumble-on", log::Level::Info, "input", "port %d: vibration started", port + 1);
+    }
+    r.low = low;
+    r.high = high;
+    r.sent_ms = now;
 }
 
 void InputBackend::Update(bool keyboard_captured) {

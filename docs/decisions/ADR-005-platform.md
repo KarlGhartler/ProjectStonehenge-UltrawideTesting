@@ -1,11 +1,11 @@
 # ADR-005: Platform, saves and logging
 
-Status: **Accepted** (owner decision 2026-10-10; storage revised by the owner 2026-10-11: everything under `%LOCALAPPDATA%\AC04Port\`). No open sub-points.
+Status: **Accepted** (User decision 2026-10-10; storage revised by the User 2026-10-11: everything under `%LOCALAPPDATA%\ProjectStonehenge\`). No open sub-points.
 
 ## Context
 
 - The port is a native PC program. It needs a target platform order, a save location that interoperates with PCSX2, and a session log for support and debugging.
-- The owner decided all three. This ADR records the decisions and their consequences.
+- The User decided all three. This ADR records the decisions and their consequences.
 
 ## Decision
 
@@ -16,14 +16,14 @@ Status: **Accepted** (owner decision 2026-10-10; storage revised by the owner 20
 - **File names are case-sensitive.** ISO file names are matched exactly as stored on the disc (uppercase, e.g. `DATA.CDP`, `SLUS_201.52`). The port never relies on case-insensitive lookup, not even on Windows.
 
 ### 2. User data location
-- All files the port writes go under one per-user folder: **`%LOCALAPPDATA%\AC04Port\`** on Windows.
-  - Linux later: `$XDG_DATA_HOME/ac04port/` (fallback `~/.local/share/ac04port/`); macOS later: `~/Library/Application Support/AC04Port/`.
+- All files the port writes go under one per-user folder: **`%LOCALAPPDATA%\ProjectStonehenge\`** on Windows.
+  - Linux later: `$XDG_DATA_HOME/projectstonehenge/` (fallback `~/.local/share/projectstonehenge/`); macOS later: `~/Library/Application Support/ProjectStonehenge/`.
   - The path is resolved only in `src/platform/` (a paths interface: `UserDataDir()`, `SavesDir()`, `SettingsFile()`, `LogsDir()`), so another OS is one new implementation.
   - Nothing is written next to the executable. This replaces the earlier "executable directory" rule and removes the non-writable-directory question.
 - Layout:
 
 ```
-%LOCALAPPDATA%\AC04Port\
+%LOCALAPPDATA%\ProjectStonehenge\
   saves\           PCSX2 Folder Memory Card root (slot 1)
   settings.json    all settings
   logs\            log of the last session only
@@ -33,8 +33,8 @@ Status: **Accepted** (owner decision 2026-10-10; storage revised by the owner 20
 - `saves\` is a complete **PCSX2 Folder Memory Card**: a `_pcsx2_superblock` file in the root and one host folder per PS2 directory (AC04: `BASLUS-20152AC04\` with `icon.sys`, `icon1.ico`, `BASLUS-20152AC04` and `_pcsx2_index`).
   - The whole `saves\` folder can be used as a PCSX2 folder card, and single save folders can be copied between the port and PCSX2 in both directions.
   - Each save file holds the raw bytes exactly as the PS2 writes them to the card.
-  - Reference layout: the owner's example card (`CLAUDE.local.md`, "Memory Card Folder example"), described in `../formats/folder-memcard.md` §9. Layout and PCSX2's metadata files were researched from the PCSX2 source for compatibility only, no code copied.
-- Memory card port 2 reports **empty** (no card); only port 1 maps to `saves\` (owner decision 2026-10-11).
+  - Reference layout: the User's example card (`CLAUDE.local.md`, "Memory Card Folder example"), described in `../formats/folder-memcard.md` §9. Layout and PCSX2's metadata files were researched from the PCSX2 source for compatibility only, no code copied.
+- Memory card port 2 reports **empty** (no card); only port 1 maps to `saves\` (User decision 2026-10-11).
 - The game's own save logic (`sceMc*` calls, file names, file contents) is reproduced exactly. Save layers: `../subsystems/save.md`; file contents: `../formats/SAVE.md`. `src/sce/` maps `sceMc*` onto the folder card.
 
 ### 4. Settings

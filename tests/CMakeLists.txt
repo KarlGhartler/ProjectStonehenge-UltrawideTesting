@@ -17,6 +17,7 @@ add_executable(ac04_tests
     test_skeleton.cpp
     test_spu_mixer.cpp
     test_vectors_s4.cpp
-    test_determinism.cpp)
+    test_determinism.cpp
+    test_leaks.cpp)
 target_link_libraries(ac04_tests PRIVATE ac04_game ac04_core ac04_doctest)
 add_test(NAME ac04_tests COMMAND ac04_tests)

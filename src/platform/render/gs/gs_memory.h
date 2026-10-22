@@ -37,6 +37,13 @@ enum Psm : std::uint32_t {
 // Bits per pixel of a format (0 = unsupported).
 int BitsPerPixel(std::uint32_t psm);
 
+// Size in pixels of one 256-byte block of a format: 8 x 8 for the 32-bit layouts (T8H, T4HL and
+// T4HH live in the top byte of 32-bit pixels), 16 x 8 for 16-bit, 16 x 16 for T8, 32 x 16 for T4.
+constexpr std::uint32_t BlockWidth(std::uint32_t psm) {
+    return psm == kPsmT4 ? 32 : (psm == kPsmT8 || psm == kPsmCt16 || psm == kPsmCt16S || psm == kPsmZ16 || psm == kPsmZ16S) ? 16 : 8;
+}
+constexpr std::uint32_t BlockHeight(std::uint32_t psm) { return psm == kPsmT8 || psm == kPsmT4 ? 16 : 8; }
+
 class GsMemory {
 public:
     static constexpr std::uint32_t kSize = 4u * 1024u * 1024u;
@@ -50,6 +57,9 @@ public:
 
     std::uint32_t ReadPixel(std::uint32_t psm, std::uint32_t bp, std::uint32_t bw, std::uint32_t x,
                             std::uint32_t y) const;
+    // The raw values of the w x h pixels at (x0, y0), row by row (each as ReadPixel gives it).
+    void ReadRect(std::uint32_t psm, std::uint32_t bp, std::uint32_t bw, std::uint32_t x0, std::uint32_t y0,
+                  std::uint32_t w, std::uint32_t h, std::uint32_t* out) const;
     void WritePixel(std::uint32_t psm, std::uint32_t bp, std::uint32_t bw, std::uint32_t x, std::uint32_t y,
                     std::uint32_t value);
 
@@ -60,41 +70,46 @@ public:
                              std::uint32_t dsay, std::uint32_t rrw, std::uint32_t rrh, std::uint32_t pos,
                              const std::uint8_t* data, std::uint32_t bytes);
 
-    // Change counter per 8 KiB page, incremented when a write changes its bytes (texture cache
-    // invalidation).
-    std::uint32_t PageGeneration(std::uint32_t page) const { return page_gen_[page & 511]; }
-    // Highest generation over the pages that the rectangle (0,0)-(w,h) of a buffer touches.
-    std::uint64_t RegionGeneration(std::uint32_t psm, std::uint32_t bp, std::uint32_t bw, std::uint32_t w,
-                                   std::uint32_t h) const;
+    // Change counter per 256-byte block, the texel block of every format (8 x 8 32-bit, 16 x 8
+    // 16-bit, 16 x 16 8-bit, 32 x 16 4-bit pixels), incremented when a write changes its bytes: a
+    // decoded texture stays valid while the blocks it read keep their generations
+    // (GsState::DecodeTexture), and the CPU decoder re-decodes only the blocks that changed.
+    std::uint32_t BlockGeneration(std::uint32_t addr) const { return block_gen_[(addr >> 8) & (kBlocks - 1)]; }
+    // Number of block changes so far: a texture validated at this count is still valid.
+    std::uint64_t WriteCount() const { return write_count_; }
 
-    // Content hash of the pages that the rectangle (0,0)-(w,h) of a buffer touches: decoded textures
-    // are keyed by it, so a texture that returns to a shared slot (the hangar cycles several through
-    // the same memory every frame) is found again. A page is rehashed only after its generation
-    // changed.
-    std::uint64_t RegionHash(std::uint32_t psm, std::uint32_t bp, std::uint32_t bw, std::uint32_t w,
-                             std::uint32_t h) const;
+    // Blocks changed since the last TakeDirtyBlocks (block numbers, addr >> 8): what the GPU copy of
+    // local memory has not received yet (docs/port/renderer.md §2.3).
+    bool IsDirty(std::uint32_t addr) const { return dirty_[(addr >> 8) & (kBlocks - 1)] != 0; }
+    bool AnyDirty() const { return !dirty_list_.empty(); }
+    // The changed blocks in ascending order, and forgets them.
+    std::vector<std::uint32_t> TakeDirtyBlocks();
 
     const std::uint8_t* Data() const { return mem_.data(); }
     // Replaces the whole memory with a 4 MiB GS memory image (--play-gsdump: a PCSX2 VRAM image has
-    // the same layout); every page counts as changed.
+    // the same layout); every block counts as changed.
     void LoadImage(const std::uint8_t* image) {
         std::copy(image, image + kSize, mem_.begin());
-        for (auto& g : page_gen_) ++g;
+        for (std::uint32_t b = 0; b < kBlocks; ++b) Touch(b << 8);
     }
 
 private:
-    void Touch(std::uint32_t addr) { ++page_gen_[(addr >> 13) & 511]; }
+    static constexpr std::uint32_t kBlocks = 16384;  // 4 MiB / 256
+    void Touch(std::uint32_t addr) {
+        const std::uint32_t block = (addr >> 8) & (kBlocks - 1);
+        ++block_gen_[block];
+        ++write_count_;
+        if (!dirty_[block]) {
+            dirty_[block] = 1;
+            dirty_list_.push_back(block);
+        }
+    }
 
     std::vector<std::uint8_t> mem_;
-    std::array<std::uint32_t, 512> page_gen_{};
-    mutable std::array<std::uint64_t, 512> page_hash_{};
-    mutable std::array<std::uint32_t, 512> page_hash_gen_ = MakeStaleGenerations();
-
-    static std::array<std::uint32_t, 512> MakeStaleGenerations() {
-        std::array<std::uint32_t, 512> a{};
-        a.fill(~0u);
-        return a;
-    }
+    std::vector<std::uint32_t> block_gen_ = std::vector<std::uint32_t>(kBlocks, 0);
+    std::uint64_t write_count_ = 0;
+    std::vector<std::uint8_t> dirty_ = std::vector<std::uint8_t>(kBlocks, 0);
+    std::vector<std::uint32_t> dirty_list_;
 };
 
 }  // namespace ac04::render::gs
