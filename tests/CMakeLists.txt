@@ -15,6 +15,7 @@ add_executable(ac04_tests
     test_settings.cpp
     test_sha1.cpp
     test_skeleton.cpp
+    test_pc_texts.cpp
     test_spu_mixer.cpp
     test_vectors_s4.cpp
     test_determinism.cpp

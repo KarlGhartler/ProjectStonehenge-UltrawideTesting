@@ -34,6 +34,13 @@ configure_file(src/common/build_info.h.in "${CMAKE_BINARY_DIR}/generated/build_i
 set(AC04_FILE_DESCRIPTION "Unofficial native PC port of Ace Combat 04: Shattered Skies")
 configure_file(src/platform/win32/version.rc.in "${CMAKE_BINARY_DIR}/generated/version.rc" @ONLY)
 
+# C/C++ runtime: Release builds link it statically (/MT), so the released executable needs no Visual
+# C++ Redistributable (User decision 2026-10-22); development builds keep the DLL runtime (/MD, /MDd).
+# Set before the dependencies are fetched: every library must use the same runtime, also those
+# whose own cmake_minimum_required predates policy CMP0091.
+set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>$<$<NOT:$<CONFIG:Release>>:DLL>")
+
 include(cmake/Dependencies.cmake)
 include(cmake/Shaders.cmake)
 

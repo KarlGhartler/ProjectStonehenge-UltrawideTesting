@@ -458,11 +458,20 @@ int Run(int argc, char** argv) {
         return 1;
     }
     // Defaults follow the monitor the port starts on (the primary display, where the window opens):
-    // fullscreen, v-sync at 60 / 120 Hz, the SCREEN RATIO default (settings.h DefaultSettings).
+    // fullscreen, v-sync, FXAA, the internal scale closest to its height, the SCREEN RATIO default
+    // (settings.h DefaultSettings). Validation runs (development builds: a pad script, an input log,
+    // a PCSX2 recording, --memcard or --no-memcard) keep 1x and no anti-aliasing, so their
+    // screenshots compare with the baselines.
     const DisplayInfo start_display = QueryDisplay(SDL_GetPrimaryDisplay());
     SetDefaultsDisplay(start_display);
-    AC04_LOG_INFO("startup", "display: %dx%d, %d Hz (%s)", start_display.width, start_display.height,
-                  start_display.refresh_hz, start_display.Wide() ? "wider than 4:3" : "4:3");
+    const bool validation_run = !cl.options.pad_script.empty() || !cl.options.replay_input.empty() ||
+                                !cl.options.replay_p2m2.empty() || !cl.options.memcard_dir.empty() ||
+                                cl.options.no_memcard;
+    SetValidationDefaults(validation_run);
+    AC04_LOG_INFO("startup", "display: %dx%d, %d Hz (%s); default internal scale %dx%s", start_display.width,
+                  start_display.height, start_display.refresh_hz, start_display.Wide() ? "wider than 4:3" : "4:3",
+                  DefaultSettings(start_display).presentation.internal_scale,
+                  validation_run ? " (validation run)" : "");
 
     SettingsStore settings;
     {
@@ -836,6 +845,12 @@ int Run(int argc, char** argv) {
         const bool by_monitor = settings.Get().presentation.default_screen_ratio == ScreenRatioDefault::Monitor;
         const bool validation = !g_feed->Live() || !cl.options.memcard_dir.empty() || cl.options.no_memcard;
         port::Boot().wide_screen_ratio = by_monitor && window_display.Wide() && !validation;
+        // QUIT GAME in the main menu (port baseline, User request 2026-10-22): the same rule.
+        port::Boot().quit_item = !validation;
+        // Save texts for a computer (port baseline, User request 2026-10-22): the same rule.
+        port::Boot().pc_texts = !validation;
+        AC04_LOG_INFO("startup", "QUIT GAME in the main menu and save texts for a computer: %s",
+                      validation ? "off (validation run)" : "on");
         AC04_LOG_INFO("startup", "SCREEN RATIO default: %s (%s)", port::Boot().wide_screen_ratio ? "16:9" : "4:3",
                       !by_monitor ? "settings: game" : validation ? "validation run: PS2 default"
                                                      : window_display.Wide() ? "monitor wider than 4:3" : "4:3 monitor");
@@ -1006,6 +1021,8 @@ int Run(int argc, char** argv) {
         }
         // Development builds: --exit-at ends the session normally (dumps written at exit).
         if (cl.options.exit_at && game.VBlankCount() >= *cl.options.exit_at) running = false;
+        // QUIT GAME in the main menu (port baseline): ends the session as closing the window does.
+        if (port::Menu().quit) running = false;
         // Native screenshot (development builds): F8, or --screenshot-at after the given vblanks.
         while (!screenshot_due.empty() && game.VBlankCount() >= screenshot_due.front()) {
             screenshot_due.erase(screenshot_due.begin());

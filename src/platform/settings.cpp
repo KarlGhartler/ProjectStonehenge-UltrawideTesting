@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <fstream>
 #include <initializer_list>
 #include <sstream>
@@ -34,6 +35,7 @@ constexpr EnumName<AntiAliasing> kAntiAliasing[] = {{AntiAliasing::Off, "off"},
                                                    {AntiAliasing::Smaa, "smaa"}};
 
 DisplayInfo g_DefaultsDisplay;
+bool g_ValidationDefaults = false;
 
 template <typename T, size_t N>
 const char* NameOf(const EnumName<T> (&table)[N], T value) {
@@ -133,19 +135,32 @@ const char* ToString(AntiAliasing v) { return NameOf(kAntiAliasing, v); }
 Settings DefaultSettings(const DisplayInfo& display) {
     Settings s;
     s.input = DefaultInputSettings();
+    // V-sync on (User request 2026-10-22; before: only at 60 and 120 Hz). At another known rate the
+    // frame cap, which applies with v-sync off, is the highest one at or below it.
+    s.presentation.vsync = true;
     const int hz = display.refresh_hz;
-    s.presentation.vsync = hz == 0 || hz == 60 || hz == 120;
-    if (!s.presentation.vsync) {
+    if (hz != 0 && hz != 60 && hz != 120) {
         int cap = kFrameCaps[0];
         for (int c : kFrameCaps)
             if (c <= hz) cap = c;
         s.presentation.frame_cap = cap;
     }
+    if (!g_ValidationDefaults) {
+        s.presentation.antialiasing = AntiAliasing::Fxaa;
+        s.presentation.internal_scale = DefaultInternalScale(display.height);
+    }
     return s;
+}
+
+int DefaultInternalScale(int height) {
+    constexpr int kPictureLines = 448;  // the PS2 draw buffer (ADR-006 §4)
+    if (height <= 0) return 1;
+    return std::clamp((height + kPictureLines / 2) / kPictureLines, 1, kMaxInternalScale);
 }
 
 void SetDefaultsDisplay(const DisplayInfo& display) { g_DefaultsDisplay = display; }
 const DisplayInfo& DefaultsDisplay() { return g_DefaultsDisplay; }
+void SetValidationDefaults(bool on) { g_ValidationDefaults = on; }
 
 bool IsValidFrameCap(int fps) {
     for (int c : kFrameCaps)

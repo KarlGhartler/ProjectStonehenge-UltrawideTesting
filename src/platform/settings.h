@@ -84,12 +84,20 @@ constexpr int kFrameCaps[] = {60, 120, 144, 240, 360};
 constexpr int kSettingsVersion = 1;
 constexpr int kMaxInternalScale = 8;
 InputSettings DefaultInputSettings();
-// The defaults on `display`: fullscreen; v-sync on at 60 or 120 Hz (or an unknown rate), otherwise
-// off with the highest frame cap at or below the refresh rate.
+// The defaults on `display` (User requests 2026-10-20 and 2026-10-22): fullscreen, v-sync on, FXAA,
+// the internal scale whose picture (448 lines x N) is closest to the display's height; with a
+// refresh rate other than 60 or 120 Hz the frame cap (used with v-sync off) is the highest one at
+// or below it. Validation runs (SetValidationDefaults) keep 1x and no anti-aliasing.
 Settings DefaultSettings(const DisplayInfo& display);
+// Internal scale for a display `height` pixels high: 448 x N closest to it, 1-8 (1 when unknown).
+int DefaultInternalScale(int height);
 // The display every SettingsStore takes its defaults from (set once at startup).
 void SetDefaultsDisplay(const DisplayInfo& display);
 const DisplayInfo& DefaultsDisplay();
+// Development validation runs (pad script, input log, PCSX2 recording, --memcard, --no-memcard):
+// the defaults keep internal scale 1 and anti-aliasing off, so screenshots compare with the
+// baselines. Set once at startup.
+void SetValidationDefaults(bool on);
 
 class SettingsStore {
 public:

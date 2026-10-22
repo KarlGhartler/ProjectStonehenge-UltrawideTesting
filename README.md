@@ -49,9 +49,12 @@ What this means in practice:
 - **Higher internal resolution** with a multiplier from 1x to 8x (native 512×448 up to 4096×3584), including 4K output
 - **Screen** windowed or borderless fullscreen
 - **16:9 by default on wide monitors**: the game's own SCREEN RATIO option starts at 16:9
+- **Graphics defaults matched to your monitor**: the first start uses v-sync, FXAA and the internal resolution closest to the monitor's (for example 2× at 1080p, 3× at 1440p, 5× at 4K)
 - **Anti-aliasing**: FXAA and SMAA support
 - **V-Sync**
 - **FSR 1 upscaled cutscenes**: the FMV movies are upscaled with AMD FidelityFX FSR 1 to match internal resolution
+- **QUIT GAME in the main menu**: the last item of the main menu closes the port
+- **Save messages for a PC**: "memory card (PS2)" reads "memory card", and "switch off power" reads "switch off the computer"
 - **Dedicated in-game graphics settings**: a GRAPHICS in-game page under OPTIONS → SCREEN SETTINGS
 
 **Controls**
@@ -86,7 +89,7 @@ What this means in practice:
 ## 📥 Download and Installation
 
 1. Download the latest version from the [Releases page](https://github.com/Onaga00/ProjectStonehenge/releases).
-2. Extract the archive to a folder of your choice.
+2. Extract the archive to a folder of your choice. The port is a single executable: no installer, no other DLLs and no Visual C++ Redistributable needed.
 3. Dump your own copy of the game to an ISO (for example with ImgBurn on PC, or by following PCSX2's [dumping guide](https://pcsx2.net/docs/setup/dumping/)).
 4. Launch `ProjectStonehenge.exe`. On the first start the port asks for the disc image: click **Select ISO...** and pick your ISO. The path is saved in `settings.json`. You can also start the port with `ProjectStonehenge.exe --iso "C:\path\to\game.iso"`.
 5. Play. Everything the port writes goes to `%LOCALAPPDATA%\ProjectStonehenge\`:

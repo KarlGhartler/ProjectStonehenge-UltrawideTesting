@@ -23,7 +23,7 @@ TEST_CASE("settings: defaults") {
     CHECK(s.presentation.internal_scale == 1);
     CHECK(s.presentation.default_screen_ratio == ScreenRatioDefault::Monitor);
     CHECK_FALSE(s.debug.fps_overlay);
-    CHECK(s.presentation.antialiasing == AntiAliasing::Off);
+    CHECK(s.presentation.antialiasing == AntiAliasing::Fxaa);
     CHECK(s.audio.on_focus_loss == FocusLossAudio::KeepPlaying);
     CHECK(s.debug.overlay_toggle == "\\");
     CHECK(s.input.bindings.at("cross").size() == 2);
@@ -32,35 +32,38 @@ TEST_CASE("settings: defaults") {
 }
 
 TEST_CASE("settings: defaults follow the display") {
-    // V-sync on at 60 and 120 Hz (and when the rate is unknown); otherwise off, with the highest
-    // frame cap at or below the refresh rate.
+    // V-sync on at every refresh rate (User request 2026-10-22); at a rate other than 60 or 120 Hz
+    // the frame cap (used with v-sync off) is the highest one at or below it. FXAA; the internal
+    // scale closest to the display height (2560 x 1440: 3x).
     struct Case {
         int hz;
-        bool vsync;
         int cap;
     };
-    for (const Case c : {Case{60, true, 360}, Case{120, true, 360}, Case{0, true, 360}, Case{75, false, 60},
-                         Case{144, false, 144}, Case{165, false, 144}, Case{240, false, 240}, Case{500, false, 360},
-                         Case{50, false, 60}}) {
+    for (const Case c : {Case{60, 360}, Case{120, 360}, Case{0, 360}, Case{75, 60}, Case{144, 144}, Case{165, 144},
+                         Case{240, 240}, Case{500, 360}, Case{50, 60}}) {
         CAPTURE(c.hz);
         DisplayInfo d;
         d.width = 2560;
         d.height = 1440;
         d.refresh_hz = c.hz;
         const Settings s = DefaultSettings(d);
-        CHECK(s.presentation.vsync == c.vsync);
+        CHECK(s.presentation.vsync);
         CHECK(s.presentation.frame_cap == c.cap);
         CHECK(s.presentation.window_mode == WindowMode::Fullscreen);
+        CHECK(s.presentation.antialiasing == AntiAliasing::Fxaa);
+        CHECK(s.presentation.internal_scale == 3);
     }
     // Missing keys of a file take the defaults of the display set for the stores.
     DisplayInfo d;
     d.refresh_hz = 144;
+    d.height = 2160;
     SetDefaultsDisplay(d);
     SettingsStore store;
     std::vector<std::string> warnings;
     CHECK(store.LoadFromText(R"({"presentation":{"filter":"smooth"}})", warnings));
-    CHECK_FALSE(store.Get().presentation.vsync);
+    CHECK(store.Get().presentation.vsync);
     CHECK(store.Get().presentation.frame_cap == 144);
+    CHECK(store.Get().presentation.internal_scale == 5);
     SetDefaultsDisplay(DisplayInfo{});
     // Wider than 4:3 (with a 2.5 % margin): 16:9, 16:10, 21:9; not 4:3 or 5:4.
     auto wide = [](int w, int h) {
@@ -160,6 +163,32 @@ TEST_CASE("settings: internal scale 1 to 8") {
         CHECK(warnings.empty());
         CHECK(store.Get().presentation.internal_scale == n);
     }
+}
+
+TEST_CASE("settings: default internal scale is the closest to the display height") {
+    // 448 lines x N closest to the height, 1-8; unknown height: 1.
+    struct Case {
+        int height, scale;
+    };
+    for (const Case c : {Case{0, 1}, Case{480, 1}, Case{720, 2}, Case{768, 2}, Case{900, 2}, Case{1080, 2},
+                         Case{1200, 3}, Case{1440, 3}, Case{1600, 4}, Case{2160, 5}, Case{2880, 6}, Case{4320, 8}}) {
+        CAPTURE(c.height);
+        CHECK(DefaultInternalScale(c.height) == c.scale);
+    }
+}
+
+TEST_CASE("settings: validation runs keep 1x and no anti-aliasing") {
+    DisplayInfo d;
+    d.width = 3840;
+    d.height = 2160;
+    d.refresh_hz = 60;
+    SetValidationDefaults(true);
+    const Settings s = DefaultSettings(d);
+    SetValidationDefaults(false);
+    CHECK(s.presentation.vsync);
+    CHECK(s.presentation.internal_scale == 1);
+    CHECK(s.presentation.antialiasing == AntiAliasing::Off);
+    CHECK(DefaultSettings(d).presentation.internal_scale == 5);
 }
 
 TEST_CASE("settings: broken JSON gives defaults") {

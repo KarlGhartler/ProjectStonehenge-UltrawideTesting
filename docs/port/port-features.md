@@ -28,7 +28,9 @@ Checked end to end 2026-10-20 (`validation.md` §2m, ST-3): CONTROLLER SETUP cha
 
 The port reads the desktop mode of the primary display (where the window opens) at start (`DisplayInfo`, logged as `display: WxH, N Hz`). `DefaultSettings(display)`:
 - **Fullscreen** (borderless, the size of the desktop).
-- **V-sync on** when the display runs at 60 or 120 Hz (rounded) or the rate is unknown; otherwise **v-sync off** with the highest frame cap at or below the refresh rate (144 Hz → 144, 165 Hz → 144, 240 Hz → 240, 75 Hz → 60).
+- **V-sync on** (since 2026-10-22, User request; before: only at 60 or 120 Hz). With a refresh rate other than 60 or 120 Hz the frame cap, which applies when v-sync is turned off, is the highest one at or below it (144 Hz → 144, 165 Hz → 144, 240 Hz → 240, 75 Hz → 60
+- **FXAA** and the **internal resolution closest to the display** (since 2026-10-22, User request): N with 448 × N lines closest to the display height, 1–8 (720p and 1080p 2×, 1440p 3×, 4K 5×, unknown 1×; `DefaultInternalScale`). Validation runs (development builds: pad script, input log, PCSX2 recording, `--memcard`, `--no-memcard`) keep 1× and no anti-aliasing so their screenshots compare with the baselines; the startup log names the default scale.
+- These are the defaults of a first start (no `settings.json` yet), of a rejected file replaced with the defaults and of a file's missing keys; an existing `settings.json` keeps its values. The saves do not influence them).
 - Everything else as in the key table.
 
 The GRAPHICS page's DEFAULT button sets these values too.
@@ -39,12 +41,12 @@ The GRAPHICS page's DEFAULT button sets these values too.
 |---|---|---|
 | `version` | `1` | `1` |
 | `presentation.filter` | `sharp`, `smooth` | `sharp` |
-| `presentation.vsync` | `true`, `false` | on at 60 / 120 Hz (above) |
+| `presentation.vsync` | `true`, `false` | `true` |
 | `presentation.frame_cap` | `60`, `120`, `144`, `240`, `360`; used only with v-sync off (with v-sync on the display paces the frames) | `360`, or the refresh-rate cap (above) |
 | `presentation.window_mode` | `windowed`, `fullscreen` (borderless desktop-size window; `borderless`, the earlier name, is read as `fullscreen`) | `fullscreen` |
 | `presentation.window_width` / `window_height` | windowed client size (saved at exit) | `1280` / `960` |
-| `presentation.internal_scale` | `1`–`8` (internal rendering resolution; changes apply while running) | `1` |
-| `presentation.antialiasing` | `off`, `fxaa`, `smaa`: anti-aliasing of the flight views before their HUD (§2); `--antialiasing` for a session | `off` |
+| `presentation.internal_scale` | `1`–`8` (internal rendering resolution; changes apply while running) | closest to the display (above); `1` in validation runs |
+| `presentation.antialiasing` | `off`, `fxaa`, `smaa`: anti-aliasing of the flight views before their HUD (§2); `--antialiasing` for a session | `fxaa`; `off` in validation runs |
 | `presentation.default_screen_ratio` | `monitor` (the game's SCREEN RATIO starts at 16:9 on a monitor wider than 4:3, §2), `game` (the PS2 default, 4:3) | `monitor` |
 | `paths.iso` | disc image path | empty |
 | `audio.on_focus_loss` | `keep_playing`, `mute` | `keep_playing` |
@@ -97,7 +99,7 @@ CONTROLLER SETUP's CONTROL TYPE row has four squares: NORMAL (MODERN), EASY (MOD
 
 ## 5. Port-owned guest memory
 
-The game draws menu texts and items from guest addresses, so the strings and tables of §3 and §4 live in a port-owned area above the initial guest stack pointer, **0x01FFF800–0x01FFFFFF** (`src/game/port_menu.h`, 32 slots of 64 bytes). The game never reads or writes it (the stack starts at 0x01FFED60 and grows down); it is written only while CONTROLLER SETUP or the options page is open. RAM checkpoints taken on those pages show it as a port-only range.
+The game draws menu texts and items from guest addresses, so the strings and tables of §3 and §4 live in a port-owned area above the initial guest stack pointer, **0x01FFF800–0x01FFFFFF** (`src/game/port_menu.h`, 32 slots of 64 bytes). The game never reads or writes it (the stack starts at 0x01FFED60 and grows down); it is written only while CONTROLLER SETUP, the options page or the main menu (§9, slots 20-21) is open, or a page's texts are loaded (§10, slots 22-31). RAM checkpoints taken on those pages show it as a port-only range.
 
 ## 6. Renderer caches (performance, no visible change)
 
@@ -233,3 +235,21 @@ Code: `src/platform/debug/overlay.{h,cpp}`; hook for scene requests: `src/common
 - Memory: the row of the address or symbol looked up is highlighted; the label column fits at the default size.
 - Session log: the filter ignores case.
 - Main window title "Debug" (was "AC04 debug").
+
+## 9. QUIT GAME (main menu)
+
+The last item of the main menu's first column, after OPTIONS (User request 2026-10-22). Code: `src/game/quit_item.*`, hooks marked `port:` in `src/game/menu.cpp`; one in `src/game/menu_widgets.cpp`.
+
+- Drawn by the game's own menu tree: the column-0 definition gets the item only while the tree is built or its cursors are stored (`QuitItemPatch`, as GRAPHICS in §3), and the item ids are mapped back to the game's (`MainMenuSelection`). It is typed in, highlighted and wrapped over like the other items. Items the port adds do not lengthen a column's typing (`UpdateListWidget`), so its duration and typing sounds stay the game's.
+- Selecting it plays the select sound and fades the menu, the screen and the menu BGM out (0.5 s, port state 9); then the host ends the session as when the window is closed (`port::Menu().quit`).
+- The help line is empty on it: the game's help texts are glyph messages of the page's font block, which has none for it.
+- Not added in validation runs (development runs with a pad script, an input log, a PCSX2 recording, `--memcard` or `--no-memcard`; `port::Boot().quit_item`), the rule of the SCREEN RATIO default (§2): with the item, the main menu's tree and draw packets left in RAM differ from the PS2's (`validation.md` §2v). The session log says `QUIT GAME in the main menu: on` or `off (validation run)`.
+
+## 10. Save texts for a computer
+
+The save, load and format messages are reworded just enough for a computer (User request 2026-10-22; wording chosen by the User). Code: `src/game/pc_texts.*`, one `port:` line in `LoadFontBlock` (`src/game/message_window.cpp`).
+
+- "memory card (PS2)" becomes "memory card" (about 40 messages: "Accessing memory card...", "Insert a memory card", "Insufficient space on memory card", ...); the warning shown while saving, loading and formatting reads "Do not remove memory card / or switch off the computer" (was "... (PS2) / or switch off power").
+- Done in guest memory right after a page's messages are indexed: a message that gets shorter is changed in place, a longer one is written into the port menu area (§5, slots 22-31) and its message table entry points there; the disc data is not changed. Messages use the game's glyph codes (`../subsystems/sound.md` "Text engine").
+- Not changed: the hard disk drive texts ("(for PlayStation 2)", "Do not turn power off"), unreachable in the release.
+- Not applied in validation runs, the rule of §9 (the startup log line "QUIT GAME in the main menu and save texts for a computer: on / off").

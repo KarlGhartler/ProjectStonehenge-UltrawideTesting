@@ -19,6 +19,7 @@
 
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "game/port_menu.h"
 #include "sce/sce.h"
 
 namespace ac04::game {
@@ -567,7 +568,12 @@ void UpdateListWidget(u32 w, s64 active, u32 pad) {
     if (state == 1 || state == 3) {
         s32 longest = 0;
         for (s32 i = 0; i < n; ++i) {
-            const s32 len = static_cast<s32>(ee::strlen(GRef<u32>(GRef<u32>(w + 0x14) + 4u * static_cast<u32>(i))));
+            const u32 text = GRef<u32>(GRef<u32>(w + 0x14) + 4u * static_cast<u32>(i));
+            // port: items the port adds (GRAPHICS, QUIT GAME) do not lengthen the typing, so its
+            // duration and typing sounds stay the game's; they are still typed in full (typing runs
+            // 3 characters past the longest item, and they are no longer than it plus 3).
+            if (port_menu::Contains(text)) continue;
+            const s32 len = static_cast<s32>(ee::strlen(text));
             if (longest < len) longest = len;
         }
         f32 progress = GRef<f32>(w + 0xC);

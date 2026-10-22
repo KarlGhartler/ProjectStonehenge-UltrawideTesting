@@ -56,6 +56,8 @@ Main menu object (0x6A0 bytes, work heap, `g_TitleMenu` 0x00411810; translated i
 - 6: menu tree active (`UpdateMenuTree`, tab requests 0x33). Pad 0x20 (Triangle) `MainMenuBack`, else pad 0x50 `MainMenuSelect`.
 - 7: object fade out → `MenuGoTo(1, sub)`; 8: screen fade out → `MenuGoTo(0, page)`.
 
+Port addition (baseline, 2026-10-22): QUIT GAME as the last item of column 0, after OPTIONS, outside validation runs (`../port/port-features.md` §9; hooks marked `port:` in `menu.cpp`, the item in `quit_item.cpp`). Column 0 on the PS2: NEW GAME, SP. CONTINUE, CONTINUE, LOAD, FREE MISSION, TRIAL MISSION, TUTORIAL, VS MODE, OPTIONS (ids 0-8; hidden by the progress masks of `MainMenuSetup`); then column 1 VERY EASY-ACE (9-0xE), column 2 the same (0xF-0x14), column 3 HARD DISK DRIVE, MEMORY CARD (PS2) (0x15, 0x16), column 4 VERY EASY-ACE (0x17-0x1C), column 5 CONTROLLER SETUP, SCREEN SETTINGS, SOUND SETTINGS, PERSONAL DATA, SCENE VIEWER, MUSIC PLAYER, HARD DISK DRIVE (0x1D-0x23). The list widget types a column in for as long as its longest item (plus 3 characters), with a typing sound every third frame.
+
 Quirk: `MainMenuBack` from a sub-column sets the active column to **0** (not the parent) and closes the sub-column; the menu tree has only one level of sub-columns, so it is the same thing in practice.
 
 Help line (`UpdateMainMenuHelp`): message id per item from the s16 table 0x0039D6B8 (items with id 0 show 0x26 once a campaign is under way: mission > 1 or the cleared bit), typed out by the message box at `*0x00410130` characters per frame.

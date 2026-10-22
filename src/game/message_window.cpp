@@ -18,6 +18,7 @@
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
 #include "game/flight_common.h"
+#include "game/pc_texts.h"
 
 namespace ac04::game {
 
@@ -636,7 +637,9 @@ s32 GetMessageCount() { return g_MessageCount(); }
 s32 LoadFontBlock(u32 block) {
     const u32 messages = block + GRef<u32>(block + 8);
     SelectFont(block + GRef<u32>(block + 4), block + GRef<u32>(block + 0x10));
-    return IndexMessages(messages);
+    const s32 count = IndexMessages(messages);
+    ApplyComputerTexts(count);  // port: save texts for a computer (pc_texts.h)
+    return count;
 }
 
 // EE: 0x00251D70

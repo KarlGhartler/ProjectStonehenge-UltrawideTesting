@@ -110,6 +110,7 @@ The radio is a rule-based selector over a message database loaded with the missi
 
 - Fonts are identified by the header magic `go18` (type 0) or `go28` (type 1) (`func_00251E48`).
 - Text tables hold u16 strings ending with a code ≥ 0xFFFE (`func_00250930`, `func_00251F08`). The string table is at 0x004BCF70.
+- Glyph codes of the message font (decoded from the messages on the disc, 2026-10-22; `tools/research/msgscan.py`): 0x0D space, 0x1D-0x26 `0`-`9`, 0x27-0x40 `A`-`Z`, 0x41-0x5A `a`-`z`, 0xB1 `(`, 0x0E `)`, 0x12 `-`, 0xA4 `,`, 0xA5 `.`, 0xA6 `:`, 0xA8 `?`; 0xFFFD new line; end 0xFFFE, or 0xFFFF when the next message continues the text (`SetMessageBoxText` shows up to 3 such lines). The glyph set is global (font tables in `.data`, `SelectFont`), so every page's messages can use every character.
 - Glyph metrics: `func_00251D70`/`func_00251D90`/`func_00251DB8`. Layout with line wrap: `func_00252160` (glyphs uploaded from the font sheet into the text texture, new line code 0xFFFD, wrap every 16 glyphs, inline icons for codes 8–11). Upload of a message: `func_00252540`. Drawing: the GIF builders 0x002581C8–0x00258550.
 
 ## Rumble (subsystem `input`)

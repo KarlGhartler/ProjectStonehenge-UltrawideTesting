@@ -86,6 +86,8 @@ add_library(ac04_game OBJECT
     game/controller_page.cpp
     game/port_menu.cpp
     game/graphics_page.cpp
+    game/quit_item.cpp
+    game/pc_texts.cpp
     game/sky.cpp
     game/sound_page.cpp
     game/display.cpp
