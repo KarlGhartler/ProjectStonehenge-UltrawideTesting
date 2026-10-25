@@ -121,6 +121,16 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
 #else
             dev_only(false);
 #endif
+        } else if (arg == "--frame-interpolation") {
+#if AC04_DEV_BUILD
+            std::string v;
+            value(v);
+            if (v == "on") o.frame_interpolation = true;
+            else if (v == "off") o.frame_interpolation = false;
+            else result.errors.push_back("--frame-interpolation expects on or off: " + v);
+#else
+            dev_only(true);
+#endif
         } else if (arg == "--freeze-sim") {
 #if AC04_DEV_BUILD
             o.freeze_sim = true;
@@ -350,6 +360,8 @@ std::string CommandLineHelp() {
            "                        instead of the GPU\n"
            "  --verify-texture-decode  Development builds: decode GS textures on both the GPU and the CPU and\n"
            "                        log every difference (slow)\n"
+           "  --frame-interpolation <on|off>  Development builds: force frame interpolation for this\n"
+           "                        session, also in validation runs (still only above 60 frames per second)\n"
            "  --dump-audio          Development builds: write the mixed sound to\n"
            "                        <user data>\\dumps\\audio.wav at exit (research only)\n"
            "  --exit-at <n>         Development builds: exit normally after vblank n\n"

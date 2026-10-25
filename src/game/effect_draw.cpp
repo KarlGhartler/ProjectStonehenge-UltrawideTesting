@@ -11740,7 +11740,7 @@ void func_0020D258(u32 gb) {
     GifOpenAd(gb);
     GifAdReg(gb, 0x3F);
     GifAd(gb, 0xA080180, 0x4D);
-    GifAd(gb, 0x1BF00FF0000ull, 0x41);
+    GifAd(gb, 0x01BF000000FF0000ull, 0x41);
     GifAd(gb, 0, 0x19);
     GifAd(gb, 0, 0x15);
     GifAd(gb, 0x30000, 0x48);
@@ -11762,7 +11762,7 @@ void func_0020D258(u32 gb) {
     GifOpenAd(gb);
     GifAdReg(gb, 0x3F);
     GifAd(gb, 0x80000, 0x4D);
-    GifAd(gb, 0x1BF01FF0000ull, 0x41);
+    GifAd(gb, 0x01BF000001FF0000ull, 0x41);
     GifAd(gb, 0, 9);
     GifAd(gb, 0x60, 0x15);
     GifAd(gb, 0x6A8023000ull, 7);
@@ -11796,7 +11796,7 @@ void func_0020DE08(u32 gb, u32 cam) {
     GifOpenAd(gb);
     GifAdReg(gb, 0x3F);
     GifAd(gb, 0x80180, 0x4D);
-    GifAd(gb, 0x1BF01FF0000ull, 0x41);
+    GifAd(gb, 0x01BF000001FF0000ull, 0x41);
     GifAd(gb, 0, 0x19);
     GifAd(gb, 0x60, 0x15);
     GifAd(gb, 0x30000, 0x48);
@@ -14369,7 +14369,7 @@ void func_001EEBE0(u32 cam, u32 list) {
     GifInit(gb, p);
     GifOpenAd(gb);
     GifAd(gb, 0x80180, 0x4D);
-    GifAd(gb, 0x7F01FF0000ull, 0x41);
+    GifAd(gb, 0x007F000001FF0000ull, 0x41);
     GifAd(gb, 0x80000000800ull, 0x19);
     GifAd(gb, 0x100000000ull, 0x4F);
     GifAd(gb, 0x30000, 0x48);
@@ -14484,7 +14484,7 @@ void func_001EEBE0(u32 cam, u32 list) {
     copy(0x4000u, 0x808, 0x1000);
     GifOpenAd(gb);
     GifAd(gb, 0x0A080180, 0x4D);
-    GifAd(gb, 0xFF01FF0000ull, 0x41);
+    GifAd(gb, 0x00FF000001FF0000ull, 0x41);
     GifAd(gb, 0, 0x15);
     GifAd(gb, 0x8000000000ull, 0x3B);
     GifAd(gb, 0x30000, 0x48);
@@ -14494,7 +14494,7 @@ void func_001EEBE0(u32 cam, u32 list) {
     copy(0x80808080u, 0x1008, 0x1800);
     GifOpenAd(gb);
     GifAd(gb, 0xFFFF000000080180ull, 0x4D);
-    GifAd(gb, 0x7F01FF0000ull, 0x41);
+    GifAd(gb, 0x007F000001FF0000ull, 0x41);
     GifAdReg(gb, 0x3F);
     clear(0x80808080u);
     EndPacket(list, 0, GifClose(gb));

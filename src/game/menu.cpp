@@ -464,6 +464,7 @@ void UpdateMainMenuHelp(u32 obj) {
     u32 state = GRef<u32>(obj + 0x67C);
     if (state == 6 && MainMenuSelection(obj + 0x250) == kQuitItem) {  // port: QUIT GAME has no help text
         if (GRef<s16>(obj + 0x664) != 0) SetMessageBoxText(obj + 0x658, -1);
+        GRef<s16>(obj + 0x666) = -1;  // the next item types its text again
     } else if (state == 6) {
         u32 id = static_cast<u32>(static_cast<s32>(MainMenuSelection(obj + 0x250)));  // port: QUIT GAME in the list
         if (id >= 0x24) id = 0;

@@ -11,4 +11,9 @@ using CrashContextProvider = void (*)(char* buffer, unsigned size);
 void InstallCrashHandler();
 void SetCrashContextProvider(CrashContextProvider provider);
 
+// The return addresses of the calling thread as "module+0xoffset" separated by spaces, skipping
+// `skip` frames (this function's own frame is always skipped), at most `count`: for diagnostic log
+// lines that must name the host code involved (symbolised later with the PDB).
+void DescribeCallers(char* buffer, unsigned size, unsigned skip, unsigned count);
+
 }  // namespace ac04::platform

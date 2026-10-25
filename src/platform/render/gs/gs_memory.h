@@ -14,6 +14,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace ac04::render::gs {
@@ -110,6 +112,28 @@ private:
     std::uint64_t write_count_ = 0;
     std::vector<std::uint8_t> dirty_ = std::vector<std::uint8_t>(kBlocks, 0);
     std::vector<std::uint32_t> dirty_list_;
+    // WriteImage: per packet place (BITBLTBUF base/width/format, TRXPOS, TRXREG, start pixel, size)
+    // the last data written there and the generation each block it wrote had afterwards.
+    struct UploadKey {
+        std::uint32_t dbp, dbw, dpsm, dsax, dsay, rrw, rrh, pos, bytes;
+        bool operator==(const UploadKey& o) const {
+            return dbp == o.dbp && dbw == o.dbw && dpsm == o.dpsm && dsax == o.dsax && dsay == o.dsay && rrw == o.rrw &&
+                   rrh == o.rrh && pos == o.pos && bytes == o.bytes;
+        }
+    };
+    struct UploadKeyHash {
+        std::size_t operator()(const UploadKey& k) const {
+            std::uint64_t h = 0xCBF29CE484222325ull;
+            for (std::uint32_t v : {k.dbp, k.dbw, k.dpsm, k.dsax, k.dsay, k.rrw, k.rrh, k.pos, k.bytes})
+                h = (h ^ v) * 0x100000001B3ull;
+            return static_cast<std::size_t>(h);
+        }
+    };
+    struct LastUpload {
+        std::vector<std::uint8_t> data;
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> blocks;  // block number, generation
+    };
+    std::unordered_map<UploadKey, LastUpload, UploadKeyHash> uploads_;
 };
 
 }  // namespace ac04::render::gs

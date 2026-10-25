@@ -272,7 +272,7 @@ void UpdatePlayerAircraft(s32 p) {
         if (Sub() != 0xC) UpdatePlayerTargeting(p);
         FirePlayerWeapons(p);
     }
-    if ((~W(P + 0x188) & 0x40000000u) == 0 && F(P + 0x24C) != 0.0f) func_002576C8(p, 0, F(P + 0x24C), 0.0f);
+    if ((W(P + 0x188) & 0x40000000u) == 0 && F(P + 0x24C) != 0.0f) func_002576C8(p, 0, F(P + 0x24C), 0.0f);
     const u8 model = GRef<u8>(u + 0x69);
     if (model != 0xC && model != 5 && F(P + 0x244) == 1.0f) func_002576C8(p, 1, 0.0f, 0.0f);
     if (F(P + 0x2DC) < 1.0f)

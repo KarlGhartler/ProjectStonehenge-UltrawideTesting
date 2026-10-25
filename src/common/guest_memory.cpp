@@ -2,6 +2,7 @@
 
 #include <cstdio>
 
+#include "platform/crash.h"
 #include "platform/log.h"
 
 namespace ac04::guest {
@@ -39,6 +40,7 @@ void GuestMemory::Reset() {
     std::memset(ram_.get(), 0, kRamSize);
     std::memset(spr_.get(), 0, kScratchpadSize);
     invalid_count_ = 0;
+    reported_.fill(0);
 }
 
 s64 GuestMemory::RamOffset(u32 address) {
@@ -55,7 +57,7 @@ u8* GuestMemory::TranslateSegment(u32 address, u32 size) {
 }
 
 u8* GuestMemory::Dummy(u32 address, u32 size) {
-    ReportInvalid(address, size, false);
+    ReportInvalid(address, size, Access::kReference);
     // Large enough for any single guest object dereferenced through ps2ptr (structs up to 64 KiB).
     static thread_local std::unique_ptr<u8[]> dummy(new u8[0x10000]());
     if (size > 0x10000) size = 0x10000;
@@ -69,14 +71,20 @@ HardwareHandler* GuestMemory::FindHardware(u32 physical, u32 size) {
     return nullptr;
 }
 
-void GuestMemory::ReportInvalid(u32 address, u32 size, bool write) {
+void GuestMemory::ReportInvalid(u32 address, u32 size, Access access) {
     ++invalid_count_;
-    char key[48];
-    std::snprintf(key, sizeof(key), "guest-invalid-%08X", address & 0xFFFF0000u);
-    log::WriteOnce(key, log::Level::Error, "guest",
-                   "invalid %s of %u bytes at guest address 0x%08X (no RAM/scratchpad/hardware there; "
-                   "further accesses in this 64 KiB page are not logged)",
-                   write ? "write" : "read", size, address);
+    // Once per 64 KiB page, with the host code that made the access (its return addresses,
+    // symbolised with the PDB): a guest pointer that went wrong is found from the log alone.
+    const u32 page = address >> 16;
+    if ((reported_[page >> 6] >> (page & 63) & 1) != 0) return;
+    reported_[page >> 6] |= 1ull << (page & 63);
+    static const char* const kKinds[] = {"read", "write", "access (read or write)"};
+    char callers[256];
+    platform::DescribeCallers(callers, sizeof(callers), 1, 6);
+    log::Write(log::Level::Error, "guest",
+               "invalid %s of %u bytes at guest address 0x%08X (no RAM/scratchpad/hardware there; "
+               "further accesses in this 64 KiB page are not logged) from %s",
+               kKinds[static_cast<int>(access)], size, address, callers);
 }
 
 void GuestMemory::ReadBytes(u32 address, void* dst, u32 size) {
@@ -91,7 +99,7 @@ void GuestMemory::ReadBytes(u32 address, void* dst, u32 size) {
             return;
         }
     }
-    ReportInvalid(address, size, false);
+    ReportInvalid(address, size, Access::kRead);
     std::memset(dst, 0, size);
 }
 
@@ -107,7 +115,7 @@ void GuestMemory::WriteBytes(u32 address, const void* src, u32 size) {
             return;
         }
     }
-    ReportInvalid(address, size, true);
+    ReportInvalid(address, size, Access::kWrite);
 }
 
 void GuestMemory::Fill(u32 address, u8 value, u32 size) {

@@ -96,17 +96,13 @@ bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& pr
 
 void Renderer::SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps,
                              std::vector<std::vector<gs::SourceMark>>& marks,
-                             std::vector<std::vector<uint8_t>>& pool, bool draws) {
+                             std::vector<std::vector<uint8_t>>& pool) {
     const auto start = std::chrono::steady_clock::now();
     for (size_t i = 0; i < steps.size(); ++i) {
         const std::vector<uint8_t>& s = steps[i];
         gs_state_.ProcessGif(s.data(), s.size(), i < marks.size() ? &marks[i] : nullptr);
-        // Without draws (frame interpolation: the step is drawn from its blended copy) the step
-        // still updates the GS state and local memory, and its texture work still runs.
-        auto step_draws = gs_state_.TakeDraws();
-        if (draws)
-            gs_pending_.insert(gs_pending_.end(), std::make_move_iterator(step_draws.begin()),
-                               std::make_move_iterator(step_draws.end()));
+        auto draws = gs_state_.TakeDraws();
+        gs_pending_.insert(gs_pending_.end(), std::make_move_iterator(draws.begin()), std::make_move_iterator(draws.end()));
         auto ops = gs_state_.TakeTextureOps();
         if (gs_ready_) gs_ops_.insert(gs_ops_.end(), std::make_move_iterator(ops.begin()), std::make_move_iterator(ops.end()));
     }
@@ -525,7 +521,13 @@ bool Renderer::DrawFrame() {
                                   native_request_h_ * internal_scale_ != native_height_ || native_scale_ != internal_scale_)) {
         ResizeNativeTarget(native_request_w_, native_request_h_);
     }
-    vkWaitForFences(ctx_.device, 1, &in_flight_[frame_], VK_TRUE, UINT64_MAX);
+    {
+        const auto wait_start = std::chrono::steady_clock::now();
+        vkWaitForFences(ctx_.device, 1, &in_flight_[frame_], VK_TRUE, UINT64_MAX);
+        last_stats_.wait_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - wait_start).count();
+        stat_wait_ms_ += last_stats_.wait_ms;
+        ++stat_presented_;
+    }
     uint32_t image = 0;
     VkResult r = vkAcquireNextImageKHR(ctx_.device, ctx_.swapchain, UINT64_MAX, image_available_[frame_],
                                        VK_NULL_HANDLE, &image);
@@ -675,6 +677,9 @@ void Renderer::Shutdown() {
                       static_cast<double>(stat_textures_) / n, static_cast<double>(stat_decodes_) / n,
                       static_cast<double>(stat_uploads_) / n, static_cast<double>(stat_memory_updates_) / n,
                       static_cast<double>(stat_upload_bytes_) / n / 1024.0);
+        AC04_LOG_INFO("renderer", "%llu frames presented; waiting for the GPU %.2f ms per frame on average",
+                      static_cast<unsigned long long>(stat_presented_),
+                      stat_wait_ms_ / static_cast<double>(stat_presented_));
     }
     if (gs_backend_.VerifiedDecodes() > 0) {
         const auto bad = static_cast<unsigned long long>(gs_backend_.VerifyMismatches());

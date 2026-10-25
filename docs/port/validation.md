@@ -24,6 +24,11 @@ Every validation run of the project, newest last. How slices are validated: `val
 | §2aa | in-engine cutscenes: ticks per frame with v-sync (2026-10-22) |
 | §2ab | depth copy for the cloud pass; SPU2 reverb (2026-10-22) |
 | §2ac | frame interpolation (2026-10-22) |
+| §2ad | frame interpolation speed; explosions at 7× (2026-10-23; FI-2, EX-1) |
+| §2ae | invalid guest reads from the player aircraft's light colours; mission 6 crash (2026-10-23; IR-1, CR-1) |
+| §2af | mission 6 report: takeoff after a rearm, vibration after the landing, explosion fire, QUIT GAME in the campaign menu (2026-10-23/24; TO-1, VB-1, EX-2, EX-3, QG-1) |
+| §2ag | second mission 6 crash: a unit loop with a garbage count; invalid-access log names the caller (2026-10-24; CR-2) |
+| §2ah | third mission 6 crash, recorded: an inverted unit test in the track stream overran the radio header; fixed (2026-10-25; CR-3) |
 | §2o | new memory card and first save, startup messages (2026-10-20; NS-1, NS-2) |
 | §2n | anti-aliasing (FXAA, SMAA) before the HUD (2026-10-20; AA-1 to AA-4) |
 | §2m | settings tests (GRAPHICS page, live combinations, controller and save round trip), texture residency, sprite edges at N×, defaults and the frame-rate overlay (2026-10-20; ST-1 to ST-8) |
@@ -960,6 +965,143 @@ User request: build the frame interpolation of ADR-002 (approved baseline). Desi
 - Cost (mission 1, 1×, per frame): with a step 11.0 ms (tick 4.4, stream and GS processing 4.1, recording 2.5), without a step 5.7 ms: about 2 frames per step on this PC (120 Hz holds; 144 Hz about 130). A step's own GS pass is skipped when its blended copy replaces it.
 - Not blended (ADR-002): 2D and HUD, effects and particles the EE projects itself (smoke, sparks, the sun and its flare: they follow the newest step), SMV movies.
 - Regression (`full.json`, run `fi1`, against `rz1`; validation runs keep interpolation off): identical except the known `m3_route` / `m4_route` 5300 column and `s1_cardS` live stick bytes. Tests: `settings: frame interpolation`.
+
+### FI-1. Hangar: flickering dark rectangles (User report, 0.9.3, v-sync off, no cap, 8×)
+- Reproduced with interpolation on (mission 3 route, hangar at vblank 4450-4600, v-sync off, cap 360), not with it off, at 1× and 8× alike. The other marks in the report (the row of boxes after the red cross, MOBILITY and MSSL washed out by the windows, the blocky floor reflection) are in the PCSX2 picture too (`Slices/Slice4/s4_hangar_a.png`).
+- Three causes, found by blending one program at a time (only B and C produced it), alpha forced to 0 and 1, and a byte comparison of the copy with the step it replaces (equal):
+  1. In frames that caught up several steps (the hangar at 360 fps: up to 4), the earlier steps were processed without drawing, assuming the newest step redraws everything. The hangar keeps what earlier steps drew in its frame buffers: those parts went stale (the dark panels). Earlier steps are now always drawn; only the newest is replaced by its blended copy.
+  2. Repeated meshes (the hangar's wall panels: one mesh, many places) were paired by their order in the step; when the order changed, a panel was blended halfway to its neighbour. Runs with the same key are now paired with the unused candidate whose screen matrix is closest.
+  3. A node whose origin is behind the camera (large walls) failed the jump guard and stayed unblended while coplanar parts were blended (depth fighting). The guard now applies only when both origins project; the pair is chosen by the closest matrix anyway.
+- Performance: the hangar has about 5,000 program runs per step and 7 ms of GS processing per step; with interpolation it dropped 119 ticks in 600 (259 frames). Steps with more than 2,000 runs are no longer blended (flight: 550-850), and a frame that catches up more than one step adds no blended copy. (The 2,000-run limit was removed again on 2026-10-23, §2ad: mission 1 flight steps have 2,200-2,600 runs, so it switched interpolation off there.) Hangar afterwards: 0 ticks dropped, 658 frames (706 with interpolation off); mission 1: every run with output matched, 3,468 frames for 2,500 steps, 0 dropped; no-save intro session: 4,414 frames for 2,700 steps, 0 dropped.
+
+## 2ad. Frame interpolation speed; explosions at 7× (2026-10-23)
+
+User report (0.9.3, 4K display, 8×, SMAA, v-sync off, cap 360): interpolation gives very low frame rates; and are explosions at 7× the same as at 1×? Runs from the User's mission 1 input log (`--mission 1 --replay-input`, recorded with `--mission 1`; a copy that switches to missiles with SELECT at vblank 6360 and fires every 30 vblanks from 6380, `out/fi2/fire_m.ac4i`, not committed). New development parameter `--frame-interpolation on|off` (`command-line.md`), new log lines: frames at normal speed and blended copies (main), GPU wait per frame (renderer).
+
+### FI-2. Speed
+
+Mission 1, vblanks 6300-7500 at normal speed, 8×, SMAA, fullscreen 3840 × 2160, v-sync off, cap 360, RX 9070 XT. CPU-bound throughout (GPU wait under 0.1 ms per frame with interpolation).
+
+| Build | fps | blended frames | notes |
+|---|---|---|---|
+| interpolation off | 113-116 | - | |
+| 0.9.3 changes of §2ac FI-1 (2,000-run limit) | 95-107 | 54 of 1,912 | mission 1 steps have 2,224-2,589 runs: almost never blended, but the runs were still recorded |
+| limit lifted, otherwise unchanged | 56 | 954 of 1,129 | 172 frames had to catch up 2+ ticks |
+| + run logs reused | 84 | 1,680 of 1,683 | |
+| + blended copy built on 4 threads | 96.5 | 1,929 of 1,932 | build 1.49 → 0.70 ms |
+| + repeated texture uploads skipped | 99 | 1,982 of 1,985 | GS processing 6.0 → 5.3 ms per frame |
+
+Hangar (mission 3 route, vblanks 4400-5000, same settings): 80 fps with interpolation (795 of 801 frames blended), 163 without; 0 ticks dropped either way.
+
+- **Run logs reused** (`sce_host.h` `gs_runs_pool`, `libgraph.cpp`, `main.cpp`). The VIF records about 4 MB of VU memory per flight step for the interpolator; each step got a new log grown from empty and freed afterwards. In the profile (`tools/research/sample_profile.py`) the vector growth and page faults (`_Insert_counted_range`, `RtlAllocateHeap`, `NtFreeVirtualMemory`) under `Vif1::RunProgram` were 7.5 % of all samples, more than the GS processing (5.4 %) and over three times the VU1 programs they record (2.2 %). Finished logs now go back to a pool with their capacity, as the GS step buffers already did.
+- **Parallel build** (`frame_interpolator.cpp`). Every repeated run starts from its own recorded VU memory, so the runs are independent: up to 3 helper threads (when the CPU has more than 4 hardware threads) and the main thread each repeat a quarter of them into per-run buffers, which are then joined in stream order. The output is the same bytes as before. The marks are shifted with a binary search instead of a scan per mark.
+- **Repeated uploads skipped** (`gs_memory.cpp` `WriteImage`). A packet of an image transfer that repeats the last packet written at the same place (BITBLTBUF, TRXPOS, TRXREG, start pixel and size) with the same bytes, while every block it wrote still has the generation it had after that write, would store bytes the blocks already hold, so it is skipped. Exact: block generations change on every write that changes a byte. Flight steps upload about 1 MB of textures (mostly T8) in about 670 packets; 73 % of the packets are now skipped; the rest are real changes (texture slots reused within a step). Each blended copy repeats its step's uploads, so this helps interpolation most.
+- **2,000-run limit removed** (`frame_interpolator.cpp`). It was added for the hangar's dropped ticks (§2ac FI-1); with the changes above the hangar keeps up.
+- Checks: guest RAM hash log identical at all 7,600 vblanks with interpolation on and off (8×, SMAA). Screenshots of 141 vblanks (6600-8000) identical byte for byte to the build before these changes at 1× and at 7× (interpolation off). Hangar at vblanks 4450-4600 with interpolation on: no dark panels (FI-1), only the expected small motion differences against interpolation off. `ctest`: passed.
+- Remaining cost per blended frame: GS processing of the whole step (5.3 ms) and the Vulkan command recording (2.6 ms) on the main thread. Moving `SubmitGsSteps` and `Record` to a render thread (`renderer.md` §2.2) would be the next step; not done.
+
+### EX-1. Explosions at 7× against 1×
+
+- Native screenshots (the 7× image box-averaged to 512 × 448) of the same vblanks at 1× and 7×, AA off: missile run vblanks 6600-8000 every 10 (141 frames), the User's original recording 4500-8100, the mission 1 opening (mission id 0x25) 920-4000, the no-save intro (0x23) 300-3000. Mean absolute difference 0.0-2.1 levels per channel, at most 0.94 % of pixels differing by more than 48 (vblank 6630: falling UGBM bombs a few pixels in size, thinner at 7×).
+- Missile hit on the TU-95 at vblank 7376 and the burning bomber at 7400: compared in crops of the 7× image against the 1× image enlarged 7×. The burst has the same size, place and colours; at 7× it is sharper. Fire and smoke match. The fix of §2z (work page FBP 0x180 kept at 1×) holds at 7×.
+- Not covered: a kill explosion close to the camera (none in these runs).
+
+## 2ae. Invalid guest reads; mission 6 crash (2026-10-23)
+
+User report: a session (development build of §2ad, 8×, interpolation on) with many `guest invalid read` errors and a crash in mission 6. The session log (saved to `out/m6crash/`, not committed) has 821 invalid reads and ends with exception 0xC0000094 (integer divide by zero).
+
+### IR-1. Light colours read as pointers (fixed)
+
+- The reads come in bursts of fading values (e.g. 0x180A1B35, 0x170A1B35, … 0x02000205): colours being darkened from frame to frame and used as addresses. They also occur in the attract-mode demos (title screen left idle; `--memcard` with a copy of the User's card, `--fast-until 40000`): 221 reads, the first at the same addresses as in the User's session.
+- A stack capture on the first reads (temporary, removed) gave `func_001483A0` (player aircraft, `aircraft_models.cpp`): light 2 of the model pass took its colour as `word (word A+0x70)[p]`, a pointer to a table. The original reads `lw a2, 0x70(A + 4p)` (0x001490DC, 0x00149604) and `lw a2, 0x78(A + 4p)` (0x00149238, 0x0014984C): the colours are words in A itself, after the two light vectors at A+0x50/A+0x60. The port read the colour, then used it as an address: light 2 got colour 0 (address outside RAM) or some unrelated RAM word. Both sites fixed; rendering.md corrected.
+- Only the light-2 colour of the player aircraft's model passes changes (drawing only). The demo run now has 0 invalid reads; `ctest` passed.
+
+### CR-1. Mission 6 crash (not reproduced)
+
+- Crash in `func_00252C30` (radio chatter, `radio_chatter.cpp`): the period u16 at header +2 (header = word 0x004BA300) was 0. The original has a `break 7` for a zero divisor at 0x00252D74, so on the PS2 the same state would also stop the game: the header or its pointer was overwritten earlier.
+- About 1.4 s before, one burst of invalid reads: 10 one-byte reads at 0xFA13E7A0…0xFFFB0999, then reads of 8 and 4 bytes from 0x02050008 up through every 64 KiB page to 0x03D40008, then 0x3CA00058. This looks like a loop that ran with a garbage count or pointer and walked from inside RAM to past its end, and probably overwrote RAM on the way (writes inside RAM are not logged). No invalid writes were logged.
+- Not related to IR-1 (those are reads only). Mission 6 idle for 50,000 vblanks (`--mission 6`) did not reproduce it; it needs the User's flight. The log does not say which function made the reads; the next step is an input recording of a session that shows it (`--record-input`), or the caller in the invalid-access log line.
+
+## 2af. Mission 6 report (2026-10-23)
+
+User report from campaign mission 6 (mission id 5: `GetMissionId(0, 6)`, table 0x00384800), compared with PCSX2: (1) explosions differ at 8×; (2) no QUIT GAME after a save is loaded (the campaign menu, page 5); (3) after a landing, rearm and takeoff the game does not go back to the mission; (4) after the landing the camera keeps shaking with the aircraft standing still; (5) terrain textures broken at times (low over the city).
+
+### TO-1. Takeoff after a rearm (fixed)
+
+- `func_0017AC68` sub 0x1A: the original resets the counter +0x27C while aircraft +0x188 bit 0x20000000 (all three wheels on the ground, `player_flight.cpp`) is set and adds K = *0x0040EC14 (1/60) while it is clear (0x0017ADB4-0x0017ADEC: `beql` on the masked bit stores 0); above 5, i.e. 5 s in the air, it requests sub 0x1B (success: radio 0x11 "Altitude restrictions canceled", fade, sub 0xB). The translation had the two branches swapped: the counter grew only while rolling on the runway and was reset at lift-off, so in the air sub 0x1A stayed until its timer (0xE10 frames) ran out. Branches swapped back. Checked by the User in the game (2026-10-24) and in the replay of the User's recording: sub 0x1B and the return to the mission at vblank ~13300.
+
+User recording 2026-10-24 (port, development build, 8×, interpolation on): mission 6 from the User's save (card unchanged since 2026-10-23 22:35, copy in `out/m6crash/card`), a kill, landing, rearm, takeoff, quit to the campaign menu; 14,301 vblanks, `out/m6rec/input.ac4i` (not committed). It replays in sync to the end (`--memcard` copy of the card, `--replay-input`).
+
+### VB-1. Vibration and camera shake after the landing (fixed)
+
+- User report: once landed the controller keeps vibrating (and, report of 2026-10-23, the camera keeps shaking: its strength is the pad vibration level, `func_00257360`).
+- Temporary per-tick log of the vibration slots in the replay: from touchdown to the rearm menu a kind 0 slot (curve kind, limits *0x00410464 / *0x00410468 = 0.2 / 0.8) ran every tick with the value 1 at full strength (120).
+- Kind 0 is requested by `UpdatePlayerAircraft` (`player_flight.cpp`) with the air-brake level P+0x24C, which rises to 1 at idle throttle. The original skips the request while P+0x188 bit 0x40000000 (a wheel on the ground) is set (0x0011FD7C-0x0011FD8C: `nor`, `and`, `beql` to the skip): the air-brake vibration runs only in the air. The translation requested it only on the ground. Fixed; after the fix both motors are 0 from touchdown (sub 0x16) on, and the takeoff roll (sub 0x1A) vibrates by speed as before.
+- TO-1 and VB-1 are the same mistake: a bit test written `(~x & m) == 0` whose taken `beql` branch is the *skip*. Every other `(~x & m) == 0` site in `src/game` that acts on the bit (20 sites: `FlightPlayFrame`, `FlightSimStep`, `RunMissionEvents`, 0x0011A3D8, the landing subs 0x0017A1B8, 0x00126758, `UpdatePlayerSound` 0x001270B8, 0x00128090, `UpdateGroundUnit`, `DetectAIEvents`, ...) was compared with its branch in the disassembly: all match.
+
+### EX-2. Explosions at 8×
+
+- Mission 1 missile run of §2ad EX-1 at 8× against 1× (`--fast-until` past the screenshots so they land on the vblank asked for): 0.08-0.10 % of pixels differ by more than 48 at vblanks 7370-7400, the TU-95 hit included. The difference the User sees is specific to mission 6; not reproduced yet.
+- Note: screenshots taken after `--fast-until` has ended can show an older step at 8× (the HUD clock 3 ticks behind): compare only screenshots inside the fast-forward range.
+
+### EX-3. Explosion fire missing at every internal scale (fixed)
+
+- User report with a PCSX2 picture: an aircraft destroyed in mission 6 explodes in an orange fireball in PCSX2; in the port only debris and black smoke. Replay of the User's recording at 1×: the same, so not a scaling problem (EX-2 compared 7× / 8× with 1×, never with PCSX2).
+- The game spawns the explosion (kind 0x81 hit, 0xC1 kill: type 1 of the table *0x002B856C, with debris) and `func_001F1678` draws its 8 particles in two passes: smoke (colour 0x030105, ALPHA (Cs-Cd)·As+Cd, texture rows 64-127) and fire (colour 0x437DFF, additive, rows 0-63) from the 512 × 128 CT32 work page at TBP 0x3000 (FBP 0x180).
+- The work page is drawn every frame by `func_001EEBE0` in GS context 2: glow strips, then a copy with RGBAQ 0x4000, then the page read as CT16S with region-repeat clamp U & 0x3F7 (each 32-bit word's low half copied into its high half: B := R, A := G), then R and G set to 0x80 with FBMSK 0xFFFF0000. Result: RGB (0x80, 0x80, 0), alpha = the glow shape.
+- Port bug (`effect_draw.cpp`): the SCISSOR_2 values of these passes were translated as 0x7F01FF0000 / 0xFF01FF0000 (SCAY0 0x7F, SCAY1 0): an empty box, so the port drew nothing into the page and the fire sampled stale local memory (the city's textures; the smoke looked right because it is nearly black). The original builds them as `lui 0x7F; dsll 16; ori 0x1FF; dsll 16` = 0x007F000001FF0000 (0x001EED14, 0x001EFFB4, 0x001F0628). The same slip in the large-smoke overlay `func_0020D258` / heat haze `func_0020DE08` (0x01BF000000FF0000, 0x01BF000001FF0000: 0x0020D3D4, 0x0020DA34, 0x0020DFCC), which therefore never drew either. Six constants fixed. Found by reading the page back from the GPU (temporary): `used_height` 0, every draw rejected by its scissor.
+- After the fix: the fireball at the hit and the kill (vblanks 6290-6440) and burning debris, as in the PCSX2 picture. A temporary log of every draw with an empty scissor over the whole 14,301-vblank replay found none left.
+- Still to compare: a PCSX2 frame of the same explosion (the GS dump `gameplay_attacking_bombers_explosions_hud` has no close explosion, and its memory image holds no GPU-drawn page).
+
+### QG-1. QUIT GAME in the campaign menu
+
+- User clarification 2026-10-24: the menu without QUIT GAME is the campaign menu (START MISSION ... LOAD) reached after quitting a mission. QUIT GAME added as its last item, after LOAD (port-features §9). Checked with QUIT GAME forced on in a scripted run (temporary): the item is typed in with the others, the help line is empty on it and the next item's help is typed again, selecting it fades out and ends the session (31 vblanks after the press).
+- Also fixed in both menus: after QUIT GAME, moving back to the item shown before it left the help line empty (`SetMessageBoxText(-1)` keeps the shown message id); the port line now resets it.
+
+### Not reproduced yet
+
+- (2) QUIT GAME (resolved by QG-1, kept for the record): User clarification: it is missing from the main menu (NEW GAME, CONTINUE, LOAD, TUTORIAL, VS MODE, OPTIONS) after coming back from a mission. Not reproduced (QUIT GAME forced on for these scripted runs with a copy of the User's card, temporary change removed): present after LOAD from the main menu; after `--mission 1`, QUIT MISSION, campaign menu, OPTIONS > TITLE, START; and the same with `--frame-interpolation on` (the menus get no blended copies). Every builder of the main menu tree (`MainMenuSetup`, the cursor stores) applies `QuitItemPatch`. Needs the User's route.
+- (4) camera shake (resolved by VB-1, kept for the record): its strength is the pad vibration level (`func_00257360`: strong motor D_00411888, else weak D_00411880), so a vibration left running would also shake the camera. The vibration tick `func_00257890` matches the original instruction by instruction; the ground roll request (kind 3) scales with the ground speed P+0x130, which is clamped to exactly 0 at a standstill, and the ground model resets P+0x2DC/P+0x2E0 (kinds 8, 9) to 1. Needs the landing.
+- (5) terrain: mission 6 flown straight (`--mission 6`), vblanks 1200-4200, 1× against 8×: at most 0.09 % of pixels differ, nothing broken. Needs the low flight over the city.
+
+## 2ag. Second mission 6 crash (2026-10-24)
+
+User report: in mission 6 an enemy subtitle turned black (normally red) a few seconds before the game crashed. No input recording of that session; the session log (development build with §2af, 8×) is saved in `out/m6crash2/` (not committed).
+
+### CR-2. What the log shows
+
+- 13.9 min into the mission (log 935.8 s): 15 one-byte accesses in one frame at addresses made of two halfwords (0x1F710101, 0x0D5A0028, ...): a byte loop following broken pointers. Then the black subtitle (the subtitle colour comes from the speaker class of the request, `func_00252B88`).
+- 948.8 s: two-byte accesses at 0xFFFD1BBD, 0xFFFE0001, 0xFFFF0001, then accesses walking up through every 64 KiB page from 0x02000008 (the end of RAM) to 0x0C6D0000 (29,015 one-byte, 1,253 four-byte, 470 eight-byte); the log ends there (the game stopped responding or was closed). The one-byte addresses are floats plus 0x98 (0x45F19898 = 7731.0 + 0x98, 0x3F800098 = 1.0 + 0x98, 0xC33E0098 = -190.0 + 0x98) and strings plus small offsets: a loop reading pointers from a table and a byte at +0x98 from each, run past the table into float data and on past the end of RAM.
+- That matches the per-unit loops over `Unit(i)` (table 0x002A1F70) with the count `W(W(0x00410640))`, e.g. `UpdateUnitStates` 0x0011BE30, which **writes** 0 to every `Unit(i) + 0x98`: with a garbage count it zeroes a byte at every word-as-pointer + 0x98 in RAM. This also explains the first crash (CR-1: the radio header 0x004BA300 overwritten after the same kind of walk) and the black subtitle (radio request data hit). Writes through `GRef` to an invalid address were logged as "read", which hid that these loops write.
+- The unit count is only written at mission load (`flight_units.cpp`), so something else overwrites the count or the list pointer 0x00410640 first. Not found: the User's earlier recording continued from after the takeoff with neutral input (`out/m6rec/cont.ac4i`, 70,000 more vblanks) shows no invalid access (the aircraft is shot down within a minute and the replay loops); mission 6 idle (CR-1) neither.
+- Audited on the way: `func_00252C30`'s ring store and its threshold selection match the original.
+
+### Diagnostics added
+
+- `GuestMemory::ReportInvalid` (`src/common/guest_memory.cpp`): the line now says `read`, `write` or `access (read or write)` (a `GRef` / `ps2ptr` reference, which the caller may write), and ends with `from` and the host return addresses (`ProjectStonehenge.exe+0x...`, up to 6, `platform::DescribeCallers` in `src/platform/win32/crash_win32.cpp`), symbolised with the PDB: `python tools/research/symbolize.py <exe> --log <session.log>` (the exact build that wrote the log). Still once per 64 KiB page. Test: `guest memory: an invalid page is logged once, with the kind of access and the host caller`.
+- Next step: a session that shows it again, with this build and preferably `--record-input` (a copy of the saves folder taken before playing, so the replay starts from the same card).
+
+## 2ah. Third mission 6 crash: the track stream runs into the radio header (2026-10-25)
+
+User session with the §2ag build and `--record-input` (36,507 ticks; log, recording and the card copy in `out/m6crash3/`, not committed). The log has one invalid access, a two-byte access at 0xFFFD1DCF from `func_00251050` (`radio_chatter.cpp`), then the crash: integer divide by zero in `func_00252C30` (`rem = frame % period`, period read through the same garbage bank pointer) about 540 s into the mission.
+
+### CR-3. Cause
+
+- The replay (`--memcard <card copy> --replay-input out/m6crash3/input.ac4i`) reproduces the crash exactly.
+- New research tool `tools/research/watch_guest.py`: runs the port under a minimal debugger and sets x64 hardware write breakpoints on guest addresses (host stack symbolised from the PDB, optional RAM dump at hit N). No port changes. Run with `python -P` (the local `tools/research/dis.py` shadows the standard `dis` module).
+- Watching 0x004BA300 (the radio header copy: word 0 = bank header pointer) gives 2 writes at mission load (the header copy) and then, at the crash, 2 more from **`func_0024CDD0`** (`flight_sequences.cpp:801-802`): the position stores of the once-a-second track block.
+- `func_0024CBE0` starts the track stream at 0x0043A300; `func_0024CDD0` appends one block per mission second (status +0x28 counts frames, the block is written when it is a multiple of 60): `{1, second}`, then a 4-byte record per tracked unit of kind 2/3 and a 16-byte record per other tracked unit, and a 0 terminator. The stream has no bound check (neither has the original); 0x80000 bytes after its start lie the radio header (0x004BA300) and the message pointer table (0x004BA570).
+- RAM at the first write to 0x004BA200 (`--dump`): 540 blocks with 110 records in second 0 and 83-94 later, about 970 bytes per second, so the buffer was full after 9 minutes (mission 6's limit is 15 minutes, rules +0x14 = 54,000 frames).
+- **PCSX2 (run 13 of `../pcsx2/sessions.md`)**: mission 6 to 1'54" before the end with no overrun; 7 units in second 0 (the player and units 44-49), 22-37 later; 227 KB used after 785 s. The port recorded exactly the units the original skips.
+- **Cause: an inverted test in the translation.** The unit test at 0x0024CFE8 is `nor v0, zero, flags`, then `and` with 0x10000000 and `andi v0, v0, 0x2000`, both on `~flags`: a unit is skipped when bit 0x10000000 **or bit 0x2000** is clear. The translation skipped units with bit 0x2000 set (the old comment said "not 0x2000"). Applied to the PCSX2 state, the original's test gives the 34 units that the PS2 recorded in its last block.
+- This explains all three mission 6 reports: the overrun wrote over the radio header and message pointers (black subtitle: a speaker class read from overwritten request data; CR-1: header overwritten; CR-2: the garbage pointers then fed other loops, with a wrong unit count, that wrote around RAM until the game hung).
+
+### Fix and verification
+
+- `src/game/flight_sequences.cpp` `func_0024CDD0`: `(~flags & 0x2000u) != 0` (skip without bit 0x2000), comment corrected. `ctest --preset dev` passes.
+- The User's recording replayed with the fix to vblank 37,500 (past the old crash): no invalid access, no crash; 0x004BA300 written only at mission load. The units recorded in seconds 0, 1 and 30 are the same as in the PCSX2 session (other inputs); later they differ with the targets destroyed. About 280 bytes per second (250 KB for 15 minutes).
+- Ghidra: plate comment on `func_0024CDD0` (logged).
+- Lesson for translations: `nor` followed by several `and`/`andi` tests means every test is on the inverted flags.
 
 ## 3. Recommendations
 

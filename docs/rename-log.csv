@@ -1559,3 +1559,4 @@ CdFileEntry.*,pPath / dwLsn,(not applied),same as above
 0x0022A4D0,FUN_0022a4d0,WriteCentredDescriptorSprite,"translated 2026-10-19 (S8): sprite centred on x/y from descriptor"
 0x00251FF8,FUN_00251ff8,GetMessageWidth,"translated 2026-10-19 (S8): sum of glyph widths of a message"
 0x00102798,FUN_00102798,GetCameraDiagonalFov,"translated 2026-10-19 (S8): 2 atan2(|half screen|, distance)"
+0x0024CDD0,FUN_0024cdd0,"plate comment: track stream unit test (+0x4C bits 0x10000000 and 0x2000 set, +0x64), no bound on the stream before 0x004BA300","disassembly 0x0024CFE8-0x0024D00C 2026-10-25; PCSX2 run 13; validation.md §2ah"

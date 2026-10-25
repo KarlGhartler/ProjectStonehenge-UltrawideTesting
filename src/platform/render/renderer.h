@@ -51,7 +51,7 @@ public:
     // shorter); processed now, drawn with the next frame.
     // Processes the steps' GIF data; the emptied step buffers go to `pool` (kept for reuse).
     void SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps, std::vector<std::vector<gs::SourceMark>>& marks,
-                       std::vector<std::vector<uint8_t>>& pool, bool draws = true);
+                       std::vector<std::vector<uint8_t>>& pool);
     // Off: submitted steps update GS registers and local memory but produce no draws (--fast-until:
     // steps that are never shown).
     void SetGsDrawsEnabled(bool on) { gs_state_.SetDrawsEnabled(on); }
@@ -103,6 +103,7 @@ public:
     struct Stats {
         double gs_ms = 0.0;      // SubmitGsSteps since the previous DrawFrame
         double record_ms = 0.0;  // GsBackend::Record of the last frame
+        double wait_ms = 0.0;    // waiting for the GPU to finish the frame before last (its fence)
         gs::GsBackend::TextureStats textures;
     };
     const Stats& LastStats() const { return last_stats_; }
@@ -153,7 +154,8 @@ private:
     double pending_gs_ms_ = 0.0;
     // Session sums for the shutdown summary (frames with GS draws only).
     std::uint64_t stat_frames_ = 0;
-    double stat_gs_ms_ = 0.0, stat_record_ms_ = 0.0;
+    double stat_gs_ms_ = 0.0, stat_record_ms_ = 0.0, stat_wait_ms_ = 0.0;
+    std::uint64_t stat_presented_ = 0;
     std::uint64_t stat_upload_bytes_ = 0, stat_uploads_ = 0, stat_decodes_ = 0, stat_memory_updates_ = 0,
                   stat_textures_ = 0;
 

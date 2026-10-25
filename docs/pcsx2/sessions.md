@@ -651,3 +651,11 @@ Files: `s5_m4_loading.png`, `s5_m4_loading_2.png` (black), `s5_m4_start.p2s`, GS
 - The GS dumps came zstd-compressed again (PCSX2 setting "GS dump compression"); unpacked for research as before.
 - Effect clock: the word at effect block +0x6249C read by `InitEffects` before it is written in the scene held 0x80000000 (mission 3), 0x80312B1F (mission 1, run 11) and 0 (mission 4) in these states: memory left from the briefing (`../port/validation.md` S5-A3).
 - New card from the User: `Memory Card Folder/Mcd001_converted.ps2` with a fully cleared campaign (already used for S2b-B in run 11). It gives access to the BGM player, the interlude viewer and all missions in free mission.
+
+## Run 13 (check M6: mission 6 track stream)
+
+- Emulator: PCSX2 2.8.2, original disc image. Run by the User on 2026-10-25, following `procedures.md` M6 (now removed from the list).
+- Files (outside the repo, `TestSessions/M6/`): `0x00411584.p2s` (mission frame 4,364, after the step 3 read), `0x004BA300_01_54_40.p2s` (frame 47,138, 1'54"40 left on the mission timer).
+- Result: mission 6 played to 1'54" before the end with no problem; the write breakpoint on 0x004BA300 never fired. The radio header still holds 0x0131EE40 (as after the mission load in the port).
+- Track stream (parsed from RAM): 786 blocks, stream position 0x00471C48 (227 KB used of 512 KB). Units recorded per second: 7 in second 0 (the player and units 44-49), 22-37 later. The port recorded 110 in second 0 and about 90 later: the units it recorded were exactly the ones the original skips. Cause and fix: `../port/validation.md` §2ah.
+

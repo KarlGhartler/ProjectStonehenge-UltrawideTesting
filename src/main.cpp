@@ -899,6 +899,9 @@ int Run(int argc, char** argv) {
     std::vector<std::vector<u8>> blended(1);
     std::vector<std::vector<render::gs::SourceMark>> blended_marks(1);
     std::vector<std::vector<u8>> blended_pool;
+    // Session statistics (log at exit): frames presented at normal speed, and the blended copies.
+    u64 normal_frames = 0, blended_frames = 0;
+    double normal_seconds = 0.0, build_ms = 0.0;
     u64 frame_number = 0;
     bool game_end_logged = false;
     bool running = true;
@@ -962,7 +965,9 @@ int Run(int argc, char** argv) {
             // this frame's steps only while it is on.
             const PresentationSettings& pr = settings.Get().presentation;
             const double rate = pr.vsync ? (refresh_seconds > 0.0 ? 1.0 / refresh_seconds : 60.0) : pr.frame_cap;
-            const bool want = pr.frame_interpolation && !validation_run && !fast && rate > 62.0;
+            const bool allowed = cl.options.frame_interpolation ? *cl.options.frame_interpolation
+                                                                : pr.frame_interpolation && !validation_run;
+            const bool want = allowed && !fast && rate > 62.0;
             if (want != interpolating) {
                 interpolating = want;
                 interpolator.Reset();
@@ -1037,20 +1042,35 @@ int Run(int argc, char** argv) {
                     interpolator.PushStep(dma.gs_steps.back(), dma.gs_steps_marks.back(), dma.gs_steps_runs.back());
                     current = true;
                 }
-                if (current) blend = interpolator.Build(clock.Alpha(), blended[0], blended_marks[0]);
-                else interpolator.Reset();
+                // A frame that had to catch up more than one step adds no blended copy (its cost
+                // would make the next frame later still).
+                if (!current) interpolator.Reset();
+                else if (ticks_run <= 1) {
+                    const auto build_start = std::chrono::steady_clock::now();
+                    blend = interpolator.Build(clock.Alpha(), blended[0], blended_marks[0]);
+                    build_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - build_start).count();
+                    if (blend) ++blended_frames;
+                }
+            }
+            // The run logs go back to the pool with their capacity (PushStep hands back the log of
+            // the step it dropped, cleared).
+            for (render::vu1::RunLog& log : dma.gs_steps_runs) {
+                if (dma.gs_runs_pool.size() >= 3) break;
+                log.Clear();
+                dma.gs_runs_pool.push_back(std::move(log));
             }
             dma.gs_steps_runs.clear();
             // With a blended copy the newest step is replaced by it: the copy makes the same GS
             // register and local memory changes (only the blended runs' vertices differ). Earlier
-            // steps of this frame still update the GS state, without drawing.
+            // steps of this frame are drawn as usual: what a step draws can stay in the frame
+            // buffers for later steps (the hangar), so a step's draws are never left out.
             if (blend && !dma.gs_steps.empty()) {
                 dma.gs_steps.back().clear();
                 if (dma.gs_step_pool.size() < 4) dma.gs_step_pool.push_back(std::move(dma.gs_steps.back()));
                 dma.gs_steps.pop_back();
                 if (dma.gs_steps_marks.size() > dma.gs_steps.size()) dma.gs_steps_marks.resize(dma.gs_steps.size());
             }
-            renderer.SubmitGsSteps(dma.gs_steps, dma.gs_steps_marks, dma.gs_step_pool, !blend);
+            renderer.SubmitGsSteps(dma.gs_steps, dma.gs_steps_marks, dma.gs_step_pool);
             if (blend) {
                 renderer.SubmitGsSteps(blended, blended_marks, blended_pool);
                 blended.resize(1);
@@ -1148,7 +1168,11 @@ int Run(int argc, char** argv) {
             break;
         }
         ++period_frames;
-        if (!fast) pacer.WaitNextFrame();
+        if (!fast) {
+            ++normal_frames;
+            normal_seconds += measured;
+            pacer.WaitNextFrame();
+        }
         // --stress-host: random main-thread delays, so catch-up batches vary (determinism check).
         if (cl.options.stress_host)
             std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 40)(stress_rng)));
@@ -1205,6 +1229,11 @@ int Run(int argc, char** argv) {
     AC04_LOG_INFO("game", "stopped after %llu vblanks (%llu ticks dropped)",
                   static_cast<unsigned long long>(game.VBlankCount()),
                   static_cast<unsigned long long>(clock.DroppedTicks()));
+    if (normal_frames > 0 && normal_seconds > 0.0)
+        AC04_LOG_INFO("renderer", "%llu frames at normal speed in %.1f s (%.1f fps); %llu with a blended copy (%.2f ms each to build)",
+                      static_cast<unsigned long long>(normal_frames), normal_seconds,
+                      static_cast<double>(normal_frames) / normal_seconds, static_cast<unsigned long long>(blended_frames),
+                      blended_frames > 0 ? build_ms / static_cast<double>(blended_frames) : 0.0);
     renderer.Shutdown();
     audio.Close();
     window.Destroy();

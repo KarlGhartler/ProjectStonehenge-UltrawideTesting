@@ -166,6 +166,7 @@ Translation (S4, `src/game/briefing_page.cpp`; names in `../symbols.csv`):
 - `src/game/campaign_menu_page.cpp`: page object 0x680 bytes at `g_CampaignMenu` 0x00411818; a 6-column menu tree (0x0039D920) with a help line (messages 0x0039DA28).
 - `CampaignMenuSelect` (jump table 0x00407120, 19 items): page 6 (hangar), 3 (briefing; sets `game[0x27]`), 0xD–0x10, 0; sub-pages 0x2E, 0x2A, 0x3B, 0x51, 0x57, 0x4A/0x50 (save/load; their HDD columns 4/5 need ctx flag 0x80000); items 2–4 open columns 1–3.
 - Checked in the port: START MISSION, BRIEFING, BUY, SELL, OPTIONS, SAVE, LOAD with the help line.
+- Port addition (baseline, 2026-10-24): QUIT GAME as the last item of column 0, after LOAD, outside validation runs (`../port/port-features.md` §9); column 0 has 7 items on the PS2 (ids 0-6), the port maps the ids after it back (`QuitItemSelection`).
 
 ### Hangar (pages 6–10, 13–16)
 - Mode by sub-state (0x00233808): 0x1B aircraft select for the next mission (sets the mission id and mode 1); 0x1C–0x23 buy/sell aircraft, colours, special weapons.

@@ -201,6 +201,11 @@ u32 PassVBlank() {
     dma.gs_step_marks.clear();
     dma.gs_steps_runs.push_back(std::move(dma.gs_step_runs));
     dma.gs_step_runs.Clear();
+    if (!dma.gs_runs_pool.empty()) {
+        dma.gs_step_runs = std::move(dma.gs_runs_pool.back());
+        dma.gs_runs_pool.pop_back();
+        dma.gs_step_runs.Clear();
+    }
     if (ac04::sce::Host().on_vblank) ac04::sce::Host().on_vblank();
     g_csr_field = rt.WaitVBlank();
     ac04::sce::EeRegisters::Get().OnVBlank(rt.VBlankCount());

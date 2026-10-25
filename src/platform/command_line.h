@@ -37,6 +37,9 @@ struct CommandLine {
     bool vk_validation = false;           // --vk-validation (development builds only): Vulkan validation layer on
     bool cpu_texture_decode = false;      // --cpu-texture-decode (development builds only): GS textures decoded on the CPU
     bool verify_texture_decode = false;   // --verify-texture-decode (development builds only): GPU decodes checked against the CPU
+    // --frame-interpolation on|off (development builds only): forces frame interpolation for this
+    // session, also in validation runs (performance and picture checks of a replayed run).
+    std::optional<bool> frame_interpolation;
     bool dump_audio = false;              // --dump-audio (development builds only): mixer output to a WAV file
     std::optional<unsigned> dump_dma_at;  // --dump-dma-at <vblank> (development builds only): VIF1/GIF capture of one step
     bool freeze_sim = false;              // --freeze-sim (development builds only): missions draw the world, no step

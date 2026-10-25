@@ -467,9 +467,9 @@ void func_0017A980() {
 // Carrier takeoff sequence, subs 0x19-0x1B. 0x19: fade in on entry, radio 0x10 at frame 2, Start
 // from frame 2 -> 0x1B with the timer cleared, sub 0x1A from frame 180. 0x1A: Start as 0x19; timer
 // counts down; on entry scene flag 0x100, look-back camera (aircraft +0x30), centre message 3;
-// airborne (aircraft +0x188 bit 0x20000000) counter +0x27C += K 0x0040EC14, above 5 -> 0x1B, else
-// reset; still on the deck (+0x130 == 0): radio 0x12 at frame 600 and 0x13 at 1200; dead or no time
-// -> 0x1B. 0x1B: HUD label 0xFF and fade in on entry; a unit just destroyed requests 0x1B again;
+// airborne (aircraft +0x188 bit 0x20000000, all wheels down, clear) counter +0x27C += K 0x0040EC14
+// (1/60), above 5 (5 s in the air) -> 0x1B; wheels down: reset; still on the deck (+0x130 == 0):
+// radio 0x12 at frame 600 and 0x13 at 1200; dead or no time -> 0x1B. 0x1B: HUD label 0xFF and fade in on entry; a unit just destroyed requests 0x1B again;
 // dead: message 4, fade out at 180, then the player is put back (0x0017A980) and sub 0x19; out of
 // time: fade out at once, then sub 0xB and message 7; success: gear state 3 -> 4, radio 0x11, fade
 // at 180, then sub 0xB and message 7. The replay HUD shows the timer.
@@ -499,11 +499,11 @@ void func_0017AC68() {
             ShowCenterMessage(0, 3, 0);
         }
         if ((~W(ac + 0x188) & 0x20000000u) == 0) {
+            GRef<u32>(ac + 0x27C) = 0;
+        } else {
             const f32 v = fpu::Add(F(ac + 0x27C), F(0x0040EC14));
             GRef<f32>(ac + 0x27C) = v;
             if (5.0f < v) RequestSubState(0x1B);
-        } else {
-            GRef<u32>(ac + 0x27C) = 0;
         }
         if (F(ac + 0x130) == 0.0f) {
             if (Frames() == 0x258) func_0017B1E0(0x12);
@@ -743,8 +743,8 @@ void func_00136240() {
 // only when +0x64), up to 16 entries (count rec+5) of 0xC bytes at rec+0x10: time S+0x28, position
 // / 8 as s16 (x +4, y +6, z +8), cause +0xA (u+0x63: 0 -> 1, 1 -> 2, else 3; in mode 2 unit 0 -> 2,
 // unit 1 -> 1). Then once a minute (S+0x28 % 60 == 0 and a new minute): a block in the stream
-// *0x00411584 (block start -> +4): {1, minute (u16)}, per tracked active unit (+0x4C bit 0x10000000,
-// not 0x2000, +0x64): kinds 2 / 3 a 4-byte record {0x11, -, index, landed (bit 0x1000000)}, others a
+// *0x00411584 (block start -> +4): {1, minute (u16)}, per tracked active unit (+0x4C bits 0x10000000
+// and 0x2000, +0x64): kinds 2 / 3 a 4-byte record {0x11, -, index, landed (bit 0x1000000)}, others a
 // 0x10-byte record {0x10, -, index, rotation x / y / z x K 0x00410450 (bytes), position / 8 (s16 x3),
 // velocity direction x 127 (bytes), flag}; a 0 terminator; the stream pointer moves 2 bytes past it.
 void func_0024CDD0() {
@@ -782,7 +782,7 @@ void func_0024CDD0() {
     for (s32 i = 0; i < GRef<u8>(W(0x00411578) + 0xE); ++i) {
         const u32 u = Unit(i);
         const u32 flags = W(u + 0x4C);
-        if ((~flags & 0x10000000u) != 0 || (flags & 0x2000u) != 0 || GRef<u8>(u + 0x64) == 0) continue;
+        if ((~flags & 0x10000000u) != 0 || (~flags & 0x2000u) != 0 || GRef<u8>(u + 0x64) == 0) continue;
         if (static_cast<u32>(GRef<u8>(u + 0x6A) - 2) < 2) {
             GRef<u8>(s + 2) = static_cast<u8>(i);
             GRef<u8>(s) = 0x11;

@@ -4,6 +4,7 @@
 #include "common/guest_memory.h"
 #include "common/guest_stack.h"
 #include "common/ps2ptr.h"
+#include "platform/log.h"
 
 using namespace ac04::guest;
 
@@ -37,6 +38,21 @@ TEST_CASE("guest memory: invalid addresses read 0 and are counted") {
     m.Write<u32>(0x40000000, 1);          // unmapped segment
     CHECK(m.Read<u32>(0x10000000) == 0);  // hardware without a handler
     CHECK(m.InvalidAccessCount() == before + 3);
+}
+
+TEST_CASE("guest memory: an invalid page is logged once, with the kind of access and the host caller") {
+    GuestMemory m;
+    m.TranslateOrDummy(0x0C3C0010, 4)[0] = 7;  // GRef-style access: read or write
+    m.TranslateOrDummy(0x0C3C0020, 4);         // same 64 KiB page: not logged again
+    int lines = 0;
+    for (const std::string& line : ac04::log::RecentLines(50)) {
+        if (line.find("0x0C3C00") == std::string::npos) continue;
+        ++lines;
+        CHECK(line.find("invalid access (read or write) of 4 bytes at guest address 0x0C3C0010") != std::string::npos);
+        CHECK(line.find(" from ") != std::string::npos);
+        CHECK(line.find("+0x") != std::string::npos);  // module+offset of the calling code
+    }
+    CHECK(lines == 1);
 }
 
 TEST_CASE("guest memory: hardware handlers") {

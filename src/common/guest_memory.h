@@ -8,6 +8,7 @@
 // - PS2 and x86 are both little-endian, so values are stored as-is.
 #pragma once
 
+#include <array>
 #include <cstring>
 #include <memory>
 #include <type_traits>
@@ -95,12 +96,16 @@ private:
     u8* TranslateSegment(u32 address, u32 size);  // uncached and kseg aliases of RAM
     u8* Dummy(u32 address, u32 size);             // reports an invalid range, gives a zeroed buffer
     HardwareHandler* FindHardware(u32 physical, u32 size);
-    void ReportInvalid(u32 address, u32 size, bool write);
+    // How an invalid range was reached: ReadBytes, WriteBytes, or a host reference (TranslateOrDummy:
+    // GRef / ps2ptr, which the caller may read or write).
+    enum class Access { kRead, kWrite, kReference };
+    void ReportInvalid(u32 address, u32 size, Access access);
 
     std::unique_ptr<u8[]> ram_;
     std::unique_ptr<u8[]> spr_;
     std::vector<HwRange> hardware_;
     u64 invalid_count_ = 0;
+    std::array<u64, 1024> reported_{};  // one bit per 64 KiB page of the 32-bit space: logged once
 };
 
 // The one guest address space of the process. Translated code uses it through Mem().

@@ -39,8 +39,8 @@ struct MenuOptions {
     std::optional<std::array<bool, 2>> set_modern_controls;
     std::optional<GraphicsOptions> set_graphics;
     bool save_graphics = false;
-    // QUIT GAME was chosen in the main menu (game/quit_item.h): the host ends the session as when
-    // the window is closed.
+    // QUIT GAME was chosen in the main menu or the campaign menu (game/quit_item.h): the host ends
+    // the session as when the window is closed.
     bool quit = false;
 };
 
@@ -51,8 +51,8 @@ struct BootOptions {
     // The game's SCREEN RATIO option starts at 16:9 instead of 4:3 (monitor wider than 4:3,
     // settings presentation.default_screen_ratio "monitor"); save data loaded later replaces it.
     bool wide_screen_ratio = false;
-    // QUIT GAME is added to the main menu (game/quit_item.h); off in validation runs, so that their
-    // guest RAM stays comparable with PCSX2.
+    // QUIT GAME is added to the main menu and the campaign menu (game/quit_item.h); off in validation
+    // runs, so that their guest RAM stays comparable with PCSX2.
     bool quit_item = false;
     // The save, load and format messages are reworded for a computer (game/pc_texts.h); off in
     // validation runs for the same reason.

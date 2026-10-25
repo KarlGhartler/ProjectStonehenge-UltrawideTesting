@@ -1,6 +1,6 @@
 # Pending PCSX2 checks
 
-Checks that need the original game running in PCSX2 2.8.2, ordered by importance. Results go into a new run section of `sessions.md` (latest: run 12); answered checks are removed from this list. Save states contain game memory: keep them in the save-state folder outside the repo (`*.p2s` is never committed).
+Checks that need the original game running in PCSX2 2.8.2, ordered by importance. Results go into a new run section of `sessions.md` (latest: run 13); answered checks are removed from this list. Save states contain game memory: keep them in the save-state folder outside the repo (`*.p2s` is never committed).
 
 General: open the debugger with **Debug → Open Debugger**. "Execute breakpoint" = Breakpoints tab → New → Execute, address as given. "Memory watch" = Memory view, go to the address, and read the value while the game runs or is paused.
 

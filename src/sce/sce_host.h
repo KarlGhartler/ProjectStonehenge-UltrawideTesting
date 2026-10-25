@@ -82,6 +82,9 @@ struct DmaStats {
     bool record_runs = false;
     render::vu1::RunLog gs_step_runs;
     std::vector<render::vu1::RunLog> gs_steps_runs;
+    // Run logs the host has finished with, kept with their capacity (a flight step records about
+    // 4 MB; a fresh log every step cost more than the VU1 programs it records).
+    std::vector<render::vu1::RunLog> gs_runs_pool;
     // --dump-dma-at: capture of the current step (pairs guest address, word).
     bool capture_active = false;
     std::vector<u32> capture_vif1;

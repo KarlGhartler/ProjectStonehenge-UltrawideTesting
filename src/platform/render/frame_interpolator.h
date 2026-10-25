@@ -19,8 +19,12 @@
 // Presentation only: guest memory is never read or written here, and the game's steps are unchanged.
 #pragma once
 
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
+#include <mutex>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include "platform/render/gs/gs_source_mark.h"
@@ -58,11 +62,27 @@ private:
         std::vector<std::uint8_t> moved;  // per matched run: only its position is blended (it turned too far)
     };
     void Match();
+    void RunJobs(std::size_t first, std::size_t end, vu1::Vu1State& vu, float a);
+    void WorkerLoop(std::size_t w);
 
     Step prev_, cur_;
     bool cut_ = false;  // the camera jumped between the two steps
     std::unique_ptr<vu1::Vu1State> vu_;
     std::uint32_t blended_ = 0;
+    // Build: the matched runs repeated (indices into cur_.runs.runs, stream order), the output of
+    // each and the size changes for the marks; kept with their capacity.
+    std::vector<std::uint32_t> jobs_;
+    std::vector<std::vector<std::uint8_t>> outs_;
+    std::vector<std::pair<std::uint32_t, std::int64_t>> shifts_;
+    // Helper threads of Build, each with its own VU memory; they start on a new generation_.
+    std::vector<std::thread> workers_;
+    std::vector<std::unique_ptr<vu1::Vu1State>> worker_vu_;
+    std::mutex mutex_;
+    std::condition_variable start_cv_, done_cv_;
+    std::uint64_t generation_ = 0;
+    std::size_t pending_ = 0;
+    float alpha_ = 0.0f;
+    bool quit_ = false;
 };
 
 }  // namespace ac04::render

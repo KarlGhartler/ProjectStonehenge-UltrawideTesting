@@ -79,4 +79,20 @@ void SetCrashContextProvider(CrashContextProvider provider) {
     g_provider = provider;
 }
 
+void DescribeCallers(char* buffer, unsigned size, unsigned skip, unsigned count) {
+    if (size == 0) return;
+    buffer[0] = 0;
+    void* frames[32];
+    if (count > 32) count = 32;
+    const USHORT n = RtlCaptureStackBackTrace(static_cast<DWORD>(skip + 1), count, frames, nullptr);
+    unsigned used = 0;
+    for (USHORT i = 0; i < n && used + 1 < size; ++i) {
+        char where[MAX_PATH + 32];
+        DescribeAddress(frames[i], where, sizeof(where));
+        const int w = std::snprintf(buffer + used, size - used, "%s%s", i ? " " : "", where);
+        if (w < 0) break;
+        used += static_cast<unsigned>(w);
+    }
+}
+
 }  // namespace ac04::platform

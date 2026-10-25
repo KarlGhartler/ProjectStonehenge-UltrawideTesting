@@ -8,9 +8,7 @@
 ![License](https://img.shields.io/github/license/Onaga00/ProjectStonehenge?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x64-blue?style=flat-square)
 
-<!-- Gameplay GIF: add docs/gameplay.gif (recorded from the port, no game assets in the repo besides it) and uncomment:
-<img src="docs/gameplay.gif" alt="Gameplay" width="800">
--->
+<img src="docs/images/screenshot.png" alt="ProjectStonehenge running Ace Combat 04: an F-14 locked on in the HUD" width="800">
 
 </div>
 
@@ -20,10 +18,10 @@
 
 **ProjectStonehenge** is a native x86_64 PC port of *Ace Combat 04: Shattered Skies*, based on the North American release (NTSC-U, SLUS-20152).
 
-The port is built from a decompilation of the original PS2 executable (ELF). It is **not** an emulator and **not** a static recompilation: the game code has been translated function by function into C++ (with AI assistance, see [AI Disclosure](#ai-disclosure)) and runs natively on PC. Game logic, physics, AI and mission rules behave exactly like the original, with PCSX2 running the original disc as the reference. Rendering (a Vulkan renderer for the PS2 GS), audio (the game's IOP sound drivers re-implemented) and saves are rebuilt for the PC.
+The port is built from a decompilation of the original PS2 executable (ELF). It is **not** an emulator and **not** a static recompilation: the game code has been translated function by function into C++ (with AI assistance, see [AI Disclosure](#ai-disclosure)) and runs natively on PC. Game logic, physics, AI and mission rules behave exactly like the original, with PCSX2 running the original disc as the reference.
 
 > [!IMPORTANT]
-> Only the **North American release (NTSC-U, SLUS-20152)** is currently supported. Other regions and revisions will not work. The port checks the disc image at startup (SHA-1 `aaa707214aea7f8f9c2904c4b5e00c372c943533`, 3,554,705,408 bytes).
+> Currently only the **North American release (NTSC-U, SLUS-20152)** is supported. Support for other regions and revisions might come later. The port checks the disc image at startup (SHA-1 `aaa707214aea7f8f9c2904c4b5e00c372c943533`, 3,554,705,408 bytes).
 
 ## Legal Notice
 
@@ -35,26 +33,18 @@ This is an unofficial fan project and is **not affiliated with, endorsed by or s
 
 ## AI Disclosure
 
-This project is developed with extensive use of generative AI. Most of the code, the reverse-engineering notes, the research tools and the documentation in this repository were written by an AI coding assistant (Claude, by Anthropic), working under the direction of the project's maintainer, who decides what is built, reviews the changes and makes every commit.
-
-What this means in practice:
-- The translated game code is checked against the original game running in PCSX2 (RAM comparisons, screenshots, input recordings; see [`docs/port/validation-strategy.md`](docs/port/validation-strategy.md)), not taken on trust. Differences that are still open are listed in [`docs/port/validation.md`](docs/port/validation.md) and [`docs/open-questions.md`](docs/open-questions.md).
-- AI-written code can still contain mistakes that no test has caught yet. If something behaves differently from the original game, please [open an issue](https://github.com/Onaga00/ProjectStonehenge/issues).
-- The assistant works from the game executable of the maintainer's own disc (analysed in Ghidra), from PCSX2 as the behaviour reference and from public documentation; the tools and references used are listed under [Credits](#-credits). No game data is committed to this repository.
+This project is being developed with extensive use of generative AI. The reverse-engineering notes, most of the code and the research tools in this repository were written by models from Anthropic, working under constant human supervision.
 
 ## Features
 
 **Graphics and performance**
-- **High frame rates** (frame cap 60 / 120 / 144 / 240 / 360 FPS): rendering is decoupled from game logic and interpolated, while physics and AI still run at the original 59.94 Hz
+- **Unlocked frame rate** (frame cap 60 / 120 / 144 / 240 / 360 FPS): rendering is decoupled from game logic and interpolated, while physics and AI still run at the original 59.94 Hz
 - **Higher internal resolution** with a multiplier from 1x to 8x (native 512×448 up to 4096×3584), including 4K output
 - **Screen** windowed or borderless fullscreen
 - **16:9 by default on wide monitors**: the game's own SCREEN RATIO option starts at 16:9
-- **Graphics defaults matched to your monitor**: the first start uses v-sync, FXAA and the internal resolution closest to the monitor's (for example 2× at 1080p, 3× at 1440p, 5× at 4K)
 - **Anti-aliasing**: FXAA and SMAA support
 - **V-Sync**
 - **FSR 1 upscaled cutscenes**: the FMV movies are upscaled with AMD FidelityFX FSR 1 to match internal resolution
-- **QUIT GAME in the main menu**: the last item of the main menu closes the port
-- **Save messages for a PC**: "memory card (PS2)" reads "memory card", and "switch off power" reads "switch off the computer"
 - **Dedicated in-game graphics settings**: a GRAPHICS in-game page under OPTIONS → SCREEN SETTINGS
 
 **Controls**
@@ -63,14 +53,14 @@ What this means in practice:
 - **Modern control types**: two extra CONTROL TYPE choices on CONTROLLER SETUP with L1/L2 and R1/R2 swapped (throttle on the triggers); the original types are still there
 
 **Saves**
-- **PCSX2-compatible save system** using PCSX2's folder memory card format, so saves can be moved between the port and the emulator in both directions (copy the `BASLUS-20152AC04` folder)
+- **PCSX2-compatible save system** using PCSX2's folder memory card format, so saves can be moved between the port and the emulator in both directions
 
 > [!WARNING]
-> Save compatibility is still in **beta**. Always back up your original save before moving it.
+> Save compatibility is still in **beta**. Always back up your original save before transferring it to the port.
 
 **Preservation**
 - **Built-in debugger** for testing (see [Debugger](#debugger))
-- **Cut content and dead code preserved**: code that was unreachable in the final release (272 functions, including two unused scenes and the HDD support) has been ported along with the rest of the game. In the default build it stays unreachable exactly as on the PS2
+- **Cut content and dead code preserved**: code that was unreachable in the final release (272 functions, including two unused scenes and the HDD support) has been ported along with the rest of the game. In the default build it stays unreachable exactly as on the PS2 but the debugger will be able to invoke some of it with the next releases (WIP).
 
 ## Roadmap
 
@@ -84,7 +74,7 @@ What this means in practice:
 
 - Windows 10/11 (64-bit)
 - GPU: any graphics card with **Vulkan 1.2** support and an up-to-date driver. Higher internal resolutions (4x–8x) need a correspondingly faster GPU
-- A dump of your own copy of *Ace Combat 04: Shattered Skies* (NTSC-U, SLUS-20152) as an `.iso` file (ISO 9660, 2048-byte sectors; raw `.bin`/`.cue` dumps are not supported)
+- A dump of your own copy of *Ace Combat 04: Shattered Skies* (NTSC-U SLUS-20152) as an `.iso` file (ISO 9660, 2048-byte sectors; raw `.bin`/`.cue` dumps are not supported)
 
 ## 📥 Download and Installation
 
@@ -114,38 +104,59 @@ Command-line values apply to the current session only and are never written to `
 
 ## 🔧 How to Build
 
-The port builds with CMake and MSVC. All dependencies are fetched automatically at the first configure, pinned to exact versions with checksums. No Vulkan SDK is needed: shaders are compiled with a fetched copy of glslang.
+The port builds with CMake and MSVC.
 
-**Prerequisites**
+**Requirements**
 - Windows 10/11 (64-bit)
-- Visual Studio 2026 with the **Desktop development with C++** workload (it includes CMake ≥ 3.24)
-- Git
+- Visual Studio 2026 with the **Desktop development with C++** workload. It includes MSVC and CMake ≥ 3.24.
+- Optional: Python 3, needed for `tools/check_notices.py` and for the research tools in `tools/`. You don't need it to build or play.
 
-**Build**
+A Vulkan SDK is **not** needed: the Vulkan headers and loader (volk) are fetched, and the shaders are compiled with a fetched copy of glslang.
+
+**Dependencies**
+
+The command `cmake --preset windows` downloads every library listed under [Libraries](#libraries) from `cmake/Dependencies.cmake`. Each one is pinned to an exact version and checked against a SHA-256 checksum. The downloads go to `build\windows\_deps\`, and later configures reuse them. To download everything again, delete `build\windows\` and configure again. The licenses are listed in [`docs/decisions/dependencies.md`](docs/decisions/dependencies.md) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+**Configure (once per clone)**
 
 From a **Developer PowerShell for VS 2026**:
 
 ```powershell
 git clone https://github.com/Onaga00/ProjectStonehenge.git
 cd ProjectStonehenge
-cmake --preset windows
-cmake --build --preset release     # or: --preset dev (RelWithDebInfo), --preset debug
-ctest --preset release             # unit and behaviour tests
+git config core.hooksPath tools/hooks   # enable the game-data pre-commit hook (see Contributing)
+cmake --preset windows                  # generates the VS solution and downloads all dependencies
 ```
 
-The executable is written to `build\windows\src\<Config>\ProjectStonehenge.exe` (`Release`, `RelWithDebInfo` or `Debug`).
+**Release build**
 
-Release archive: `cmake --build --preset release --target package_release` writes `out\release\ProjectStonehenge-<version>-win64.zip` with the executable, `LICENSE`, `THIRD_PARTY_NOTICES.md` and `README.md`, and nothing else. It packages only the Release configuration and stops if a file looks like game data.
+```powershell
+cmake --build --preset release
+ctest --preset release
+```
 
-**Build types**
-- `release`: the build for players.
-- `dev` and `debug` (development builds): console window, debugger on by default, **F8** screenshot, and the development command-line options.
+Output: `build\windows\src\Release\ProjectStonehenge.exe`. No console window. The debugger is off by default, and only the release command-line options are accepted.
 
-Research tools (Python 3, in `tools/`) are only needed to work on the decompilation, not to build or play.
+To make the release archive, run `cmake --build --preset release --target package_release`. It writes `out\release\ProjectStonehenge-<version>-win64.zip` with the executable, `LICENSE`, `THIRD_PARTY_NOTICES.md` and `README.md`, and nothing else. It packages only the Release configuration and stops if a file looks like game data.
+
+**Development build**
+
+```powershell
+cmake --build --preset dev      # RelWithDebInfo: optimised, with debug symbols
+ctest --preset dev
+# or: cmake --build --preset debug ; ctest --preset debug   (unoptimised, for stepping through code)
+```
+
+Output: `build\windows\src\RelWithDebInfo\ProjectStonehenge.exe` (or `Debug\`). Development builds have:
+- a console window;
+- the debugger on by default;
+- **F8** for native screenshots;
+- Vulkan validation with `--vk-validation`;
+- the development command-line options ([`docs/port/command-line.md`](docs/port/command-line.md)).
+
+You can also open `build\windows\ProjectStonehenge.slnx` in Visual Studio and pick the configuration there.
 
 ## Debugger
-
-The game contains a large amount of dead code that was never reachable in the final release.
 
 The debugger is **disabled by default** in release builds. To enable it, open the configuration file `%LOCALAPPDATA%\ProjectStonehenge\settings.json` and set `overlay_enabled` to `true` in the `debug` section:
 
@@ -180,7 +191,35 @@ When reporting a bug, it helps to include:
 - your system specs and the port version (`ProjectStonehenge.exe --version`)
 - the log of that session (`%LOCALAPPDATA%\ProjectStonehenge\logs\`)
 
-Pull requests and forks are welcome too. Project documentation (decompilation notes, data formats, architecture decisions, validation) starts at [`docs/README.md`](docs/README.md). Never commit game data: enable the repository's pre-commit hook with `git config core.hooksPath tools/hooks`.
+Pull requests and forks are welcome too. Project documentation (decompilation notes, data formats, architecture decisions, validation) starts at [`docs/README.md`](docs/README.md).
+
+### Preparing a commit
+
+> [!CAUTION]
+> **Never upload game assets.** That includes the ISO and any file from the disc (`SLUS_201.52`, `*.IRX`, `IOPRP23.IMG`, `*.CDP`, `*.TBL`, `*.SMV`, `*.VPK`). It also includes PCSX2 save states (`*.p2s`, which contain game memory), RAM dumps, and anything extracted or converted from the game: textures, models, audio, video, archives and tables. The port reads all of this at runtime from the player's own disc, so the repository never needs it. Generated output belongs in `build\` or `out\`, which git ignores.
+
+The pre-commit hook in `tools/hooks/pre-commit` enforces this. It is not active by default, so enable it once per clone:
+
+```powershell
+git config core.hooksPath tools/hooks
+```
+
+Before each commit, the hook checks every staged file and blocks the commit if a file:
+- has a game-data name (`*.iso`, `*.cdp`, `*.tbl`, `*.smv`, `*.vpk`, `*.irx`, `*.img`, `*.p2s`, `SLUS_*`, in any case);
+- is larger than 1 MiB;
+- starts with the signature of a known game format (SMV movie, CDP container, TBL index, VAG audio, MPEG video, PS2 ELF/IRX, IOPRP image, TIM2/GIM/PS2I blocks).
+
+A typical commit:
+
+```powershell
+cmake --build --preset dev ; ctest --preset dev    # build and tests pass
+python tools/check_notices.py                      # only if you changed a dependency or third_party/
+git status                                         # check that nothing from out\, build\ or the disc is listed
+git add <files>
+git commit -m "..."                                # the hook runs here
+```
+
+If the hook blocks the commit, it lists each file and the reason. Unstage those files with `git restore --staged <file>` and don't add them again. Never bypass the hook with `--no-verify`.
 
 ## 📜 License
 

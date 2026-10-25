@@ -258,6 +258,34 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
         case kPsmT4: run_len = 32; break;
         default: break;
     }
+    // A packet that repeats the last packet written at the same place of the same transfer (same
+    // BITBLTBUF base/width/format, TRXPOS, TRXREG, start pixel and size, same bytes), with every
+    // block it wrote still as it left them (no write has changed one since: each block's generation
+    // is the one recorded then), would store the bytes the blocks already hold: nothing to do. The
+    // game repeats most texture uploads every step (about 1 MB a flight step), and a blended copy
+    // for frame interpolation repeats a step's uploads once more per presented frame.
+    LastUpload* last = nullptr;
+    if (run_len != 0) {
+        const UploadKey key{dbp, dbw, dpsm, dsax, dsay, rrw, rrh, pos, bytes};
+        if (uploads_.size() > 4096) uploads_.clear();
+        last = &uploads_[key];
+        if (last->data.size() == bytes && std::memcmp(last->data.data(), data, bytes) == 0) {
+            bool same = true;
+            for (const auto& [blk, gen] : last->blocks) {
+                if (block_gen_[blk] != gen) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same) return pos >= total ? pos : static_cast<std::uint32_t>(std::min<std::uint64_t>(total, pos + pixels));
+        }
+        last->blocks.clear();
+    }
+    // Records what `last` needs after a write: the generations of the blocks written, the data.
+    const auto remember = [&] {
+        for (auto& [blk, gen] : last->blocks) gen = block_gen_[blk];
+        last->data.assign(data, data + bytes);
+    };
     // Whole blocks: a transfer whose data arrives in one piece and whose rectangle lies on block
     // boundaries (texture tiles: the no-save intro streams its terrain this way every frame) is
     // written block by block: the 256 bytes of a block assembled in the GS layout, then compared
@@ -302,8 +330,10 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
                     std::memcpy(m + base, block, 256);
                     Touch(base);
                 }
+                last->blocks.emplace_back(base >> 8, 0u);
             }
         }
+        remember();
         return total;
     }
     if (run_len != 0) {
@@ -318,6 +348,7 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
             n = std::min<std::uint64_t>(n, pixels - i);
             n = std::min<std::uint64_t>(n, total - pos);
             const std::uint32_t base = PixelAddress(dpsm, dbp, dbw, x, y) & ~0xFFu;
+            if (last->blocks.empty() || last->blocks.back().first != base >> 8) last->blocks.emplace_back(base >> 8, 0u);
             bool changed = false;
             std::uint32_t k = 0;
             if (bpp == 32 && (x & 1) == 0) {
@@ -384,6 +415,7 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
                 ++row;
             }
         }
+        remember();
         return pos;
     }
     for (std::uint64_t i = 0; i < pixels && pos < total; ++i, ++pos) {
