@@ -116,6 +116,13 @@ All previously open decisions approved as recommended:
 | Floating-point compiler flags | approved: explicit no-FMA-contraction flags (MSVC `/fp:precise`, GCC/Clang `-ffp-contract=off`), added when gameplay translation starts | `port/risks.md` |
 | README tagline ("static recompilation") | to be reworked later by the User | — |
 
+### Decided by the User (2026-10-25)
+
+| Decision | Choice | Record |
+|---|---|---|
+| GS pipeline hitches on a new GPU driver | fixed: the 34 known GS pipelines are built at startup on warm-up threads, and a Vulkan pipeline cache file is kept in the new `cache\` user-data folder (approved); open: the User's check on an NVIDIA PC with cleared driver caches | `port/validation.md` §2ai, ADR-005 §2 |
+| Renderer CPU work on a second thread | built after the measurement (RT-1): GS processing, interpolation, recording and present run on a render thread beside the game ticks, one frame in flight; game logic unchanged (regression identical), +22–48 % frames per second at v-sync off; the VIF/VU1 work stays on the game thread | `port/validation.md` §2ai, §2aj; ADR-002 "Render thread" |
+
 ### Open for the User
 
 | Question | Blocks |

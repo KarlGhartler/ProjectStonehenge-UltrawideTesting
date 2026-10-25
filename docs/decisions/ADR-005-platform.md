@@ -27,7 +27,9 @@ Status: **Accepted** (User decision 2026-10-10; storage revised by the User 2026
   saves\           PCSX2 Folder Memory Card root (slot 1)
   settings.json    all settings
   logs\            log of the last session only
+  cache\           renderer caches: pipelines.bin (Vulkan pipeline cache; added 2026-10-25, User approval)
 ```
+- `cache\` holds only data the port can rebuild: deleting it costs one slower start, never a setting or a save. A file made for another GPU or driver, or a damaged one, is deleted and rebuilt (`../port/port-features.md` §6).
 
 ### 3. Saves
 - `saves\` is a complete **PCSX2 Folder Memory Card**: a `_pcsx2_superblock` file in the root and one host folder per PS2 directory (AC04: `BASLUS-20152AC04\` with `icon.sys`, `icon1.ico`, `BASLUS-20152AC04` and `_pcsx2_index`).
@@ -58,7 +60,7 @@ Status: **Accepted** (User decision 2026-10-10; storage revised by the User 2026
 ## Consequences
 
 - `src/platform/` provides:
-  - paths: the user data folder, `saves\`, `settings.json`, `logs\` (per OS);
+  - paths: the user data folder, `saves\`, `settings.json`, `logs\`, `cache\` (per OS);
   - case-exact ISO lookup;
   - the log sink and the crash handler;
   - the folder-card storage behind `sceMc*`;

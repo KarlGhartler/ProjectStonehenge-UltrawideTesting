@@ -12,6 +12,7 @@ add_executable(ac04_tests
     test_guest_memory.cpp
     test_iso9660.cpp
     test_output_layout.cpp
+    test_pipeline_cache.cpp
     test_settings.cpp
     test_sha1.cpp
     test_skeleton.cpp

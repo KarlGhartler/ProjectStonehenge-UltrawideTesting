@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -17,6 +18,7 @@
 #include "gs_frag_spv.h"
 #include "gs_vert_spv.h"
 #include "platform/log.h"
+#include "platform/render/gs/gs_pipeline_keys.h"
 #include "platform/render/movie_texel_map.h"
 
 namespace ac04::render::gs {
@@ -460,6 +462,7 @@ bool GsBackend::Init(VkContext& ctx, std::string& error) {
     // Anti-aliasing is optional: without it the setting has no effect.
     std::string aa_error;
     if (!InitAntiAlias(aa_error)) AC04_LOG_ERROR("renderer", "anti-aliasing unavailable: %s", aa_error.c_str());
+    StartPipelineWarmUp();
     return true;
 }
 
@@ -534,7 +537,7 @@ bool GsBackend::InitDepthCopy(std::string& error) {
     gpi.pDynamicState = &ds;
     gpi.layout = depth_copy_layout_;
     gpi.renderPass = pass_;
-    const VkResult r = vkCreateGraphicsPipelines(ctx_->device, VK_NULL_HANDLE, 1, &gpi, nullptr, &depth_copy_pipeline_);
+    const VkResult r = vkCreateGraphicsPipelines(ctx_->device, ctx_->pipeline_cache, 1, &gpi, nullptr, &depth_copy_pipeline_);
     vkDestroyShaderModule(ctx_->device, fs, nullptr);
     if (r != VK_SUCCESS) {
         error = "cannot create the GS depth copy pipeline";
@@ -578,7 +581,7 @@ bool GsBackend::InitConvert(std::string& error) {
     VkComputePipelineCreateInfo cpi{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
     cpi.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, cs, "main", nullptr};
     cpi.layout = conv_layout_;
-    const VkResult r = vkCreateComputePipelines(ctx_->device, VK_NULL_HANDLE, 1, &cpi, nullptr, &conv_pipeline_);
+    const VkResult r = vkCreateComputePipelines(ctx_->device, ctx_->pipeline_cache, 1, &cpi, nullptr, &conv_pipeline_);
     vkDestroyShaderModule(ctx_->device, cs, nullptr);
     if (r != VK_SUCCESS) {
         error = "cannot create the GS format conversion pipeline";
@@ -649,7 +652,7 @@ bool GsBackend::InitTextures(std::string& error) {
     VkComputePipelineCreateInfo cpi{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
     cpi.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, cs, "main", nullptr};
     cpi.layout = decode_layout_;
-    const VkResult r = vkCreateComputePipelines(ctx_->device, VK_NULL_HANDLE, 1, &cpi, nullptr, &decode_pipeline_);
+    const VkResult r = vkCreateComputePipelines(ctx_->device, ctx_->pipeline_cache, 1, &cpi, nullptr, &decode_pipeline_);
     vkDestroyShaderModule(ctx_->device, cs, nullptr);
     if (r != VK_SUCCESS) {
         error = "cannot create the GS texture decode pipeline";
@@ -1244,6 +1247,28 @@ void GsBackend::Shutdown() {
     if (!ctx_ || !ctx_->device) return;
     vkDeviceWaitIdle(ctx_->device);
     ShutdownAntiAlias();
+    StopPipelineWarmUp();
+    if (!pipelines_.empty()) {
+        // One summary per session: the keys not in gs_pipeline_keys.h were built inside frames.
+        std::vector<std::uint64_t> keys;
+        for (const auto& [key, p] : pipelines_) keys.push_back(key);
+        std::sort(keys.begin(), keys.end());
+        std::sort(frame_pipeline_keys_.begin(), frame_pipeline_keys_.end());
+        auto list = [](const std::vector<std::uint64_t>& v) {
+            std::string out;
+            char hex[24];
+            for (std::uint64_t k : v) {
+                std::snprintf(hex, sizeof(hex), "%s%llx", out.empty() ? "" : " ", static_cast<unsigned long long>(k));
+                out += hex;
+            }
+            return out;
+        };
+        AC04_LOG_INFO("renderer", "GS pipelines: %zu in use; keys: %s", keys.size(), list(keys).c_str());
+        if (!frame_pipeline_keys_.empty())
+            AC04_LOG_INFO("renderer", "GS pipelines: %zu built during frames (%.1f ms in total, slowest %.1f ms): %s",
+                          frame_pipeline_keys_.size(), frame_pipeline_ms_, frame_pipeline_ms_max_,
+                          list(frame_pipeline_keys_).c_str());
+    }
     for (auto& [key, p] : pipelines_) vkDestroyPipeline(ctx_->device, p, nullptr);
     pipelines_.clear();
     for (auto& [key, t] : targets_) {
@@ -1528,7 +1553,30 @@ void GsBackend::SetScale(int n) {
 }
 
 VkPipeline GsBackend::GetPipeline(std::uint64_t key) {
-    if (auto it = pipelines_.find(key); it != pipelines_.end()) return it->second;
+    {
+        std::unique_lock<std::mutex> lock(pipelines_mutex_);
+        // A key a warm-up thread is building now is waited for (cheaper than building it twice).
+        pipelines_cv_.wait(lock, [&] { return warming_.count(key) == 0; });
+        if (auto it = pipelines_.find(key); it != pipelines_.end()) return it->second;
+    }
+    const auto start = std::chrono::steady_clock::now();
+    VkPipeline p = CreatePipeline(key);
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    if (p == VK_NULL_HANDLE) LogOnce("pipeline", "cannot create a GS pipeline");
+    std::lock_guard<std::mutex> lock(pipelines_mutex_);
+    if (auto it = pipelines_.find(key); it != pipelines_.end()) {
+        // Built by a warm-up thread meanwhile.
+        if (p) vkDestroyPipeline(ctx_->device, p, nullptr);
+        return it->second;
+    }
+    frame_pipeline_keys_.push_back(key);
+    frame_pipeline_ms_ += ms;
+    frame_pipeline_ms_max_ = std::max(frame_pipeline_ms_max_, ms);
+    pipelines_[key] = p;
+    return p;
+}
+
+VkPipeline GsBackend::CreatePipeline(std::uint64_t key) const {
     VkPipelineShaderStageCreateInfo stages[2]{};
     stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs_, "main", nullptr};
     stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs_, "main", nullptr};
@@ -1587,11 +1635,53 @@ VkPipeline GsBackend::GetPipeline(std::uint64_t key) {
     gpi.layout = layout_;
     gpi.renderPass = pass_;
     VkPipeline p = VK_NULL_HANDLE;
-    if (vkCreateGraphicsPipelines(ctx_->device, VK_NULL_HANDLE, 1, &gpi, nullptr, &p) != VK_SUCCESS) {
-        LogOnce("pipeline", "cannot create a GS pipeline");
-    }
-    pipelines_[key] = p;
+    if (vkCreateGraphicsPipelines(ctx_->device, ctx_->pipeline_cache, 1, &gpi, nullptr, &p) != VK_SUCCESS)
+        return VK_NULL_HANDLE;
     return p;
+}
+
+void GsBackend::StartPipelineWarmUp() {
+    // Up to 4 threads, leaving cores for the game and the main thread; the driver compiles each
+    // pipeline on the calling thread.
+    const unsigned cores = std::thread::hardware_concurrency();
+    const int threads = static_cast<int>(std::clamp(cores / 2, 1u, 4u));
+    warm_next_ = 0;
+    warm_stop_ = false;
+    warm_running_ = threads;
+    warm_start_ = std::chrono::steady_clock::now();
+    for (int i = 0; i < threads; ++i) {
+        warm_threads_.emplace_back([this] {
+            for (;;) {
+                const std::size_t next = warm_next_++;
+                if (warm_stop_ || next >= std::size(kGsPipelineKeys)) break;
+                const std::uint64_t key = kGsPipelineKeys[next];
+                {
+                    std::lock_guard<std::mutex> lock(pipelines_mutex_);
+                    if (pipelines_.count(key) != 0) continue;
+                    warming_.insert(key);
+                }
+                const VkPipeline p = CreatePipeline(key);
+                {
+                    // A failed key is left out: GetPipeline tries again and logs the failure.
+                    std::lock_guard<std::mutex> lock(pipelines_mutex_);
+                    if (p) pipelines_[key] = p;
+                    warming_.erase(key);
+                }
+                pipelines_cv_.notify_all();
+            }
+            if (--warm_running_ == 0 && !warm_stop_) {
+                const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - warm_start_).count();
+                AC04_LOG_INFO("renderer", "GS pipelines prepared at startup: %zu in %.0f ms",
+                              std::size(kGsPipelineKeys), ms);
+            }
+        });
+    }
+}
+
+void GsBackend::StopPipelineWarmUp() {
+    warm_stop_ = true;
+    for (std::thread& t : warm_threads_) t.join();
+    warm_threads_.clear();
 }
 
 void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCommand>& draws,

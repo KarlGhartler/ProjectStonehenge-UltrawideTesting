@@ -40,6 +40,9 @@ public:
     VmaAllocator allocator = nullptr;
     GpuInfo gpu;
     bool dual_src_blend = false;
+    // Shared by every pipeline the renderer creates (Renderer::Init; pipeline_cache.h). Internally
+    // synchronised: the GS pipeline warm-up threads use it too.
+    VkPipelineCache pipeline_cache = VK_NULL_HANDLE;
 
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat swapchain_format = VK_FORMAT_UNDEFINED;

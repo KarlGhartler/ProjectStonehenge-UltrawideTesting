@@ -12,6 +12,7 @@
 #include "output_vert_spv.h"
 #include "platform/log.h"
 #include "platform/render/output_layout.h"
+#include "platform/render/pipeline_cache.h"
 #include "platform/render/test_pattern.h"
 
 namespace ac04::render {
@@ -48,7 +49,7 @@ gs::GsBackend::AntiAlias ToBackend(platform::AntiAliasing a) {
 Renderer::~Renderer() { Shutdown(); }
 
 bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& presentation, bool validation,
-                    std::string& error) {
+                    const std::filesystem::path& pipeline_cache_file, std::string& error) {
     window_ = window;
     presentation_ = presentation;
     internal_scale_ = std::clamp(presentation.internal_scale, 1, platform::kMaxInternalScale);
@@ -56,6 +57,8 @@ bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& pr
     if (!ctx_.Init(window, AC04_DEV_BUILD != 0 && validation, error)) return false;
     AC04_LOG_INFO("renderer", "GPU: %s, Vulkan %s, driver %s", ctx_.gpu.name.c_str(),
                   ctx_.gpu.api_version.c_str(), ctx_.gpu.driver.c_str());
+    pipeline_cache_file_ = pipeline_cache_file;
+    LoadPipelineCache();
 
     VkCommandPoolCreateInfo pci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     pci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -399,7 +402,7 @@ bool Renderer::CreatePipeline(std::string& error) {
     gpi.pDynamicState = &ds;
     gpi.layout = pipeline_layout_;
     gpi.renderPass = render_pass_;
-    VkResult r = vkCreateGraphicsPipelines(ctx_.device, VK_NULL_HANDLE, 1, &gpi, nullptr, &pipeline_);
+    VkResult r = vkCreateGraphicsPipelines(ctx_.device, ctx_.pipeline_cache, 1, &gpi, nullptr, &pipeline_);
     vkDestroyShaderModule(ctx_.device, vs, nullptr);
     vkDestroyShaderModule(ctx_.device, fs, nullptr);
     if (r != VK_SUCCESS) {
@@ -410,8 +413,8 @@ bool Renderer::CreatePipeline(std::string& error) {
 }
 
 bool Renderer::RecreateSwapchain(std::string& error) {
-    int w = 0, h = 0;
-    SDL_GetWindowSizeInPixels(window_, &w, &h);
+    int w = window_w_, h = window_h_;
+    if (w < 0 || h < 0) SDL_GetWindowSizeInPixels(window_, &w, &h);
     vkDeviceWaitIdle(ctx_.device);
     const VkFormat old_format = ctx_.swapchain_format;
     DestroySwapchainResources();
@@ -714,7 +717,55 @@ void Renderer::Shutdown() {
     native_view_ = VK_NULL_HANDLE;
     native_image_ = VK_NULL_HANDLE;
     command_pool_ = VK_NULL_HANDLE;
+    SavePipelineCache();
     ctx_.Shutdown();
+}
+
+void Renderer::LoadPipelineCache() {
+    std::vector<uint8_t> bytes;
+    if (!pipeline_cache_file_.empty() && ReadPipelineCacheFile(pipeline_cache_file_, bytes)) {
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(ctx_.physical_device, &props);
+        if (!PipelineCacheHeaderMatches(bytes.data(), bytes.size(), props.vendorID, props.deviceID,
+                                        props.pipelineCacheUUID)) {
+            // Another GPU or driver (or a damaged file): start empty, as with a rejected settings.json.
+            AC04_LOG_INFO("renderer", "pipeline cache made for another GPU or driver: deleted, rebuilt this session");
+            std::error_code ec;
+            std::filesystem::remove(pipeline_cache_file_, ec);
+            bytes.clear();
+        }
+    }
+    VkPipelineCacheCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+    ci.initialDataSize = bytes.size();
+    ci.pInitialData = bytes.empty() ? nullptr : bytes.data();
+    if (vkCreatePipelineCache(ctx_.device, &ci, nullptr, &ctx_.pipeline_cache) != VK_SUCCESS && !bytes.empty()) {
+        AC04_LOG_ERROR("renderer", "the driver rejected the pipeline cache file: starting with an empty cache");
+        ci.initialDataSize = 0;
+        ci.pInitialData = nullptr;
+        bytes.clear();
+        if (vkCreatePipelineCache(ctx_.device, &ci, nullptr, &ctx_.pipeline_cache) != VK_SUCCESS)
+            ctx_.pipeline_cache = VK_NULL_HANDLE;
+    }
+    pipeline_cache_loaded_bytes_ = bytes.size();
+}
+
+void Renderer::SavePipelineCache() {
+    if (!ctx_.pipeline_cache) return;
+    std::size_t size = 0;
+    std::vector<uint8_t> bytes;
+    if (!pipeline_cache_file_.empty() &&
+        vkGetPipelineCacheData(ctx_.device, ctx_.pipeline_cache, &size, nullptr) == VK_SUCCESS && size > 0 &&
+        size != pipeline_cache_loaded_bytes_ && size <= kMaxPipelineCacheBytes) {
+        bytes.resize(size);
+        if (vkGetPipelineCacheData(ctx_.device, ctx_.pipeline_cache, &size, bytes.data()) == VK_SUCCESS) {
+            bytes.resize(size);
+            std::string error;
+            if (!WritePipelineCacheFile(pipeline_cache_file_, bytes, error))
+                AC04_LOG_ERROR("renderer", "cannot save the pipeline cache: %s", error.c_str());
+        }
+    }
+    vkDestroyPipelineCache(ctx_.device, ctx_.pipeline_cache, nullptr);
+    ctx_.pipeline_cache = VK_NULL_HANDLE;
 }
 
 }  // namespace ac04::render

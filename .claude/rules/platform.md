@@ -15,7 +15,7 @@ paths:
 - Never write game data, extracted or converted assets (textures, models, audio, video, archives) into the repo; caches belong in a user data directory outside the repo.
 
 ## User data, settings, logs (ADR-005, ADR-006)
-- Every path the port writes comes from the platform paths interface (user data folder `%LOCALAPPDATA%\ProjectStonehenge\` on Windows: `saves\`, `settings.json`, `logs\`). No other code builds these paths, and nothing is written next to the executable.
+- Every path the port writes comes from the platform paths interface (user data folder `%LOCALAPPDATA%\ProjectStonehenge\` on Windows: `saves\`, `settings.json`, `logs\`, `cache\`). No other code builds these paths, and nothing is written next to the executable.
 - Settings: one `Settings` struct with defaults, JSON load/save, change notification. Invalid or missing values fall back to defaults and are logged. `src/game/` never reads settings.
 - Log: last session only (older logs deleted at start). Log errors and problems of startup, ISO check, renderer, audio, file I/O, saves and IOP stand-ins; unimplemented `sce*` calls once each; crashes through the crash handler in `src/platform/`. Never log per call or per frame, never log game data.
 

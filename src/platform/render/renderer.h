@@ -6,6 +6,8 @@
 // - An overlay hook draws after the output pass (debug overlay, milestone D).
 #pragma once
 
+#include <atomic>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -30,12 +32,21 @@ public:
     ~Renderer();
 
     // `validation`: request the Vulkan validation layer (development builds; used when installed).
+    // `pipeline_cache_file`: the pipeline cache kept between sessions (pipeline_cache.h; empty =
+    // none), loaded here and saved by Shutdown.
     bool Init(SDL_Window* window, const platform::PresentationSettings& presentation, bool validation,
-              std::string& error);
+              const std::filesystem::path& pipeline_cache_file, std::string& error);
     void Shutdown();
 
     void ApplySettings(const platform::PresentationSettings& presentation);
     void OnWindowResized() { swapchain_dirty_ = true; }
+    // Window size in pixels for the swapchain, given by the main thread when the renderer runs on
+    // the render thread (SDL window queries stay on the main thread). Until then the renderer asks
+    // SDL itself.
+    void SetWindowPixelSize(int w, int h) {
+        window_w_ = w;
+        window_h_ = h;
+    }
 
     // Draws and presents one frame. Returns false only on a fatal device error.
     bool DrawFrame();
@@ -118,9 +129,14 @@ private:
     bool CreatePipeline(std::string& error);
     bool UploadTestPattern(std::string& error);
     bool ReadbackImage(VkImage image, int width, int height, std::vector<uint8_t>& rgba);
+    void LoadPipelineCache();
+    void SavePipelineCache();
 
     SDL_Window* window_ = nullptr;
+    int window_w_ = -1, window_h_ = -1;  // SetWindowPixelSize; -1 = ask SDL
     VkContext ctx_;
+    std::filesystem::path pipeline_cache_file_;
+    std::size_t pipeline_cache_loaded_bytes_ = 0;  // saved again only when the size changed
     platform::PresentationSettings presentation_;
     int internal_scale_ = 1;
     int aspect_w_ = 4, aspect_h_ = 3;
@@ -170,7 +186,7 @@ private:
     // Movie upscaling stage
     std::unique_ptr<MovieUpscaler> movie_upscaler_;
     bool movie_upscaler_ready_ = false;
-    int movie_factor_ = 1;
+    std::atomic<int> movie_factor_{1};  // read by the main thread (render thread: render_thread.h)
     uint64_t movie_serial_ = 0, movie_done_serial_ = 0;
     uint32_t movie_guest_addr_ = 0, movie_guest_bytes_ = 0;
     int movie_width_ = 0, movie_height_ = 0;

@@ -21,8 +21,10 @@ bool ResolvePaths(const std::filesystem::path& user_data_override, Paths& out, s
     out.saves = out.user_data / "saves";
     out.logs = out.user_data / "logs";
     out.settings_file = out.user_data / "settings.json";
+    out.cache = out.user_data / "cache";
+    out.pipeline_cache_file = out.cache / "pipelines.bin";
     out.exe_dir = ExecutableDir();
-    for (const auto& dir : {out.user_data, out.saves, out.logs}) {
+    for (const auto& dir : {out.user_data, out.saves, out.logs, out.cache}) {
         std::error_code ec;
         std::filesystem::create_directories(dir, ec);
         if (ec || !std::filesystem::is_directory(dir)) {

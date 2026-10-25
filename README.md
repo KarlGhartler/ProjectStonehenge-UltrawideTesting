@@ -8,7 +8,7 @@
 ![License](https://img.shields.io/github/license/Onaga00/ProjectStonehenge?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x64-blue?style=flat-square)
 
-<img src="docs/images/screenshot.png" alt="ProjectStonehenge running Ace Combat 04: an F-14 locked on in the HUD" width="800">
+<img src="docs/images/screenshot.png" alt="ProjectStonehenge running Ace Combat 04" width="800">
 
 </div>
 
@@ -18,7 +18,7 @@
 
 **ProjectStonehenge** is a native x86_64 PC port of *Ace Combat 04: Shattered Skies*, based on the North American release (NTSC-U, SLUS-20152).
 
-The port is built from a decompilation of the original PS2 executable (ELF). It is **not** an emulator and **not** a static recompilation: the game code has been translated function by function into C++ (with AI assistance, see [AI Disclosure](#ai-disclosure)) and runs natively on PC. Game logic, physics, AI and mission rules behave exactly like the original, with PCSX2 running the original disc as the reference.
+The port is built from a decompilation of the original PS2 executable (ELF). It is **not** an emulator and **not** a static recompilation: the game code has been translated function by function into C++ (with AI assistance, see [AI Disclosure](#ai-disclosure)) and runs natively on PC. Game logic, physics, AI and mission rules behave exactly like the original.
 
 > [!IMPORTANT]
 > Currently only the **North American release (NTSC-U, SLUS-20152)** is supported. Support for other regions and revisions might come later. The port checks the disc image at startup (SHA-1 `aaa707214aea7f8f9c2904c4b5e00c372c943533`, 3,554,705,408 bytes).
@@ -33,7 +33,7 @@ This is an unofficial fan project and is **not affiliated with, endorsed by or s
 
 ## AI Disclosure
 
-This project is being developed with extensive use of generative AI. The reverse-engineering notes, most of the code and the research tools in this repository were written by models from Anthropic, working under constant human supervision.
+This project is being developed with extensive use of generative AI. The reverse-engineering notes, most of the code and the research tools in this repository were written by models from Anthropic, working under human supervision.
 
 ## Features
 
@@ -51,6 +51,19 @@ This project is being developed with extensive use of generative AI. The reverse
 - Keyboard and gamepad support through SDL3, with bindings in `settings.json`
 - **Vibration** on gamepads with rumble, switched by the game's own VIBRATION option
 - **Modern control types**: two extra CONTROL TYPE choices on CONTROLLER SETUP with L1/L2 and R1/R2 swapped (throttle on the triggers); the original types are still there
+
+Default keyboard mapping (PS2 controller → keyboard). What each button does in flight depends on the CONTROL TYPE chosen in the game's CONTROLLER SETUP. Keys can be changed under `input.bindings` in `settings.json`.
+
+| PS2 control | Key | PS2 control | Key |
+|---|---|---|---|
+| ✕ Cross | `Z` | Start | `Enter` |
+| ○ Circle | `X` | Select | `Backspace` |
+| □ Square | `C` | D-pad | Arrow keys |
+| △ Triangle | `V` | Left stick | `W` `A` `S` `D` |
+| L1 | `Q` | Right stick | `I` `J` `K` `L` |
+| R1 | `E` | L3 (left stick press) | `F` |
+| L2 | `1` | R3 (right stick press) | `H` |
+| R2 | `3` | | |
 
 **Saves**
 - **PCSX2-compatible save system** using PCSX2's folder memory card format, so saves can be moved between the port and the emulator in both directions
@@ -86,6 +99,7 @@ This project is being developed with extensive use of generative AI. The reverse
    - `settings.json`: port settings (graphics, input bindings, debug options)
    - `saves\`: the memory card (PCSX2 folder card format)
    - `logs\`: the log of the last session (attach it to bug reports)
+   - `cache\`: GS pipelines (recompiled with each gpu driver change)
 
 ### Command-line options (release builds)
 
@@ -207,7 +221,7 @@ git config core.hooksPath tools/hooks
 Before each commit, the hook checks every staged file and blocks the commit if a file:
 - has a game-data name (`*.iso`, `*.cdp`, `*.tbl`, `*.smv`, `*.vpk`, `*.irx`, `*.img`, `*.p2s`, `SLUS_*`, in any case);
 - is larger than 1 MiB;
-- starts with the signature of a known game format (SMV movie, CDP container, TBL index, VAG audio, MPEG video, PS2 ELF/IRX, IOPRP image, TIM2/GIM/PS2I blocks).
+- starts with the signature of a known game format (SMV movie, CDP container, TBL index, VAG audio, MPEG video, PS2 ELF/IRX, IOPRP image, PS2 texture blocks (TIM, GIM, PS2I)).
 
 A typical commit:
 
@@ -230,6 +244,8 @@ This license applies **only** to the code in this repository. It does not cover 
 ## 🙏 Credits
 
 ### Acknowledgements
+
+Special thanks to GioPixelGH (https://github.com/GioPixelGH) for his advice, guidance and early testing!
 
 These projects are used as tools or references. No code from them is copied into this repository (third-party code that is included is listed in `THIRD_PARTY_NOTICES.md`).
 

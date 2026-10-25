@@ -154,7 +154,7 @@ bool GsBackend::InitAntiAlias(std::string& error) {
         gpi.pDynamicState = &ds;
         gpi.layout = aa_layout_;
         gpi.renderPass = p == kEdges ? aa_pass_rg_ : aa_pass_rgba_;
-        if (vkCreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, nullptr, &aa_pipelines_[p]) != VK_SUCCESS) ok = false;
+        if (vkCreateGraphicsPipelines(dev, ctx_->pipeline_cache, 1, &gpi, nullptr, &aa_pipelines_[p]) != VK_SUCCESS) ok = false;
         vkDestroyShaderModule(dev, f, nullptr);
     }
     vkDestroyShaderModule(dev, vs, nullptr);

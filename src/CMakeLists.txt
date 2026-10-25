@@ -31,6 +31,7 @@ add_library(ac04_core STATIC
     platform/render/gs/gs_memory.cpp
     platform/render/gs/gs_state.cpp
     platform/render/output_layout.cpp
+    platform/render/pipeline_cache.cpp
     platform/render/test_pattern.cpp
     platform/render/vu1/vif1.cpp
     platform/render/vu1/vu1_programs.cpp
@@ -50,6 +51,7 @@ add_library(ac04_platform STATIC
     platform/render/gs/gs_vulkan.cpp
     platform/render/gs/gs_antialias.cpp
     platform/render/movie_upscaler.cpp
+    platform/render/render_thread.cpp
     platform/render/renderer.cpp
     platform/render/frame_interpolator.cpp
     platform/render/gs_dump.cpp

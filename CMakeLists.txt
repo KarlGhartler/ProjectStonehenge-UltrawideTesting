@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(ProjectStonehenge
-    VERSION 0.9.3
+    VERSION 0.9.5
     DESCRIPTION "Native PC port of Ace Combat 04 (SLUS_201.52)"
     LANGUAGES C CXX)
 

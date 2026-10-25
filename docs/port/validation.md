@@ -29,6 +29,8 @@ Every validation run of the project, newest last. How slices are validated: `val
 | §2af | mission 6 report: takeoff after a rearm, vibration after the landing, explosion fire, QUIT GAME in the campaign menu (2026-10-23/24; TO-1, VB-1, EX-2, EX-3, QG-1) |
 | §2ag | second mission 6 crash: a unit loop with a garbage count; invalid-access log names the caller (2026-10-24; CR-2) |
 | §2ah | third mission 6 crash, recorded: an inverted unit test in the track stream overran the radio header; fixed (2026-10-25; CR-3) |
+| §2ai | GS pipeline hitches on a new GPU driver: warm-up at startup and a pipeline cache file; where the game tick's time goes (2026-10-25; PC-1, RT-1) |
+| §2aj | render thread: GS processing, interpolation and presentation beside the game ticks (2026-10-25; RT-2) |
 | §2o | new memory card and first save, startup messages (2026-10-20; NS-1, NS-2) |
 | §2n | anti-aliasing (FXAA, SMAA) before the HUD (2026-10-20; AA-1 to AA-4) |
 | §2m | settings tests (GRAPHICS page, live combinations, controller and save round trip), texture residency, sprite edges at N×, defaults and the frame-rate overlay (2026-10-20; ST-1 to ST-8) |
@@ -933,7 +935,7 @@ User report: strong stutters remain in the in-engine cutscenes (no-save intro 0x
 - Cause: the ticks released per frame. With v-sync on, 450 of the opening's 1,552 frames after vblank 850 ran 0 or 2 ticks, in a repeating 1, 0, 1, 2 pattern (vblanks 1170-1215): the CPU is released at irregular times (`DrawFrame` blocks 2, 12, 20, 2 ms in turn, waiting for a swapchain image or a frame in flight), and `TickClock` turned that measured time into ticks. Four frames still took four refreshes, but the picture advanced 1, 0, 1, 2 ticks: a visible judder at 15 Hz.
 - Fix (`sce::RefreshSnap`, `main.cpp`): with v-sync on, each frame counts as one refresh of the window's display (`SDL_GetCurrentDisplayMode`, exact rational rate, read again every 60 frames). The difference from the measured time is carried and paid out in whole refreshes once it passes one refresh (a refresh really missed), so the total follows the host clock and the game speed is unchanged (the 59.94 / 60 Hz difference still gives one frame without a tick about every 17 s). V-sync off is unchanged. New test `refresh snap: one refresh per frame despite jitter, missed refreshes paid out`.
 - Result: opening 2 of 1,552 frames with other than one tick (was 450); no-save intro 9 of 1,840, all at two single slow frames.
-- Those two frames (vblanks 1335 and 1874, 120-140 ms in `DrawFrame`) came only in the first run after the shader was rebuilt; three more runs had none. Neither target creation nor recording nor the fence wait took over 30 ms (temporary logs). HYPOTHESIS: the driver compiling the changed pipelines the first time each is used (it keeps them in its own cache afterwards), so a player sees such a hitch once per new effect after installing a new version. A pipeline cache of our own would need a new file in the user data folder: for the User to decide.
+- Those two frames (vblanks 1335 and 1874, 120-140 ms in `DrawFrame`) came only in the first run after the shader was rebuilt; three more runs had none. Neither target creation nor recording nor the fence wait took over 30 ms (temporary logs). HYPOTHESIS: the driver compiling the changed pipelines the first time each is used (it keeps them in its own cache afterwards), so a player sees such a hitch once per new effect after installing a new version. A pipeline cache of our own would need a new file in the user data folder: for the User to decide. Confirmed and fixed 2026-10-25 (§2ai).
 - Regression (`full.json`, run `snap1`, against `clut1`): every RAM checkpoint, hash log and screenshot identical except `m4_route` 5300 in the loading-fade column x = 409 (IR-1).
 
 ## 2ab. Depth copy for the cloud pass; SPU2 reverb (2026-10-22)
@@ -1230,3 +1232,92 @@ User session with the §2ag build and `--record-input` (36,507 ticks; log, recor
 | 0x001769C0 | `func_001769C0` | mission | wide | agree | drop stale locks |
 | 0x0017EB30 | `func_0017EB30` | mission | wide | agree | menu item animation |
 | 0x0017E1D0 | `func_0017E1D0` | mission | wide | agree | game-over menu reset/layout |
+
+## 2ai. GS pipeline hitches on a new GPU driver (2026-10-25)
+
+User report: on a new PC or graphics driver (often NVIDIA) the frame rate stutters from the hangar to the end of mission 1, with micro hitches down to about 5 fps, worst with several enemies and terrain in view; later sessions are smooth.
+
+### PC-1. Pipelines compiled inside frames
+- Code: no `VkPipelineCache` was used anywhere. The fixed pipelines (output pass, anti-aliasing, depth copy, conversion, texture decode, movie upscaling) are built at start, but the GS draw pipelines were built by `GsBackend::GetPipeline` on the main thread the first time a draw state (blend, colour write mask, depth test and write: `PipelineKey`) appeared. `gs.frag` is one large shader whose behaviour is chosen by push constants, so every new key makes the driver compile it again. With a warm driver cache this is fast (§2u: 14 pipelines in 2.4 ms); with a cold one (new GPU, new driver, new build of the shaders) it happens inside the frame.
+- Measured with a temporary local edit, since reverted: the fragment module's SPIR-V generator word was set to a new value every session, so the driver treats it as a new shader. The AMD driver cache folder outside the repo was left alone. Development build, RX 9070 XT, driver 26.9.2, 1×, v-sync on, the User's mission 1 input log (`--mission 1 --replay-input out/runs/user_1022.ac4i --exit-at 8000`):
+
+| Run | GS pipelines built in frames | compile time in frames | slowest | ticks dropped | fps |
+|---|---|---|---|---|---|
+| warm driver cache, before | 24 | a few ms (§2u) | – | 0 | 60.0 |
+| cold, before | 24 | 7,897 ms | 913 ms | 439 | 56.6 |
+| cold, with the warm-up | 0 (34 built at startup in 2,862 ms, before the ISO check ended) | 0 | – | 0 | 59.9 |
+
+- Every `full.json` job with the cold shader (run `pk1`, 30 jobs in parallel, so each compile is slower): 3–24 pipelines per session, 2.6–10.0 s of compile time inside frames per session, 0.87–1.07 s for the slowest one. A frame that waits 0.9 s is the reported "5 fps" moment. The hangar and the first mission are where most new draw states first appear.
+- Keys: 34 distinct keys over the 30 jobs (front end, VS mode, shop, hangar routes, opening, missions 1–18) and the mission 1 input log. Merged with the new `tools/research/pipeline_keys.py` from the exit lines of the session logs.
+
+### Fix
+- **Warm-up** (`gs_pipeline_keys.h`, `GsBackend::StartPipelineWarmUp`): the 34 keys are built at start by up to 4 threads (half the hardware threads). `GetPipeline` returns a pipeline that is already built. It waits only for a key that a warm-up thread is building at that moment, and builds a key missing from the table itself, as before. At exit the log lists:
+  - the keys built during frames (`GS pipelines: N built during frames (…): keys`), so the table can be completed;
+  - every key in use (`GS pipelines: N in use; keys: …`);
+  - the warm-up time (`GS pipelines prepared at startup: N in … ms`).
+- **Pipeline cache file** (`cache\pipelines.bin`; User approval 2026-10-25; ADR-005 §2 and `port-features.md` §6 updated). Every renderer pipeline is created through one `VkPipelineCache`, loaded at start and saved at exit when its size changed (temporary file, then rename). The file is used only when its header names this GPU and driver (vendor, device, `pipelineCacheUUID`). Otherwise, or when it is damaged or over 64 MiB, it is deleted and the session starts empty. With the cold shader the file was 2.6 MB; a second session loaded it and left it unchanged. On this PC the driver's own cache is warm for the released shaders, so the file's own benefit (sessions after a cleared or evicted driver cache) cannot be shown here: the User's NVIDIA check below covers it.
+- Tests: `pipeline cache: header must name the same GPU and driver`, `pipeline cache: damaged headers are rejected`, `pipeline cache: file written whole and read back`.
+- Regression (`full.json`, run `pc2` with the final build, against `pk1`: the same code with only the measuring log, pipelines built in frames). All 30 jobs exit cleanly with no warning. All RAM checkpoints and hash logs are identical, and 108 of 110 files are identical; `m3_route` / `m4_route` screenshot 5300 differ only in the loading-fade column x = 409 (IR-1). In every job the warm-up finished in 4–14 ms (warm driver cache), and no job built a pipeline during frames. Development tests pass.
+
+### Render thread (User question, 2026-10-25)
+Findings before it was built (built the same day after RT-1: §2aj):
+- The GS data the renderer reads are self-contained copies of each step's GIF stream, and the game never reads GS state back. Processing and recording a frame on a second thread while the game runs the next tick would therefore not change game logic: ticks, input latching and the clock stay on the main thread, and validation runs stay deterministic.
+- It would raise throughput at high refresh rates. Mission 1 at 1× would cost about max(tick 4.4 ms, GS 4.1 + recording 2.5 ms) per frame instead of their sum (§2ac).
+- Costs: about one frame of extra latency, and synchronisation for settings changes, screenshots, `--dump-vram`, the overlay and the movie picture.
+- It would not have fixed PC-1: a compile would have stalled the render thread, and so the picture.
+
+### RT-1. Where the game tick's time goes (User request, 2026-10-25)
+A temporary probe (since removed) timed each game tick: the whole tick, the VIF1 sends (`sceDmaSend` channel 1), the VIF processing inside them, and the VU1 programs inside that. It also timed a `memcpy` of the same bytes the VIF reads: the cost of the snapshot the game thread would still make if the VIF work moved to another thread. Setup: development build, RX 9070 XT PC, 1×, normal speed. Mission 1 = the User's input log, vblanks 1500–8000. Hangar = the `m3_route` pad script with card S, vblanks 4400–5000. Interpolation on = v-sync off, cap 360, `--frame-interpolation on`. Values are per tick:
+
+| Scene | tick | VIF1 sends | VIF processing | of which VU1 programs | chain walk and the rest | snapshot copy (bytes) | game code (tick − VIF1 sends) |
+|---|---|---|---|---|---|---|---|
+| mission 1, interpolation off | 5.24 ms | 2.18 ms | 1.39 ms | 0.50 ms | 0.78 ms | 0.29 ms (1.4 MiB) | 3.06 ms |
+| mission 1, interpolation on | 5.36 ms | 2.29 ms | 1.49 ms | 0.58 ms | 0.80 ms | 0.30 ms (1.4 MiB) | 3.07 ms |
+| hangar, interpolation off | 8.15 ms | 6.28 ms | 4.47 ms | 1.99 ms | 1.82 ms | 0.65 ms (2.6 MiB) | 1.86 ms |
+| hangar, interpolation on | 8.61 ms | 6.65 ms | 4.81 ms | 2.28 ms | 1.85 ms | 0.73 ms (2.6 MiB) | 1.96 ms |
+
+- VIF processing = unpacking into VU memory, VIF commands, direct GIF data and the VU1 programs. With interpolation on, the VU1 time also includes the copy of VU memory into the run log.
+- "Chain walk and the rest" also contains the probe's own clock reads, so the walk itself is somewhat cheaper.
+- Renderer work per frame in mission 1 (session averages): GS processing 1.88 ms and recording 2.42 ms with interpolation off. The hangar's session averages (0.87 / 0.58 ms) include the menus before it, so they do not describe the hangar alone (§2ac measured about 7 ms of GS processing per hangar step).
+
+What a render thread would gain (estimates from the table, interpolation off):
+
+| Scene | today, one thread (tick + GS + recording) | group 1: GS processing and recording on a render thread | groups 1 + 2: VIF processing moved as well (game thread keeps walk and copy) |
+|---|---|---|---|
+| mission 1 | about 9.5 ms | max(game 5.2, render 4.3) ≈ 5.2 ms | max(game 4.1, render 5.7) ≈ 5.7 ms: no gain, the render thread becomes the slower side |
+| hangar | about 8.2 ms + its renderer work | the game thread, 8.2 ms | game thread about 4.3 ms; render thread its renderer work + 4.5 ms |
+
+- **Group 1** (GS processing, recording, interpolation build, present) gives most of the gain in flight. The game tick then sets the pace.
+- **Group 2** (VIF and VU1 work) helps only scenes where the VIF dominates the tick, like the hangar (4.5 of 8.2 ms). In flight it only moves 1.4 ms from one thread to the other. If it is done, it belongs on its own worker (fed with the snapshot in send order), not on the render thread.
+- At 60 Hz with v-sync every case already fits in 16.7 ms on this PC. The gain matters for high refresh rates with interpolation, and for slower CPUs.
+
+### Pending: User check on NVIDIA
+On the NVIDIA PC, with a new build:
+1. Close the port.
+2. Delete the driver's shader caches (`%LOCALAPPDATA%\NVIDIA\DXCache` and `%LOCALAPPDATA%\NVIDIA\GLCache`) and the port's `%LOCALAPPDATA%\ProjectStonehenge\cache\`.
+3. Start the port and play from the hangar to the end of mission 1.
+4. Send `%LOCALAPPDATA%\ProjectStonehenge\logs\session.log`.
+
+Expected: `GS pipelines prepared at startup: 34 in … ms` early in the log, no `built during frames` line (or only a few keys to add to the table), and no stutter. A second session after deleting only the driver caches (keeping `cache\`) should also start without hitches.
+
+## 2aj. Render thread (2026-10-25)
+
+User request after RT-1 (§2ai): move the renderer's CPU work to a second thread without changing game logic. Design and rules: ADR-002 "Render thread".
+
+### RT-2. Built and checked
+- Built: `src/platform/render/render_thread.*` (`FrameJob`, `RenderThread`: one frame in flight); `main.cpp` builds the job while the game is parked and the render thread runs the old order of the frame (GS processing, interpolation, display state, movie picture, screenshot, `DrawFrame`); the renderer takes the window size from the job instead of asking SDL (`Renderer::SetWindowPixelSize`), and its movie upscaling factor is atomic (the main thread reads it for the decoder side path). Presentation settings changed at run time travel with the next job; a debug settings change and the shown overlays wait for the render thread.
+- Game logic unchanged. Regression (`full.json`, run `rt1`, against `pc2`): all 30 jobs exit cleanly with no warning; every RAM checkpoint and hash log identical; 108 of 110 files identical, `m3_route` / `m4_route` screenshot 5300 differ only in the loading-fade column x = 409 (IR-1). Development tests pass (100 test cases).
+- Speed (same build; the baseline is a temporary edit, reverted, in which `Submit` waited for the frame to be presented, which is the old serial order). RX 9070 XT PC, 1×, v-sync off, cap 360, frames at normal speed after `--fast-until` (mission 1: the User's input log, vblanks 1500–8000; hangar: `m3_route`, vblanks 4400–5000):
+
+| Scene | serial | render thread | gain |
+|---|---|---|---|
+| mission 1, interpolation off | 197.7 fps | 245.0 fps | +24 % |
+| mission 1, interpolation on | 164.9 fps | 201.0 fps | +22 % |
+| hangar, interpolation off | 189.4 fps | 277.2 fps | +46 % |
+| hangar, interpolation on | 103.6 fps | 153.2 fps | +48 % |
+
+  No run dropped a tick. With interpolation on, mission 1 still blends 91 % of frames (19,755 of 21,797) and the hangar 99.5 %.
+- Live session (no-save intro, normal start, `--fps-overlay`, so overlay frames ran serialised), with `settings.json` changed twice while running: fullscreen → windowed, internal scale 5 → 3, v-sync off; then back to fullscreen, 5×, v-sync on. Both changes were applied on the render thread (swapchain 1280 × 960 IMMEDIATE, then 3840 × 2160 FIFO; interpolation on at 360, then off). 5 + 2 ticks dropped at the two switches (device wait and new targets), clean exit.
+- Vulkan validation layer (`--vk-validation`, mission 1 with interpolation and a screenshot at 1400): no validation message; the screenshot was written; clean exit.
+- Latency: with the frame in flight the picture trails the game by at most one presented frame.
+- Version raised to **0.9.5** after the pipeline warm-up and cache (§2ai) and the render thread (User request).

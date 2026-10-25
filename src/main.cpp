@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <fstream>
 #include <functional>
+#include <optional>
 #include <random>
 #include <string>
 #include <system_error>
@@ -42,6 +43,7 @@
 #include "platform/audio/spu_mixer.h"
 #include "platform/render/gs_dump.h"
 #include "platform/render/frame_interpolator.h"
+#include "platform/render/render_thread.h"
 #include "platform/render/renderer.h"
 #include "platform/settings.h"
 #include "platform/system_info.h"
@@ -526,7 +528,8 @@ int Run(int argc, char** argv) {
     }
 
     render::Renderer renderer;
-    if (!renderer.Init(window.Handle(), settings.Get().presentation, cl.options.vk_validation, error)) {
+    if (!renderer.Init(window.Handle(), settings.Get().presentation, cl.options.vk_validation,
+                       paths.pipeline_cache_file, error)) {
         AC04_LOG_ERROR("renderer", "%s", error.c_str());
         MessageText m;
         m.headline = "The graphics renderer could not start";
@@ -599,6 +602,11 @@ int Run(int argc, char** argv) {
 
     // Fixed-step clock of the simulation (ADR-002).
     sce::TickClock clock;
+    // Render thread (render_thread.h): started before the main loop. Until then the renderer is
+    // used directly; afterwards only the render thread calls it, and changes for it travel with the
+    // next frame (presentation settings, window size) or wait until it is idle (debug overlay).
+    render::RenderThread render_thread;
+    std::optional<PresentationSettings> pending_presentation;
     // Presented frames since the last presentation change (its log line reports their rate).
     u64 period_frames = 0;
     u64 period_dropped = 0;
@@ -614,7 +622,8 @@ int Run(int argc, char** argv) {
         period_frames = 0;
         period_dropped = clock.DroppedTicks();
         period_start = now;
-        renderer.ApplySettings(s.presentation);
+        if (render_thread.Running()) pending_presentation = s.presentation;
+        else renderer.ApplySettings(s.presentation);
         window.ApplyMode(s.presentation);
         pacer.SetCap(EffectiveFrameCap(s.presentation));
         AC04_LOG_INFO("settings", "presentation: filter %s, vsync %s, cap %d%s, %s, internal scale %d, anti-aliasing %s",
@@ -631,6 +640,7 @@ int Run(int argc, char** argv) {
     }
     settings.Subscribe(SettingsSection::Debug, [&](const Settings& s) {
         std::string overlay_error;
+        render_thread.WaitIdle();  // the overlay sets the renderer's hook and waits for the device
         if (!overlay.Apply(s.debug, window.Handle(), renderer, overlay_error))
             AC04_LOG_ERROR("overlay", "debug overlay unavailable: %s", overlay_error.c_str());
     });
@@ -894,12 +904,16 @@ int Run(int argc, char** argv) {
     double refresh_seconds = 0.0;
     // Frame interpolation (ADR-002, platform/render/frame_interpolator.h): the blended copy of the
     // newest step is drawn instead of the step itself when more frames than steps are presented.
+    // The interpolator and its buffers belong to the render thread; the main thread decides when
+    // interpolation is on.
     render::FrameInterpolator interpolator;
     bool interpolating = false;
+    bool interpolation_reset = false;
     std::vector<std::vector<u8>> blended(1);
     std::vector<std::vector<render::gs::SourceMark>> blended_marks(1);
     std::vector<std::vector<u8>> blended_pool;
-    // Session statistics (log at exit): frames presented at normal speed, and the blended copies.
+    // Session statistics (log at exit): frames presented at normal speed, and the blended copies
+    // (render thread; read after it has stopped).
     u64 normal_frames = 0, blended_frames = 0;
     double normal_seconds = 0.0, build_ms = 0.0;
     u64 frame_number = 0;
@@ -910,7 +924,109 @@ int Run(int argc, char** argv) {
     bool take_screenshot = false;
     const u64 fast_until = cl.options.fast_until ? *cl.options.fast_until : 0;
     const auto fast_start = std::chrono::steady_clock::now();
+    bool window_resized = false;
+    u64 last_movie_serial = 0;
+
+    // The render thread's part of a frame, in the order the main loop did it before the thread:
+    // the frame's GS steps (fast-forward segments without draws first), the blended copy, display
+    // state and the movie picture, a screenshot of the frame presented last, then the new frame.
+    render_thread.Start([&](render::FrameJob& job) {
+        if (job.presentation) renderer.ApplySettings(*job.presentation);
+        if (job.window_resized) renderer.OnWindowResized();
+        renderer.SetWindowPixelSize(job.window_w, job.window_h);
+        if (job.interpolation_reset) interpolator.Reset();
+        std::vector<std::vector<u8>>& pool = job.returned_steps;
+        for (size_t i = 0; i + 1 < job.segments.size(); ++i) {
+            render::FrameJob::Segment& seg = job.segments[i];
+            renderer.SetGsDrawsEnabled(seg.draws);
+            renderer.SubmitGsSteps(seg.steps, seg.marks, pool);
+        }
+        renderer.SetGsDrawsEnabled(true);
+        if (job.segments.empty()) job.segments.emplace_back();
+        std::vector<std::vector<u8>>& steps = job.segments.back().steps;
+        std::vector<std::vector<render::gs::SourceMark>>& marks = job.segments.back().marks;
+        bool blend = false;
+        if (job.interpolating) {
+            // A frame without steps shows the newest step again, further blended.
+            bool current = steps.empty();
+            if (!current && job.runs.size() == steps.size() && marks.size() == steps.size()) {
+                interpolator.PushStep(steps.back(), marks.back(), job.runs.back());
+                current = true;
+            }
+            // A frame that had to catch up more than one step adds no blended copy (its cost
+            // would make the next frame later still).
+            if (!current) interpolator.Reset();
+            else if (job.ticks_run <= 1) {
+                const auto build_start = std::chrono::steady_clock::now();
+                blend = interpolator.Build(job.alpha, blended[0], blended_marks[0]);
+                build_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - build_start).count();
+                if (blend) ++blended_frames;
+            }
+        }
+        // With a blended copy the newest step is replaced by it: the copy makes the same GS
+        // register and local memory changes (only the blended runs' vertices differ). Earlier
+        // steps of this frame are drawn as usual: what a step draws can stay in the frame
+        // buffers for later steps (the hangar), so a step's draws are never left out.
+        if (blend && !steps.empty()) {
+            steps.back().clear();
+            if (pool.size() < 4) pool.push_back(std::move(steps.back()));
+            steps.pop_back();
+            if (marks.size() > steps.size()) marks.resize(steps.size());
+        }
+        renderer.SubmitGsSteps(steps, marks, pool);
+        if (blend) {
+            renderer.SubmitGsSteps(blended, blended_marks, blended_pool);
+            blended.resize(1);
+            blended_marks.resize(1);
+            if (!blended_pool.empty()) {
+                blended[0] = std::move(blended_pool.back());
+                blended_pool.pop_back();
+            }
+        }
+        // The run logs go back to the game side's pool, cleared (PushStep hands back the log of
+        // the step it dropped).
+        for (render::vu1::RunLog& log : job.runs) log.Clear();
+        renderer.SetDisplay(job.dispfb, job.display);
+        renderer.SetDisplayAspect(job.aspect_w, job.aspect_h);
+        if (job.movie) {
+            render::FrameJob::Movie& mp = *job.movie;
+            renderer.SubmitMoviePicture(mp.serial, mp.guest_addr, mp.guest_bytes, mp.width, mp.height, mp.rgba);
+        }
+        if (job.screenshot) {
+            const auto dir = paths.user_data / "screenshots";
+            char name[64];
+            std::snprintf(name, sizeof(name), "%06llu", static_cast<unsigned long long>(job.vblank));
+            if (WriteNativeScreenshot(renderer, dir, std::string("native_") + name,
+                                      "internal_x" + std::to_string(renderer.NativeScale()) + "_" + name)) {
+                std::error_code ec;
+                std::vector<uint8_t> rgba;
+                int w = 0, h = 0;
+                // --dump-vram: the GS local memory as well (research only, contains game data).
+                if (cl.options.dump_vram) {
+                    std::filesystem::create_directories(paths.user_data / "dumps", ec);
+                    std::snprintf(name, sizeof(name), "vram_%06llu.bin", static_cast<unsigned long long>(job.vblank));
+                    if (std::FILE* f = _wfopen((paths.user_data / "dumps" / name).c_str(), L"wb")) {
+                        std::fwrite(renderer.GsLocalMemory(), 1, render::gs::GsMemory::kSize, f);
+                        std::fclose(f);
+                    }
+                }
+                // --movie-upscale: the upscaling stage output of the current movie picture as well.
+                if (renderer.MovieUpscaleFactor() > 1 && renderer.CaptureMovieUpscaled(rgba, w, h)) {
+                    std::snprintf(name, sizeof(name), "movie_x%d_%06llu.png", renderer.MovieUpscaleFactor(),
+                                  static_cast<unsigned long long>(job.vblank));
+                    if (!WritePng(dir / name, rgba.data(), w, h))
+                        AC04_LOG_ERROR("renderer", "cannot write the screenshot %s", name);
+                }
+            }
+        }
+        if (!renderer.DrawFrame()) job.device_lost = true;
+    });
+
     while (running) {
+        // The debug overlay's ImGui frame (events, build, draw) is not shared between threads:
+        // while it is shown, frames run one after the other.
+        if (overlay.Visible() || overlay.FpsVisible()) render_thread.WaitIdle();
+        render::FrameJob job;
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -920,7 +1036,7 @@ int Run(int argc, char** argv) {
                     break;
                 case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
                 case SDL_EVENT_WINDOW_RESTORED:
-                    renderer.OnWindowResized();
+                    window_resized = true;
                     break;
 #if AC04_DEV_BUILD
                 case SDL_EVENT_KEY_DOWN:
@@ -970,7 +1086,7 @@ int Run(int argc, char** argv) {
             const bool want = allowed && !fast && rate > 62.0;
             if (want != interpolating) {
                 interpolating = want;
-                interpolator.Reset();
+                interpolation_reset = true;
                 AC04_LOG_INFO("renderer", "frame interpolation: %s (%.0f frames per second)", want ? "on" : "off", rate);
             }
             sce::Dma().record_runs = want;
@@ -990,9 +1106,15 @@ int Run(int argc, char** argv) {
                     break;
                 if (!settle) {
                     // Keep GS memory current step by step without building draws.
-                    renderer.SetGsDrawsEnabled(false);
-                    renderer.SubmitGsSteps(sce::Dma().gs_steps, sce::Dma().gs_steps_marks, sce::Dma().gs_step_pool);
-                    sce::Dma().gs_steps_runs.clear();
+                    sce::DmaStats& dma = sce::Dma();
+                    render::FrameJob::Segment seg;
+                    seg.draws = false;
+                    seg.steps = std::move(dma.gs_steps);
+                    seg.marks = std::move(dma.gs_steps_marks);
+                    dma.gs_steps.clear();
+                    dma.gs_steps_marks.clear();
+                    job.segments.push_back(std::move(seg));
+                    dma.gs_steps_runs.clear();
                 }
             }
             ++ticks_run;
@@ -1020,7 +1142,6 @@ int Run(int argc, char** argv) {
                                guest::Mem().Scratchpad(), guest::kScratchpadSize);
         }
         if (fast) {
-            renderer.SetGsDrawsEnabled(true);
             if (game.VBlankCount() >= fast_until) {
                 // Back to normal speed: start the clock afresh and drop the sound backlog.
                 last_time = std::chrono::steady_clock::now();
@@ -1033,55 +1154,22 @@ int Run(int argc, char** argv) {
         // The game is parked: its GS data and the latest movie picture (side path) can be taken.
         {
             sce::DmaStats& dma = sce::Dma();
-            bool blend = false;
-            if (interpolating) {
-                // A frame without steps shows the newest step again, further blended.
-                bool current = dma.gs_steps.empty();
-                if (!current && dma.gs_steps_runs.size() == dma.gs_steps.size() &&
-                    dma.gs_steps_marks.size() == dma.gs_steps.size()) {
-                    interpolator.PushStep(dma.gs_steps.back(), dma.gs_steps_marks.back(), dma.gs_steps_runs.back());
-                    current = true;
-                }
-                // A frame that had to catch up more than one step adds no blended copy (its cost
-                // would make the next frame later still).
-                if (!current) interpolator.Reset();
-                else if (ticks_run <= 1) {
-                    const auto build_start = std::chrono::steady_clock::now();
-                    blend = interpolator.Build(clock.Alpha(), blended[0], blended_marks[0]);
-                    build_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - build_start).count();
-                    if (blend) ++blended_frames;
-                }
-            }
-            // The run logs go back to the pool with their capacity (PushStep hands back the log of
-            // the step it dropped, cleared).
-            for (render::vu1::RunLog& log : dma.gs_steps_runs) {
-                if (dma.gs_runs_pool.size() >= 3) break;
-                log.Clear();
-                dma.gs_runs_pool.push_back(std::move(log));
-            }
+            render::FrameJob::Segment seg;
+            seg.steps = std::move(dma.gs_steps);
+            seg.marks = std::move(dma.gs_steps_marks);
+            dma.gs_steps.clear();
+            dma.gs_steps_marks.clear();
+            job.segments.push_back(std::move(seg));
+            job.runs = std::move(dma.gs_steps_runs);
             dma.gs_steps_runs.clear();
-            // With a blended copy the newest step is replaced by it: the copy makes the same GS
-            // register and local memory changes (only the blended runs' vertices differ). Earlier
-            // steps of this frame are drawn as usual: what a step draws can stay in the frame
-            // buffers for later steps (the hangar), so a step's draws are never left out.
-            if (blend && !dma.gs_steps.empty()) {
-                dma.gs_steps.back().clear();
-                if (dma.gs_step_pool.size() < 4) dma.gs_step_pool.push_back(std::move(dma.gs_steps.back()));
-                dma.gs_steps.pop_back();
-                if (dma.gs_steps_marks.size() > dma.gs_steps.size()) dma.gs_steps_marks.resize(dma.gs_steps.size());
-            }
-            renderer.SubmitGsSteps(dma.gs_steps, dma.gs_steps_marks, dma.gs_step_pool);
-            if (blend) {
-                renderer.SubmitGsSteps(blended, blended_marks, blended_pool);
-                blended.resize(1);
-                blended_marks.resize(1);
-                if (!blended_pool.empty()) {
-                    blended[0] = std::move(blended_pool.back());
-                    blended_pool.pop_back();
-                }
-            }
+            job.interpolating = interpolating;
+            job.interpolation_reset = interpolation_reset;
+            interpolation_reset = false;
+            job.ticks_run = ticks_run;
+            job.alpha = clock.Alpha();
+            job.dispfb = dma.dispenv[2];
+            job.display = dma.dispenv[3];
         }
-        renderer.SetDisplay(sce::Dma().dispenv[2], sce::Dma().dispenv[3]);
         // Vibration as the game last set it (scePadSetActDirect), on the live gamepads only: runs
         // fed from a script or a recording leave the pads still.
         for (int port = 0; port < 2; ++port) {
@@ -1093,12 +1181,16 @@ int Run(int argc, char** argv) {
         // on (main context flag 0x10000: the game draws an anamorphic picture), otherwise 4:3.
         {
             const bool wide = (game::g_MainContext().flags & 0x10000u) != 0;
-            renderer.SetDisplayAspect(wide ? 16 : 4, wide ? 9 : 3);
+            job.aspect_w = wide ? 16 : 4;
+            job.aspect_h = wide ? 9 : 3;
         }
         {
-            sce::MoviePicture& mp = sce::Dma().movie_picture;
-            if (mp.serial != 0)
-                renderer.SubmitMoviePicture(mp.serial, mp.guest_addr, mp.guest_bytes, mp.width, mp.height, mp.rgba);
+            // A new picture is copied for the render thread (the decoder keeps its buffer).
+            const sce::MoviePicture& mp = sce::Dma().movie_picture;
+            if (mp.serial != 0 && mp.serial != last_movie_serial && !mp.rgba.empty()) {
+                job.movie = render::FrameJob::Movie{mp.serial, mp.guest_addr, mp.guest_bytes, mp.width, mp.height, mp.rgba};
+                last_movie_serial = mp.serial;
+            }
         }
         // Movie side path (ADR-006 §5) only while the upscaling stage runs (the internal scale can
         // change at run time through settings.json).
@@ -1119,6 +1211,7 @@ int Run(int argc, char** argv) {
             od.vif1_sends = dma.sends[1];
             od.bad_chains = dma.bad_chains;
             od.dispenv = dma.dispenv;
+            if (overlay.Visible() || overlay.FpsVisible()) render_thread.WaitIdle();  // ImGui: see the loop start
             overlay.BuildFrame(od);
         }
         // Development builds: --exit-at ends the session normally (dumps written at exit).
@@ -1132,40 +1225,37 @@ int Run(int argc, char** argv) {
         }
         if (take_screenshot) {
             take_screenshot = false;
-            const auto dir = paths.user_data / "screenshots";
-            char name[64];
-            std::snprintf(name, sizeof(name), "%06llu", static_cast<unsigned long long>(game.VBlankCount()));
-            if (WriteNativeScreenshot(renderer, dir, std::string("native_") + name,
-                                      "internal_x" + std::to_string(renderer.NativeScale()) + "_" + name)) {
-                std::error_code ec;
-                std::vector<uint8_t> rgba;
-                int w = 0, h = 0;
-                // --dump-vram: the GS local memory as well (research only, contains game data).
-                if (cl.options.dump_vram) {
-                    std::filesystem::create_directories(paths.user_data / "dumps", ec);
-                    std::snprintf(name, sizeof(name), "vram_%06llu.bin", static_cast<unsigned long long>(game.VBlankCount()));
-                    if (std::FILE* f = _wfopen((paths.user_data / "dumps" / name).c_str(), L"wb")) {
-                        std::fwrite(renderer.GsLocalMemory(), 1, render::gs::GsMemory::kSize, f);
-                        std::fclose(f);
-                    }
-                }
-                // --movie-upscale: the upscaling stage output of the current movie picture as well.
-                if (renderer.MovieUpscaleFactor() > 1 && renderer.CaptureMovieUpscaled(rgba, w, h)) {
-                    std::snprintf(name, sizeof(name), "movie_x%d_%06llu.png", renderer.MovieUpscaleFactor(),
-                                  static_cast<unsigned long long>(game.VBlankCount()));
-                    if (!WritePng(dir / name, rgba.data(), w, h))
-                        AC04_LOG_ERROR("renderer", "cannot write the screenshot %s", name);
-                }
-            }
+            job.screenshot = true;
+            job.vblank = game.VBlankCount();
         }
-        if (!renderer.DrawFrame()) {
-            MessageText m;
-            m.headline = "The graphics device stopped working";
-            m.explanation = "The GPU stopped responding while the game was running.";
-            m.steps = {"Restart the port.", "If it happens again, update the graphics driver and keep the session log."};
-            m.details = {{"Session log", PathToUtf8(log::FilePath())}};
-            ShowErrorBox(std::string(kAppTitle) + " - Error", m, &window);
-            break;
+        job.presentation = std::move(pending_presentation);
+        pending_presentation.reset();
+        job.window_resized = window_resized;
+        window_resized = false;
+        SDL_GetWindowSizeInPixels(window.Handle(), &job.window_w, &job.window_h);
+        {
+            // The previous frame is presented when Submit returns; its buffers go back to the game
+            // side's pools while the game is parked.
+            render::FrameJob done = render_thread.Submit(std::move(job));
+            sce::DmaStats& dma = sce::Dma();
+            for (std::vector<u8>& s : done.returned_steps) {
+                if (dma.gs_step_pool.size() >= 4) break;
+                s.clear();
+                dma.gs_step_pool.push_back(std::move(s));
+            }
+            for (render::vu1::RunLog& log : done.runs) {
+                if (dma.gs_runs_pool.size() >= 3) break;
+                dma.gs_runs_pool.push_back(std::move(log));
+            }
+            if (done.device_lost) {
+                MessageText m;
+                m.headline = "The graphics device stopped working";
+                m.explanation = "The GPU stopped responding while the game was running.";
+                m.steps = {"Restart the port.", "If it happens again, update the graphics driver and keep the session log."};
+                m.details = {{"Session log", PathToUtf8(log::FilePath())}};
+                ShowErrorBox(std::string(kAppTitle) + " - Error", m, &window);
+                break;
+            }
         }
         ++period_frames;
         if (!fast) {
@@ -1177,6 +1267,8 @@ int Run(int argc, char** argv) {
         if (cl.options.stress_host)
             std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 40)(stress_rng)));
     }
+
+    render_thread.Stop();
 
     // Remember the windowed size for the next start.
     if (settings.Get().presentation.window_mode == WindowMode::Windowed) {

@@ -109,6 +109,16 @@ A draw in step N is matched with a draw in step N−1 by a **stable key**:
 
 Built as designed at the level where the game's 3D is transformed: the VU1 programs (CPU HLE). Matrices are blended element by element (no decomposition): the steps are 16.7 ms apart, so the error is small, and parts that turn fast (more than 25° per step) blend only their position. The one-step latency of the design applies to the 3D; HUD and 2D show the newest step. Matching keys, guards, cost and checks: `../port/validation.md` §2ac. Not done: a matched-draw debug view; effects the EE projects itself are drawn from the newest step.
 
+## Render thread (2026-10-25, User request)
+
+Presentation runs on its own thread (`src/platform/render/render_thread.*`, `main.cpp`). The game thread and its lockstep with the main thread are unchanged: the main thread still releases the ticks, latches the pads before each tick, keeps the clock and handles SDL events and settings.
+- After a frame's ticks, while the game is parked, the main thread puts everything the picture needs into one `FrameJob`: the steps' GIF streams and source marks (moved, not copied), the program runs for interpolation, the display registers, the aspect, a new movie picture (copied), changed presentation settings, the window size, a screenshot request. Guest memory is never read on the render thread.
+- The render thread does what the main loop did before, in the same order: GS processing (fast-forward segments without draws first), the interpolated copy, display state and movie picture, a screenshot of the frame presented last, then `DrawFrame` (recording, submit, present).
+- At most one frame is in flight. `Submit` hands a job over only after the previous frame has been presented, so v-sync still paces the main loop (the `RefreshSnap` rule is unchanged) and the picture trails the game by at most one frame. Step buffers and run logs come back with the finished job and go into the game side's pools while the game is parked.
+- Serialised cases: while the debug overlay's panels or the frame-rate overlay are shown, the main thread waits for the render thread before it handles events and builds the ImGui frame (ImGui is single-threaded), so those frames run one after the other as before; a change of the debug settings waits for it too. The GS-dump player and the disc-check screens run before the thread starts.
+- Not moved (`../port/validation.md` §2ai RT-1): the VIF and VU1 HLE stays inside `sceDmaSend` on the game thread. In flight it would only move about 1.4 ms per tick from one thread to the other.
+- Results: `../port/validation.md` §2aj.
+
 ## Consequences
 
 - `src/platform/` owns: the frame clock (accumulator), presentation and interpolation, file/audio/save worker threads.

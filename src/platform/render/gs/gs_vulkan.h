@@ -13,12 +13,18 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "platform/render/gs/gs_state.h"
@@ -194,7 +200,12 @@ private:
     void ShutdownAntiAlias();
     bool EnsureAntiAliasImages(int w, int h);
     void ApplyAntiAlias(VkCommandBuffer cmd, Target& t, const DrawCommand& d);
+    // GS draw pipelines: GetPipeline (Record, main thread) returns the pipeline of a key, built
+    // during the frame only when the warm-up has not built it (CreatePipeline is thread-safe).
     VkPipeline GetPipeline(std::uint64_t key);
+    VkPipeline CreatePipeline(std::uint64_t key) const;
+    void StartPipelineWarmUp();
+    void StopPipelineWarmUp();
     void LogOnce(const char* key, const char* text);
 
     VkContext* ctx_ = nullptr;
@@ -207,7 +218,22 @@ private:
     VkSampler sampler_ = VK_NULL_HANDLE;
     VkSampler linear_sampler_ = VK_NULL_HANDLE;  // the upscaled movie picture
     VkShaderModule vs_ = VK_NULL_HANDLE, fs_ = VK_NULL_HANDLE;
+    // Pipeline warm-up (gs_pipeline_keys.h): threads started by Init build the keys the game is
+    // known to use, so that a new driver compiles them before the first 3D frame instead of inside
+    // frames (validation.md §2ai). pipelines_ and warming_ are guarded by pipelines_mutex_.
     std::unordered_map<std::uint64_t, VkPipeline> pipelines_;
+    std::unordered_set<std::uint64_t> warming_;  // keys a warm-up thread is building now
+    std::mutex pipelines_mutex_;
+    std::condition_variable pipelines_cv_;
+    std::vector<std::thread> warm_threads_;
+    std::atomic<std::size_t> warm_next_{0};
+    std::atomic<int> warm_running_{0};
+    std::atomic<bool> warm_stop_{false};
+    std::chrono::steady_clock::time_point warm_start_;
+    // Pipelines built during frames this session (summary logged at Shutdown): their keys, total
+    // and slowest time.
+    std::vector<std::uint64_t> frame_pipeline_keys_;
+    double frame_pipeline_ms_ = 0.0, frame_pipeline_ms_max_ = 0.0;
 
     // Texture images, one per decoded texture (by DecodedTexture::serial), kept while GsState's cache
     // or a draw still holds the texture. Sizes are rounded up to kTexAlign so that freed images fit

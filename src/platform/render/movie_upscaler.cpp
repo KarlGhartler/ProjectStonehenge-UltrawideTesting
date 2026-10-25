@@ -123,7 +123,7 @@ bool Fsr1MovieUpscaler::Init(VkContext& ctx, std::string& error) {
     cpi.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT,
                  module, "main", nullptr};
     cpi.layout = pipeline_layout_;
-    const VkResult r = vkCreateComputePipelines(ctx.device, VK_NULL_HANDLE, 1, &cpi, nullptr, &pipeline_);
+    const VkResult r = vkCreateComputePipelines(ctx.device, ctx.pipeline_cache, 1, &cpi, nullptr, &pipeline_);
     vkDestroyShaderModule(ctx.device, module, nullptr);
     if (r != VK_SUCCESS) {
         error = std::string("cannot create the movie upscaling pipeline: ") + VkResultName(r);
