@@ -1,6 +1,7 @@
 #include "platform/input_log.h"
 
 #include <cstring>
+#include <utility>
 
 namespace ac04::platform {
 
@@ -88,6 +89,16 @@ void NeutralPads(PadState out[2]) {
     out[0] = PadState{};
     out[0].connected = true;
     out[1] = PadState{};
+}
+
+void SwapShoulderButtons(PadState& pad) {
+    // Byte 3 of the buttons: bit 0 L2, bit 1 R2, bit 2 L1, bit 3 R1. Pressures: 8 L1, 9 R1, 10 L2,
+    // 11 R2.
+    const std::uint16_t b = pad.buttons;
+    const std::uint16_t low = static_cast<std::uint16_t>((b >> 8) & 0x3), high = static_cast<std::uint16_t>((b >> 10) & 0x3);
+    pad.buttons = static_cast<std::uint16_t>((b & ~0x0F00u) | (low << 10) | (high << 8));
+    std::swap(pad.pressure[8], pad.pressure[10]);
+    std::swap(pad.pressure[9], pad.pressure[11]);
 }
 
 }  // namespace ac04::platform

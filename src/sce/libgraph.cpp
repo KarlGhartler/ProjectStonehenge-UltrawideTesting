@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "common/guest_ref.h"
+#include "common/port_hooks.h"
 #include "platform/log.h"
 #include "platform/render/vu1/vif1.h"
 #include "sce/ee_hw.h"
@@ -97,6 +98,8 @@ u64 WalkChain(u32 tag_addr, bool& ok, OnTag on_tag, OnData on_data) {
 ac04::render::vu1::Vif1& Vif1Unit(std::vector<u8>& gif) {
     static ac04::render::vu1::Vif1 vif(gif);
     vif.SetOutput(gif);
+    auto& dma = ac04::sce::Dma();
+    vif.SetRunLog(dma.record_runs ? &dma.gs_step_runs : nullptr);
     return vif;
 }
 
@@ -196,6 +199,13 @@ u32 PassVBlank() {
     }
     dma.gs_steps_marks.push_back(std::move(dma.gs_step_marks));
     dma.gs_step_marks.clear();
+    dma.gs_steps_runs.push_back(std::move(dma.gs_step_runs));
+    dma.gs_step_runs.Clear();
+    if (!dma.gs_runs_pool.empty()) {
+        dma.gs_step_runs = std::move(dma.gs_runs_pool.back());
+        dma.gs_runs_pool.pop_back();
+        dma.gs_step_runs.Clear();
+    }
     if (ac04::sce::Host().on_vblank) ac04::sce::Host().on_vblank();
     g_csr_field = rt.WaitVBlank();
     ac04::sce::EeRegisters::Get().OnVBlank(rt.VBlankCount());
@@ -294,6 +304,18 @@ s32 sceDmaSend(u32 chan, u32 tag) {
         qw = WalkChain(
             tag & 0x7FFFFFF0u, ok,
             [&](u32 t) {
+                // Anti-aliasing point (port_hooks.h): a flight view's overlay table starts here.
+                for (const ac04::port::RenderMarks::Point& m : ac04::port::Render().sending) {
+                    if (((m.tag ^ t) & 0x0FFFFFF0u) != 0) continue;  // any RAM alias
+                    ac04::render::gs::SourceMark mark;
+                    mark.offset = static_cast<u32>(gif.size());
+                    mark.kind = ac04::render::gs::SourceMark::kAntiAlias;
+                    mark.rect[0] = m.x0;
+                    mark.rect[1] = m.y0;
+                    mark.rect[2] = m.x1;
+                    mark.rect[3] = m.y1;
+                    dma.gs_step_marks.push_back(mark);
+                }
                 if (tte) {
                     if (dma.capture_active) {
                         for (u32 o : {8u, 12u}) {

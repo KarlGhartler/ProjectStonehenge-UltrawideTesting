@@ -6,6 +6,10 @@
 // (font block), +0x230 fade (+0x23C level), +0x240 menu tree (+0x240 open column), +0x648 message
 // box (help line; +0x650 type-out position, +0x656 shown message), +0x66C state (0 fade in, 1 menu,
 // 2 leaving to a sub-page, 3 leaving to another page), +0x670/+0x674 MenuGoTo target.
+//
+// Port baseline (User request 2026-10-24): QUIT GAME is appended to the first column, after LOAD
+// (quit_item.h); it leaves through port state 9. The game's tables and ids are unchanged; the
+// "port:" lines are the only additions.
 #include "game/game.h"
 
 #include <cstddef>
@@ -13,6 +17,8 @@
 #include "common/debug_hooks.h"
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "common/port_hooks.h"
+#include "game/quit_item.h"
 #include "sce/sce.h"
 
 namespace ac04::game {
@@ -28,7 +34,6 @@ AC04_GUEST_VAR(u16, g_MissionNo, 0x002A15B8)
 constexpr u32 kColumns = 0x0039D920;      // 6 columns
 constexpr u32 kHelpMessages = 0x0039DA28;  // s16 per menu item (19)
 
-f32 K(u32 address) { return GRef<f32>(address); }
 s32& State(u32 obj) { return GRef<s32>(obj + 0x66C); }
 
 }  // namespace
@@ -38,8 +43,12 @@ s32& State(u32 obj) { return GRef<s32>(obj + 0x66C); }
 // type-out restarted; typed out while the page is up.
 void UpdateCampaignMenuHelp(u32 obj) {
     s32 state = State(obj);
-    if (state == 1) {
-        u64 sel = static_cast<u64>(static_cast<s64>(GetMenuTreeSelection(obj + 0x240)));
+    if (state == 1 && QuitItemSelection(obj + 0x240, kCampaignMenuItems) == kQuitItem) {  // port: no help text
+        if (GRef<s16>(obj + 0x654) != 0) SetMessageBoxText(obj + 0x648, -1);
+        GRef<s16>(obj + 0x656) = -1;  // the next item types its text again
+    } else if (state == 1) {
+        // port: QUIT GAME in the list
+        u64 sel = static_cast<u64>(static_cast<s64>(QuitItemSelection(obj + 0x240, kCampaignMenuItems)));
         if (sel > 0x12) sel = 0;
         const s16 msg = GRef<s16>(kHelpMessages + static_cast<u32>(sel) * 2);
         if (GRef<s16>(obj + 0x656) != msg) {
@@ -67,7 +76,10 @@ u32 CreateCampaignMenu() {
     guest::GuestFrame frame(0x20);
     const u32 masks = frame.Address();
     for (u32 i = 0; i < 0x18; i += 4) GRef<u32>(masks + i) = 0;
-    InitMenuTree(obj + 0x240, 6, kColumns, 0x0039D9B0, masks, 0x0039DA18);
+    {
+        const QuitItemPatch patch(kColumns, kCampaignMenuItems);  // port: QUIT GAME in the list
+        InitMenuTree(obj + 0x240, 6, kColumns, 0x0039D9B0, masks, 0x0039DA18);
+    }
     if (Ctx()->sub == 0x18) {
         GRef<u32>(obj + 0x240) = 3;
         SetListWidgetState(obj + 0x290, 1);
@@ -86,6 +98,7 @@ void LeaveCampaignMenu(u32 obj, u16 page) {
     StartFade(0.5f, obj + 0x230, 1);
     GRef<u32>(obj + 0x674) = page;
     GRef<u32>(obj + 0x670) = 0;
+    const QuitItemPatch patch(kColumns, kCampaignMenuItems);  // port: QUIT GAME in the list
     StoreMenuTreeCursors(kColumns, 6, obj + 0x240);
 }
 
@@ -96,6 +109,7 @@ void LeaveCampaignMenuToSubPage(u32 obj, u16 sub) {
     StartFade(0.5f, obj + 0x230, 1);
     GRef<u32>(obj + 0x674) = sub;
     GRef<u32>(obj + 0x670) = 1;
+    const QuitItemPatch patch(kColumns, kCampaignMenuItems);  // port: QUIT GAME in the list
     StoreMenuTreeCursors(kColumns, 6, obj + 0x240);
 }
 
@@ -105,7 +119,18 @@ void LeaveCampaignMenuToSubPage(u32 obj, u16 sub) {
 // 0x57, and 0x4A/0x50 (the save/load pages; their HDD variants open columns 4/5 only with ctx flag
 // 0x80000); items 2-4 open columns 1-3. SE 2, or SE 5 for an unknown selection.
 void CampaignMenuSelect(u32 obj, u32 tree) {
-    const u64 sel = static_cast<u64>(static_cast<s64>(GetMenuTreeSelection(tree)));
+    const s16 selection = QuitItemSelection(tree, kCampaignMenuItems);  // port: QUIT GAME in the list
+    if (selection == kQuitItem) {
+        // port: QUIT GAME leaves like the game's exits (menu and screen fade out, BGM fade) through
+        // state 9; the host ends the session when the screen is black.
+        State(obj) = 9;
+        FadeOutMenuBgm(0.5f);
+        StartFade(0.5f, g_pMenuFade(), 1);
+        StartFade(0.5f, obj + 0x230, 1);
+        PlayMenuSe(0, 2);
+        return;
+    }
+    const u64 sel = static_cast<u64>(static_cast<s64>(selection));
     u32 column = 0;
     u32 widget = 0;
     switch (sel) {
@@ -191,6 +216,8 @@ void CampaignMenuUpdate(u32 obj) {
     } else if (state == 3) {
         if ((GRef<u32>(fade) & 8) != 0)
             MenuGoTo(static_cast<s64>(GRef<s32>(obj + 0x670)), static_cast<u16>(GRef<u32>(obj + 0x674)));
+    } else if (state == 9) {  // port: QUIT GAME, the screen is black
+        if ((GRef<u32>(fade) & 8) != 0) port::Menu().quit = true;
     }
 }
 

@@ -46,7 +46,7 @@ Float index `f[n]` = byte offset n·4.
 | f[0x46], f[0x47] | auto-level targets (pitch, roll), −1..1, used when flag byte +0x185 bit 4 is set |
 | f[0x4C] | forward speed in body frame (z of the body velocity) |
 | f[0x4D] | gravity / sink term subtracted from the vertical velocity |
-| byte +0x149 | current view, cycled 0 → 1 → 2 by the view button: **0 first-person HUD-only view, 1 cockpit view (draws the cockpit model), 2 external (third-person) view** (confirmed in PCSX2, `../pcsx2/sessions-04.md`). VS mode forces 0, mission kind 3 forces 2 (`func_00125B70`) |
+| byte +0x149 | current view, cycled 0 → 1 → 2 by the view button: **0 first-person HUD-only view, 1 cockpit view (draws the cockpit model), 2 external (third-person) view** (confirmed in PCSX2, `../pcsx2/sessions.md` run 04). VS mode forces 0, mission kind 3 forces 2 (`func_00125B70`) |
 | byte +0x14A | look-at target unit (0xFF none) |
 | +0x158 | gun ammo |
 | f[0x62] | view/flag bits (0x40 view changed, 2/4/8 look-at states) |
@@ -83,7 +83,7 @@ An arcade model on Euler angles with a body-frame velocity. Per frame:
 5. Rotation, two paths:
    - **Control type bit 0 clear** (matrix path): auto-level targets from the current angles, then `func_001282B8` (pitch rate), `func_00128AF0` (yaw rate from bank, `sin`), `func_00128D40` (rudder rate). The deltas f[0..2] are applied through `func_00102EF0` (rotate the Euler angles by a delta in the body frame), so pitching at any bank angle behaves like a real aircraft.
    - **Control type bit 0 set** (Euler path): auto-level, then `func_00128510` (pitch rate variant) and `func_00128768` (roll rate with inertia and auto-level). The deltas are added directly: x += f[0], y += f[1] (sign flipped when the aircraft is upside down, |roll| beyond a constant), z += f[2]. Angles are then wrapped (pitch past ±π/2 flips yaw and roll by π; yaw and roll wrap at ±π).
-   - Bit 0 set is CONTROL TYPE **EASY** (Euler path), clear is **NORMAL** (matrix path); confirmed in PCSX2 (`../pcsx2/sessions-04.md`).
+   - Bit 0 set is CONTROL TYPE **EASY** (Euler path), clear is **NORMAL** (matrix path); confirmed in PCSX2 (`../pcsx2/sessions.md` run 04).
 6. Rotate the body velocity by the side-slip correction (gains +0x88/+0x9C) and transform it back to world space into unit +0x20.
 7. `func_00128E80`: blend the velocity towards the nose direction (drift), ground effect and stall sink.
 

@@ -41,6 +41,11 @@ public:
 
     const PadState& Port(int port) const { return ports_[port]; }
 
+    // Vibration of a DualShock 2 on the gamepad of `port`: small motor on/off (high-frequency
+    // rumble) and large motor strength 0-255 (low-frequency rumble). Call once per presented
+    // frame; the device is only told about changes (and refreshed before its rumble times out).
+    void SetVibration(int port, bool small_on, std::uint8_t large);
+
 private:
     struct Source {
         enum Kind { Key, PadButton, Axis } kind;
@@ -55,6 +60,11 @@ private:
 
     std::array<PadState, 2> ports_{};
     std::array<SDL_Gamepad*, 2> pads_{};
+    struct Rumble {
+        std::uint16_t low = 0, high = 0;
+        std::uint64_t sent_ms = 0;  // SDL_GetTicks of the last SDL_RumbleGamepad, 0 = none
+    };
+    std::array<Rumble, 2> rumble_{};
     std::array<Binding, 24> bindings_{};  // indexed by Control
 };
 

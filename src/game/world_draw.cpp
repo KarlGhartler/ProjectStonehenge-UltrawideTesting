@@ -6,6 +6,7 @@
 #include "common/debug_hooks.h"
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "common/port_hooks.h"
 #include "common/vu0_math.h"
 #include "game/game_flight.h"
 #include "game/main_context.h"
@@ -1279,6 +1280,17 @@ void BuildFlightDrawLists() {
         ov = NextFlightTable();
         InitBucketList(ov, 4);
         func_001043E8(vif1, ov);
+        if ((GRef<u32>(view) & 1) != 0) {
+            // port: the view's 3D ends where its overlay table begins (anti-aliasing point,
+            // common/port_hooks.h); the rectangle is the view's scissor (func_00138C58).
+            port::RenderMarks::Point pt;
+            pt.tag = GRef<u32>(ov);
+            pt.x0 = GRef<s16>(cam + 0x188);
+            pt.y0 = GRef<s16>(cam + 0x18A);
+            pt.x1 = static_cast<s16>(pt.x0 + GRef<s16>(cam + 0x18C) - 1);
+            pt.y1 = static_cast<s16>(pt.y0 + GRef<s16>(cam + 0x18E) - 1);
+            port::Render().built.push_back(pt);
+        }
         const f32 fade = GRef<f32>(g_FlightScene() + 0x1670 + 4 * static_cast<u32>(v));
         if (0.0f < fade) DrawScreenFade(fade, ov, 2, 0, cam);
         if ((GRef<u32>(view) & 0xE) != 0) {

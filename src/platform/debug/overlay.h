@@ -1,5 +1,7 @@
-﻿// Minimal debug overlay (milestone D, docs/port/debug-overlay.md). Part of the optional debug layer:
-// created only when settings.json "debug.overlay_enabled" is true (default on in development builds),
+﻿// Minimal debug overlay (milestone D, docs/port/port-features.md §8). Part of the optional debug layer:
+// created when settings.json "debug.overlay_enabled" is true (default on in development builds) or
+// the frame-rate overlay is on ("debug.fps_overlay", --fps-overlay, or its checkbox in the
+// Performance panel: frame rate and frame time in small text at the top right of the window),
 // opened and closed with the toggle character ("\" by default, or "key:<SDL scancode name>").
 //
 // Panels (all read-only, "Sim: no"): performance and frame timing, scene inspector with the
@@ -21,6 +23,7 @@
 union SDL_Event;
 struct SDL_Window;
 typedef struct VkCommandBuffer_T* VkCommandBuffer;
+struct ImVec2;
 
 namespace ac04::render {
 class Renderer;
@@ -48,8 +51,9 @@ public:
     DebugOverlay();
     ~DebugOverlay();
 
-    // Creates the ImGui context and backends when `settings.overlay_enabled`; otherwise does
-    // nothing and every other call is a no-op. Can be called again after a settings change.
+    // Creates the ImGui context and backends when `settings.overlay_enabled` or
+    // `settings.fps_overlay`; otherwise does nothing and every other call is a no-op. Can be called
+    // again after a settings change.
     bool Apply(const DebugSettings& settings, SDL_Window* window, render::Renderer& renderer, std::string& error);
     void Shutdown();
 
@@ -64,10 +68,14 @@ public:
 
     bool Active() const { return active_; }
     bool Visible() const { return active_ && visible_; }
+    bool FpsVisible() const { return active_ && fps_; }
 
 private:
     void Draw(VkCommandBuffer cmd);
+    void EndFrame();
+    ImVec2 Scaled(float x, float y) const;
     void DrawPerformance(const OverlayFrameData& data);
+    void DrawFps();
     void DrawScene();
     void DrawMemory();
     void DrawLog();
@@ -79,11 +87,16 @@ private:
     };
 
     bool active_ = false;
+    bool panels_ = false;   // debug.overlay_enabled: the panels can be opened with the toggle
+    bool fps_ = false;      // frame-rate overlay shown
     bool visible_ = false;
     bool frame_built_ = false;
     std::string toggle_text_ = "\\";
     int toggle_scancode_ = 0;   // non-zero when the toggle is "key:<name>"
     render::Renderer* renderer_ = nullptr;
+    SDL_Window* window_ = nullptr;
+    float scale_ = 1.0f;            // UI scale from the window height (UiScale)
+    bool unfocus_pending_ = false;  // clear panel focus on the next frame (after opening)
     void* last_render_pass_ = nullptr;
 
     bool show_perf_ = true, show_scene_ = true, show_memory_ = false, show_log_ = false;
@@ -93,6 +106,7 @@ private:
     std::vector<Symbol> symbols_;   // sorted by address
     std::string symbols_source_;
     u32 mem_address_ = 0x0029F380;  // g_MainContext
+    u32 mem_target_ = 0x0029F380;   // address last looked up (its row is highlighted)
     int mem_view_ = 0;              // 0 bytes, 1 u32, 2 f32
     char goto_text_[64] = {};
     std::string goto_error_;

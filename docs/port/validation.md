@@ -1,4 +1,39 @@
-# Validation of the decompilation records (2026-10-11)
+# Validation record
+
+Every validation run of the project, newest last. How slices are validated: `validation-strategy.md`.
+
+| Section | Contents |
+|---|---|
+| §1, §2, §3, Samples | the decompilation records (2026-10-11): integrity checks, blind re-review, recommendations |
+| §2b–§2d | skeleton milestones B, C, E: executable load, boot, RAM at the first `SceneStep`, FPU rounding |
+| §2e–§2i | slices S1, S2a, S2b, S3, S4 against PCSX2 |
+| §2j | slice 5 prerequisites and missions (S5-P, S5-A, S5-T) |
+| §2k | internal resolution 1-8x, 16:9, clean-up (2026-10-19; IR-1 to IR-4) |
+| §2l | opening fixes, GRAPHICS page, Modern control types, caches and leaks (2026-10-20; OP-1 to OP-5) |
+| §2p | engine flames back on the nozzles (2026-10-21; EF-1) |
+| §2q | hands-on run from zero to mission 1 and debug overlay test (2026-10-22; UX-1 to UX-4) |
+| §2r | no-save intro: cloud transitions, stutter; PSMT8 table; renaming (2026-10-22; IN-1, IN-2, RN-1; S2a-6) |
+| §2s | GPU texture decoding, generation-based texture cache, texture images (2026-10-22; GD-1 to GD-3) |
+| §2t | release 0.9 preparation: development parameters, version, file properties, startup image, no game data (2026-10-22) |
+| §2u | no-save intro stutters: terrain uploads written block by block (2026-10-22) |
+| §2v | QUIT GAME in the main menu (2026-10-22) |
+| §2w | save texts for a computer (2026-10-22) |
+| §2x | defaults: v-sync, FXAA, internal resolution of the display (2026-10-22) |
+| §2y | sprites at internal scale > 1: native sample point (2026-10-22) |
+| §2z | explosions at internal scale > 1, sun flare palette drawn on the GPU (2026-10-22) |
+| §2aa | in-engine cutscenes: ticks per frame with v-sync (2026-10-22) |
+| §2ab | depth copy for the cloud pass; SPU2 reverb (2026-10-22) |
+| §2ac | frame interpolation (2026-10-22) |
+| §2ad | frame interpolation speed; explosions at 7× (2026-10-23; FI-2, EX-1) |
+| §2ae | invalid guest reads from the player aircraft's light colours; mission 6 crash (2026-10-23; IR-1, CR-1) |
+| §2af | mission 6 report: takeoff after a rearm, vibration after the landing, explosion fire, QUIT GAME in the campaign menu (2026-10-23/24; TO-1, VB-1, EX-2, EX-3, QG-1) |
+| §2ag | second mission 6 crash: a unit loop with a garbage count; invalid-access log names the caller (2026-10-24; CR-2) |
+| §2ah | third mission 6 crash, recorded: an inverted unit test in the track stream overran the radio header; fixed (2026-10-25; CR-3) |
+| §2o | new memory card and first save, startup messages (2026-10-20; NS-1, NS-2) |
+| §2n | anti-aliasing (FXAA, SMAA) before the HUD (2026-10-20; AA-1 to AA-4) |
+| §2m | settings tests (GRAPHICS page, live combinations, controller and save round trip), texture residency, sprite edges at N×, defaults and the frame-rate overlay (2026-10-20; ST-1 to ST-8) |
+
+## Validation of the decompilation records (2026-10-11)
 
 The validation had two parts:
 - **Integrity checks** of the records: tool-based and complete.
@@ -15,7 +50,7 @@ Tool: `tools/research/validate.py`, read-only. It needs `out/research/funcs.json
 | `symbols.csv` names vs Ghidra | All 541 rows match: functions by address, `data`/`global` rows against Ghidra labels. Hypothesis rows keep the Ghidra default name or the hypothesis name. No duplicate names |
 | Coverage CSV names vs Ghidra | All 2,884 rows match |
 | Totals | 2,884 = 2,612 understood + 0 partly + 0 unknown + 272 dead. Per-subsystem sums match `../STATUS.md` and `coverage.md` |
-| The owner's figure 2,884 = 2,229 + 389 + 266 | Correct for the committed version (HEAD). The last research pass promoted all 389 "partly" functions to understood. The 15 "partly" functions of the blind sample come from those 389 |
+| The User's figure 2,884 = 2,229 + 389 + 266 | Correct for the committed version (HEAD). The last research pass promoted all 389 "partly" functions to understood. The 15 "partly" functions of the blind sample come from those 389 |
 | Classification | Ghidra has 3,877 functions, all inside `.text`: 2,884 in the game range (each has a coverage row) and 993 library functions outside it. Every `sdk`/`libc`/`libgcc`/`kernel` symbol is outside the game range; every `game` symbol is inside |
 | Dead code vs call graph | Raw graph (all data pointers as roots): 2,619 reachable. Without scenes 1 and 3 as roots (they are only in the scene table and never requested): 2,612 reachable, which is exactly the 2,612 non-dead functions |
 
@@ -41,7 +76,7 @@ Fixed by these checks:
   - do not read `docs/`, the CSVs or tool output, and ignore plate comments;
   - check the disassembly for MMI, VU0 and 128-bit code;
   - report any reliance on existing names.
-- **Ghidra stayed read-only.** One exception to check: a single `disassemble_bytes` call on existing code at 0x001F3910. It changes nothing; the owner can confirm when saving the program.
+- **Ghidra stayed read-only.** One exception to check: a single `disassemble_bytes` call on existing code at 0x001F3910. It changes nothing; the User can confirm when saving the program.
 - **Scoring.** I compared each description with the CSV note and the subsystem docs. Every major and every disputed constant was checked in Ghidra before scoring.
   - **agree**: same behaviour. A terse note counts as agree when it is correct.
   - **minor**: an omission, or a wrong constant or label, that does not change what the function is.
@@ -98,7 +133,7 @@ Effects and mission stay just above 5 % only because their small first samples a
 | V-4 | `func_0014B3F8` (frontend, **major**) | The note said "VU1 light/colour constants". The packet actually uploads one vector plus the camera's world→screen and world→clip matrices (+0xE0..+0x15F) to VU1 and runs MSCAL 0. The light set is written separately | Note |
 | V-5 | `func_0010FB30` (mission, **major**) | The note said "at mission end: kill bookkeeping". It is the **mission phase change** (rules state flag 8 → 4). It activates the next phase's units (flags48 0x100; with 0x8000000 only when `g_GameState[0x28]` ≥ 2) and retires the others | Notes of 0x0010FB30 and 0x0011A208, `mission-flow.md` |
 | V-6 | Effect draw setup (effects; **major** in `func_001FF818`, minor in `func_002034A8`) | Three mislabels:<br>• Effect work +0x62498/+0x62494 were called "frame range" in **31 notes**. They are the near/far depth distances: `InitEffects` sets 1.0 / 65536.0, and the terrain fog setup rewrites the far value.<br>• +0x624E0 was called "light matrix". It is the effect clip matrix (`func_00155900`).<br>• `func_001FF818` builds the frustum clip structure 0x002BB990, not "trail parameters / colour table" | All 31 notes relabelled; 0x001FF818 rewritten |
-| V-7 | `func_001E88C0` (effects, **major**) | The note said "afterburner sprite writer". It is a two-pass **heat-haze distortion**. Pass 1 writes a mask into framebuffer alpha. Pass 2 draws displaced strips of the **framebuffer sampled as a texture** (CT32 1024×1024 at TBP 0), blended with destination alpha | Notes of 0x001E88C0 / 0x001E81F0; added to `../platform/gs-subset.md` and `internal-resolution.md`, because the renderer must handle this framebuffer feedback read |
+| V-7 | `func_001E88C0` (effects, **major**) | The note said "afterburner sprite writer". It is a two-pass **heat-haze distortion**. Pass 1 writes a mask into framebuffer alpha. Pass 2 draws displaced strips of the **framebuffer sampled as a texture** (CT32 1024×1024 at TBP 0), blended with destination alpha | Notes of 0x001E88C0 / 0x001E81F0; added to `../platform/gs-subset.md` and `renderer.md` §1, because the renderer must handle this framebuffer feedback read |
 | V-8 | Random-table reads (effects, mission, ai, weapons) | 17 of the 67 `NextRandomFloat` callers had no mention of the read in their note, e.g. the spawn `func_0019C278` with 9 call sites. The behaviour docs listed the gameplay users, but not every effect spawn | Every note now states its call-site count. The full list of 67 functions / 152 call sites is appended to `../game/random.md` |
 | — | Minor items | Omitted details:<br>• the target marker on the HUD ladder;<br>• the restore of unit flags after player placement;<br>• the first colour stage;<br>• the addition before the pan wrap;<br>• the libc `rand()` call per fired proximity trigger;<br>• the fade level at sequence start.<br>Also: wrong constants in replay camera styles 8 and 9; a contradictory queue number in the radio matcher; empty notes for `StoreFlightDataPointers` and two unreached functions | Notes corrected |
 
@@ -123,7 +158,7 @@ The port loads `SLUS_201.52` from the ISO into guest memory (`src/platform/elf_l
 | `.text` | identical except 48 bytes at 4 places, the same in all three states (B-2) |
 | `.data`, `.sdata`, `.sbss`, `.bss`, heap, stack, low memory | differ as expected: the states were taken after crt0, the SDK init and part of the game's init had run (the RAM check at the first `SceneStep` is milestone E) |
 
-Loader facts confirmed: one PT_LOAD segment at 0x00100000 (0x31172C bytes from the file, 0x3CC74C in memory, ending exactly at the end of `.bss` 0x004CC74C), NOBITS `.sbss` 0x00411780 (+0x1BC) and `.bss` 0x00411980 (+0xBADCC) zeroed, entry 0x00100008, gp 0x004159F0, executable SHA-1 as in `../platform/supported-version.md`.
+Loader facts confirmed: one PT_LOAD segment at 0x00100000 (0x31172C bytes from the file, 0x3CC74C in memory, ending exactly at the end of `.bss` 0x004CC74C), NOBITS `.sbss` 0x00411780 (+0x1BC) and `.bss` 0x00411980 (+0xBADCC) zeroed, entry 0x00100008, gp 0x004159F0, executable SHA-1 as in `../platform/executable.md`.
 
 Initial guest stack pointer: crt0's `SetupThread(stack = −1, size 0x100000)` returns **sp = 0x01FFED60**. Measured from `bp_00100220.p2s`: the EE register file sits at offset 0x162 of `PCSX2 Internal Structures.dat` (PCSX2 2.8.2; 32 GPRs × 16 bytes), sp = 0x01FFED40 inside `main`, whose prologue reserves 0x20 bytes.
 
@@ -147,7 +182,7 @@ RAM comparisons with PCSX2 must ignore these 48 bytes (expected difference).
 
 ### C-1. Boot run
 
-`ac04port --iso <image>` (development build, RelWithDebInfo) runs `Entry` → `main` on the game thread. The log shows the nine IOP modules replaced, the first vsync wait reached during `InitSubsystems`/`LoadBootData`, then `entered scene 6 (SceneStartup)` about 0.55 s (≈33 vblanks) after start. The main loop then idles in the scene 6 stub: 318 vblanks in 5.3 s, 0 ticks dropped. Scene 0 (`SceneBootLoader`) runs translated: BD.TBL, DATA 0x163/0x164 (sound data), the BD entry 0 transfer to the IOP, `RequestScene(6)`.
+`ProjectStonehenge --iso <image>` (development build, RelWithDebInfo) runs `Entry` → `main` on the game thread. The log shows the nine IOP modules replaced, the first vsync wait reached during `InitSubsystems`/`LoadBootData`, then `entered scene 6 (SceneStartup)` about 0.55 s (≈33 vblanks) after start. The main loop then idles in the scene 6 stub: 318 vblanks in 5.3 s, 0 ticks dropped. Scene 0 (`SceneBootLoader`) runs translated: BD.TBL, DATA 0x163/0x164 (sound data), the BD entry 0 transfer to the IOP, `RequestScene(6)`.
 
 The frame count to reach scene 6 is not expected to match PCSX2: CD reads complete one poll after they are issued, while a real drive takes a variable number of frames.
 
@@ -177,7 +212,7 @@ This was the prediction before the comparison. The measured result is E-1; the T
 
 Inputs:
 - **PCSX2 side:** `scenestep_first.p2s`, PCSX2 2.8.2, cold boot, Execute breakpoint at `SceneStep` 0x00100B18, first hit. `frame_count` (0x0029F3A8) = 0, so both sides are at the same point: after the boot code, before the first scene handler.
-- **Port side:** `ac04port --dump-ram-at-first-scenestep` (development build). The dump is taken at the entry of the first `SceneStep`, on the game thread.
+- **Port side:** `ProjectStonehenge --dump-ram-at-first-scenestep` (development build). The dump is taken at the entry of the first `SceneStep`, on the game thread.
 - **Comparison:** `python -I tools/research/ramdiff.py <user data>\dumps\ram_first_scenestep.bin scenestep_first.p2s --expected`. The `--expected` table is `ramdiff-expected.csv` (address ranges and reasons only, no memory contents).
 
 **Before the fixes:** 817 differing ranges. 700 of them are in the EE kernel area below 0x00100000; 117 are in the game image, heap and stack.
@@ -205,7 +240,7 @@ Confirmed unchanged: GParam 0x003FAAA0 = `01 00 02 00 01 00 1B 00` (interlace, o
 | `stack-garbage` | 1 | 1 | 0x00425024: byte +8 of the SOUND id-7 record (reverb depth) is never written by `func_0021CFA0`. On the PS2 it keeps the 2 that the id-6 record left at the same stack slot; `GuestFrame` zero-fills. SOUND.IRX does not read the field |
 
 Other findings:
-- At 10 s (`scenestep_first_2.p2s`) the SOUND voice-status bytes 0x00424FFA–0x00424FFF (voices 42–47) are 4, meaning "released, envelope still sounding". These are probably the 6 VAG.IRX streaming voices, which SOUND sees as not keyed on but audible. HYPOTHESIS until the audio backend exists; the stand-in reports 0 for them. Noted in `../subsystems/iop-sound.md`.
+- At 10 s (`scenestep_first_2.p2s`) the SOUND voice-status bytes 0x00424FFA–0x00424FFF (voices 42–47) are 4, meaning "released, envelope still sounding". These are probably the 6 VAG.IRX streaming voices, which SOUND sees as not keyed on but audible. HYPOTHESIS until the audio backend exists; the stand-in reports 0 for them. Noted in `../subsystems/sound.md`.
 - The GameDB entry for SLUS-20152 also sets `eeRoundMode: 0` ("Fixes autopilot being silly and crashing the plane"), which E-2 depends on.
 
 Correction (slice S1, 2026-10-14): the 0x001DB7C0 of the id-6 row comes from a **later** id-6 reply in `scenestep_first_2.p2s` (10 s), not from the boot command. SOUND.IRX replies with the lower of the two cores' effect start addresses as read before the new mode takes effect: the boot command (core 1, mode 2) replies 0x001DFFF0 (core 0 still in mode 0), measured in all three cold boots of run 06; a later id 6 then sees core 1's mode-2 area 0x001DB7C0. The stand-in now models both values (`iop_services.cpp`; unit test "SOUND stand-in: reverb mode reply…"). The first-SceneStep comparison stays at 0 unexplained ranges (the reply has not arrived there).
@@ -220,13 +255,13 @@ All 1-ULP float differences have one cause:
 
 Cause: PCSX2's GameDB sets `roundModes: eeRoundMode: 0` (Nearest) for SLUS-20152. The reason given is that the autopilot crashes the plane under PCSX2's default Chop mode. So the reference behaviour (PCSX2) is round-to-nearest for the whole EE FPU in this game, while `ee_math.h` and `.claude/rules/game-code.md` model round-toward-zero. Hardware is not IEEE in either mode, so neither is bit-exact by construction. The values that matter for the port are PCSX2's, and those are nearest.
 
-**Decision (owner, 2026-10-13): round to nearest.** `ee_math.h` now rounds add/sub/mul/div/sqrt/`cvt.s.w` results to nearest (ties to even), keeping the EE rules: no NaN/Inf, denormals flushed to zero, overflow and x/0 clamped to ±FLT_MAX. `cvt.w.s` still truncates. The rule in `.claude/rules/game-code.md` is updated. Rerun of E-1: the random table and the sound volumes match PCSX2 byte for byte (796 ranges, 0 unexplained). Unit test "EE FPU: round to nearest…".
+**Decision (User, 2026-10-13): round to nearest.** `ee_math.h` now rounds add/sub/mul/div/sqrt/`cvt.s.w` results to nearest (ties to even), keeping the EE rules: no NaN/Inf, denormals flushed to zero, overflow and x/0 clamped to ±FLT_MAX. `cvt.w.s` still truncates. The rule in `.claude/rules/game-code.md` is updated. Rerun of E-1: the random table and the sound volumes match PCSX2 byte for byte (796 ranges, 0 unexplained). Unit test "EE FPU: round to nearest…".
 
 **Addendum (S2a, 2026-10-14):** add and sub are not plain round-to-nearest in PCSX2. The smaller operand is masked first (`FPU_ADD_SUB`, see S2a-3). `fpu::Add`/`fpu::Sub` now model this, and all translated float adds/subs use them.
 
 ## 2e. Slice S1 checks (2026-10-14)
 
-Reference: `../pcsx2/sessions-06.md` (6 save states, 5 screenshots, cards S/E). Method: `validation-strategy.md` §2.
+Reference: `../pcsx2/sessions.md` run 06 (6 save states, 5 screenshots, cards S/E). Method: `validation-strategy.md` §2.
 
 ### S1-1. RAM checkpoints
 
@@ -245,7 +280,7 @@ Fixed on the way (all in the IOP/SDK stand-ins; the translated game code needed 
 - VAG fno 1 reply: words 5-8 = 1 and ring indices 2.
 - Pads: neutral analog 0x7F as PCSX2's DualShock 2, `scePadRead` byte 31 = 0x5A.
 
-Remaining differences, all classified: frame counters and frame-parity effects (`ramdiff-expected-s1.csv`: the port boots to scene 6 8 frames earlier and loads DATA 333 in 3 frames instead of ~17), newlib malloc bins (`sdk`), the owner's stick values (`input`). Note: PCSX2's own I/O timing differs by a frame between cold boots (no card: sub 7 at frame 58, unformatted card: 59), so frame-exact matching needs an I/O latency model calibrated on more runs (`../open-questions.md`).
+Remaining differences, all classified: frame counters and frame-parity effects (`ramdiff-expected-s1.csv`: the port boots to scene 6 8 frames earlier and loads DATA 333 in 3 frames instead of ~17), newlib malloc bins (`sdk`), the User's stick values (`input`). Note: PCSX2's own I/O timing differs by a frame between cold boots (no card: sub 7 at frame 58, unformatted card: 59), so frame-exact matching needs an I/O latency model calibrated on more runs (`../open-questions.md`).
 
 ### S1-2. Screenshots (`tools/research/imgdiff.py`)
 
@@ -257,7 +292,7 @@ Remaining differences, all classified: frame counters and frame-parity effects (
 | splash 0, card S | `s1_S_splash0` | 1.05 / 1.24 / 1.45 | 3.0 % | PCSX2 image is 0.80 as bright: taken during the fade-in (card E's splash 0 matches) |
 | no-card message 2 | `s1_N_msg_2` | 0.32 / 0.33 / 0.33 | 0.59 % | reached with `--pad-script 320:cross` |
 
-Owner feedback (2026-10-14): the audio sounds right; with `--no-memcard` the controller gave no input. Cause: the input backend opened gamepads only on hot-plug events, and none arrived in that session (no "port 1: gamepad" line in the log). Fix: `InputBackend::Start` logs every device SDL sees and opens the gamepads at start-up (an Xbox One controller is now opened at once). Also from the owner: on PCSX2 the brightness option sits at its default until a save is loaded (game behaviour); the port now shows the option's effect (ADR-006 §4 implementation note).
+User feedback (2026-10-14): the audio sounds right; with `--no-memcard` the controller gave no input. Cause: the input backend opened gamepads only on hot-plug events, and none arrived in that session (no "port 1: gamepad" line in the log). Fix: `InputBackend::Start` logs every device SDL sees and opens the gamepads at start-up (an Xbox One controller is now opened at once). Also from the User: on PCSX2 the brightness option sits at its default until a save is loaded (game behaviour); the port now shows the option's effect (ADR-006 §4 implementation note).
 
 A bug found on the way: the texture decoder added a bilinear margin to nearest-sampled sprites, so glyphs at texel 0 decoded the whole 1024×1024 font and overflowed the per-frame atlas (first 16 glyphs of each line missing). Fixed (margin only with TEX1.MMAG).
 
@@ -265,7 +300,7 @@ A bug found on the way: the texture decoder added a bilinear margin to nearest-s
 
 ### S2a-1. S1 checkpoints after the SOUND/VAG changes
 
-S2a corrected the SOUND voice record offsets (voice +0x0E, flags +0x10) and replaced the voice 42-47 special case with SOUND.IRX's `get_ch_stat` rule driven by the mixer (ENDX, ENVX), with the VAG.IRX stream voices now keyed on by the VAG stand-in. The six S1 RAM checkpoints (card S sub 7 / sub 9 / exit, card E sub 7 / exit, no card sub 7) were re-run against `pcsx2/sessions-06.md`: **0 unexplained ranges** each. An intermediate state (VAG voices keyed but status taken from the mixer's key state) gave 1 instead of 4 for voices 42-47 at 0x00424FFA and in the SOUND reply copies: the measured 4 is now explained by the code.
+S2a corrected the SOUND voice record offsets (voice +0x0E, flags +0x10) and replaced the voice 42-47 special case with SOUND.IRX's `get_ch_stat` rule driven by the mixer (ENDX, ENVX), with the VAG.IRX stream voices now keyed on by the VAG stand-in. The six S1 RAM checkpoints (card S sub 7 / sub 9 / exit, card E sub 7 / exit, no card sub 7) were re-run against `pcsx2/sessions.md` run 06: **0 unexplained ranges** each. An intermediate state (VAG voices keyed but status taken from the mixer's key state) gave 1 instead of 4 for voices 42-47 at 0x00424FFA and in the SOUND reply copies: the measured 4 is now explained by the code.
 
 ### S2a-2. Title and main menu (port only, before the PCSX2 batch)
 
@@ -273,14 +308,14 @@ S2a corrected the SOUND voice record offsets (voice +0x0E, flags +0x10) and repl
 - Music (`--dump-audio`): the title track from VAG channel 0 about 1 s after the title appears, then the menu track after Start (crossfade to channel 1). Level only checked by RMS; by ear against PCSX2 in the batch.
 - Renderer additions needed for the filters: `(Cs−0)·Ad+Cd`, alpha-test fail modes, bilinear texel footprint (`platform/gs-subset.md`).
 
-### S2a-3. RAM checkpoints against PCSX2 (run 07, `../pcsx2/sessions-07.md`)
+### S2a-3. RAM checkpoints against PCSX2 (run 07, `../pcsx2/sessions.md` run 07)
 
 | Checkpoint | PCSX2 state | Port run (card S) | Result |
 |---|---|---|---|
 | 0x0022DF00 title sub 6 | `s2a_title_sub6` | `--dump-ram-at 22DF00` | 0 unexplained |
 | 0x0022D748 Start accepted | `s2a_start` | `--pad-script 1200:start --dump-ram-at 22D748` | 0 unexplained |
 | 0x0022D84C menu active | `s2a_menu_active` | as above, `22D84C` | 0 unexplained |
-| 0x0022D880 confirm | `s2a_menu_confirm` | `--pad-script 1200:start,1500:down,1515:up,1863:cross --dump-ram-at 22D880` (the owner's Down/Up, confirm 644 frames after "menu active" as in PCSX2) | 0 unexplained |
+| 0x0022D880 confirm | `s2a_menu_confirm` | `--pad-script 1200:start,1500:down,1515:up,1863:cross --dump-ram-at 22D880` (the User's Down/Up, confirm 644 frames after "menu active" as in PCSX2) | 0 unexplained |
 
 Expected differences: `ramdiff-expected.csv`, `ramdiff-expected-s1.csv` and the new `ramdiff-expected-s2a.csv`. Four classes, each checked on the values:
 - **CD latency** (`timing`): PCSX2 loads the title data (DATA 0xB0) about 20 frames slower, so it enters sub 6 with 30 menu-fade steps where the port has 10. At port hit 21 of 0x0022DF00 the fade object is identical byte for byte (time 0x3EFFFFF8, value 0x3F7F4C7E). The menu load-queue timer differs for the same reason.
@@ -288,7 +323,7 @@ Expected differences: `ramdiff-expected.csv`, `ramdiff-expected-s1.csv` and the 
 - **Music time** (`timing`): VAG slot stream positions, the VAG reply area, and one VAG refill read more or less in the CD queue and request counters. They depend on how long the music has played (boot frames, title time).
 - **Input timing** (`input`): title/idle time and the logo ease-out (`g_TitleMenu` +0x688..+0x697), the pad repeat counter, and the SE requests (counter 0x00410D00, the voice table, the SOUND reply status, the menu SE record). The number of type-out ticks depends on when the cursor moved during the help-line type-out: 18 in the port against 17 in PCSX2, with the same sound types on the same voices.
 
-**EE add/sub (fixed in this check).** The fade value showed that PCSX2's `add.s` is not plain round-to-nearest. PCSX2 2.8.2 (`pcsx2/x86/iFPU.cpp`, `FPU_ADD_SUB`, compile-time `FPU_CORRECT_ADD_SUB 1`, not a setting) models the EE adder's missing guard bits. Before an `add.s`/`sub.s`/`adda`/`suba`/`madd`/`msub`, the operand with the smaller exponent keeps only its top 25 − d significand bits (d = exponent difference; sign only when d ≥ 25). The sum is then rounded to nearest. Thirty additions of 1/60 give 0x3EFFFFF8 in PCSX2 and with this model, against 0x3F000003 with plain rounding. So the menu fade ended one frame early in the port. `fpu::Add`/`fpu::Sub` (`src/common/ee_math.h`) now implement the model (unit test "EE FPU: add/sub mask…"). By the owner's decision (2026-10-14), every float add/sub-type instruction in the translated code now goes through them: 83 instructions in 30 functions, counted from the disassembly. The game-code rule and the `port-function` skill require it from now on. `mul.s`/`div.s` stay plain round-to-nearest (PCSX2 uses SSE with the round mode for them). The S1 checkpoints were re-run after the change: still 0 unexplained.
+**EE add/sub (fixed in this check).** The fade value showed that PCSX2's `add.s` is not plain round-to-nearest. PCSX2 2.8.2 (`pcsx2/x86/iFPU.cpp`, `FPU_ADD_SUB`, compile-time `FPU_CORRECT_ADD_SUB 1`, not a setting) models the EE adder's missing guard bits. Before an `add.s`/`sub.s`/`adda`/`suba`/`madd`/`msub`, the operand with the smaller exponent keeps only its top 25 − d significand bits (d = exponent difference; sign only when d ≥ 25). The sum is then rounded to nearest. Thirty additions of 1/60 give 0x3EFFFFF8 in PCSX2 and with this model, against 0x3F000003 with plain rounding. So the menu fade ended one frame early in the port. `fpu::Add`/`fpu::Sub` (`src/common/ee_math.h`) now implement the model (unit test "EE FPU: add/sub mask…"). By the User's decision (2026-10-14), every float add/sub-type instruction in the translated code now goes through them: 83 instructions in 30 functions, counted from the disassembly. The game-code rule and the `port-function` skill require it from now on. `mul.s`/`div.s` stay plain round-to-nearest (PCSX2 uses SSE with the round mode for them). The S1 checkpoints were re-run after the change: still 0 unexplained.
 
 ### S2a-4. Screens
 
@@ -302,15 +337,22 @@ PCSX2 shows the 224-line field output deinterlaced. On the title and menu, with 
 
 No structural difference: same primitives, textures, positions and blend. One difference remains open: a G/B bias of −1 to −2 levels in the screen centre (x 128–512, y 64–384), where the frame filter's zoom-blur copies overlap. The filter is a feedback effect (each frame samples and blends the previous frame buffer). The port blends with fixed-function float blending, the GS with integer `((A−B)·C >> 7) + D`, so per-frame rounding differences settle into a steady bias. PCSX2's hardware renderer is not GS-exact either, so the reference renderer had to be known first.
 
-**S2a-R (run 08, `../pcsx2/sessions-08.md`).** The owner's settings: renderer Automatic (Vulkan, hardware), blending accuracy Basic, deinterlacing Automatic. The same main-menu frame with the **software** renderer (`s2a_menu_sw`) agrees with the hardware shot within 0.3 levels in the centre (signed mean G +0.34, B +0.26). So both PCSX2 renderers agree and the port is the outlier. Against the software shot the port's difference is **not a uniform bias** but a radial pattern: G/B −1.5/−2.8 in the centre, +1 to +3 at the edges and corners (32×32 block map). Brightness is not involved: both sides have brightness 3 (0x002A15CD) at that point, and the port's native screenshot applies the same field-copy scale. The zoom blur samples a 60×44 PSMT8 glow texture (TBP 0x3E90, CLUT 0x3E84) magnified about 10× with bilinear filtering and adds four scaled copies with `Cs·Ad + Cd`. Tests in the shader: rounding the bilinear result instead of flooring it raises everything by about 1 level, and unquantised weights instead of the GS 4-bit weights deepen the centre deficit (−2.4 instead of −1.6). Neither removes the radial shape, so blend rounding alone does not explain it. Next step (open, `../open-questions.md`): compare the alpha channel (Ad of the zoom blur) and the glow texture in GS local memory with the save state's `GS.bin`, which needs a port GS-memory dump.
+**S2a-R (run 08, `../pcsx2/sessions.md` run 08).** The User's settings: renderer Automatic (Vulkan, hardware), blending accuracy Basic, deinterlacing Automatic. The same main-menu frame with the **software** renderer (`s2a_menu_sw`) agrees with the hardware shot within 0.3 levels in the centre (signed mean G +0.34, B +0.26). So both PCSX2 renderers agree and the port is the outlier. Against the software shot the port's difference is **not a uniform bias** but a radial pattern: G/B −1.5/−2.8 in the centre, +1 to +3 at the edges and corners (32×32 block map). Brightness is not involved: both sides have brightness 3 (0x002A15CD) at that point, and the port's native screenshot applies the same field-copy scale. The zoom blur samples a 60×44 PSMT8 glow texture (TBP 0x3E90, CLUT 0x3E84) magnified about 10× with bilinear filtering and adds four scaled copies with `Cs·Ad + Cd`. Tests in the shader: rounding the bilinear result instead of flooring it raises everything by about 1 level, and unquantised weights instead of the GS 4-bit weights deepen the centre deficit (−2.4 instead of −1.6). Neither removes the radial shape, so blend rounding alone does not explain it. Next step (open, `../open-questions.md`): compare the alpha channel (Ad of the zoom blur) and the glow texture in GS local memory with the save state's `GS.bin`, which needs a port GS-memory dump.
 
-### S2a-5. S1 bug: green band on the AC04 PROJECT splash (owner report, run 07)
+### S2a-5. S1 bug: green band on the AC04 PROJECT splash (User report, run 07)
 
-The owner saw a green area in the lower part of the AC04 PROJECT splash (splash 1, card S). Image 1 is a PSMCT24 texture (210×432, 3 bytes per pixel, DATA 333). Its upload is split over several IMAGE packets of whole qwords, and 16 is not a multiple of 3. `GsMemory::WriteImage` handled each packet separately and dropped the 1–2 bytes of the pixel split across a packet boundary, so every later pixel was shifted by a byte (port RGB = PCSX2 GBR). In the native screenshot this is faint (rows 414–430, values 0–5): the S1 tolerance (mean ≤ 1) did not catch it, but the presented window made it visible. Fix: `GsState::ImageData` keeps the split pixel's bytes for the next packet (cleared at TRXDIR). Unit test "GIF: CT24 IMAGE transfer with a pixel split across two packets". Splash 1 now differs by at most 2 per channel in that band. Lesson: the screen check also looks at the maximum difference per region, not only the mean (`validation-strategy.md` §2.2).
+The User saw a green area in the lower part of the AC04 PROJECT splash (splash 1, card S). Image 1 is a PSMCT24 texture (210×432, 3 bytes per pixel, DATA 333). Its upload is split over several IMAGE packets of whole qwords, and 16 is not a multiple of 3. `GsMemory::WriteImage` handled each packet separately and dropped the 1–2 bytes of the pixel split across a packet boundary, so every later pixel was shifted by a byte (port RGB = PCSX2 GBR). In the native screenshot this is faint (rows 414–430, values 0–5): the S1 tolerance (mean ≤ 1) did not catch it, but the presented window made it visible. Fix: `GsState::ImageData` keeps the split pixel's bytes for the next packet (cleared at TRXDIR). Unit test "GIF: CT24 IMAGE transfer with a pixel split across two packets". Splash 1 now differs by at most 2 per channel in that band. Lesson: the screen check also looks at the maximum difference per region, not only the mean (`validation-strategy.md` §2.2).
+
+### S2a-6. Follow-up of S2a-R: GS memory against `s2a_menu_active` (2026-10-22)
+- Port GS memory at the main menu (`--dump-vram`, vblank 1376) against `GS.bin` of `s2a_menu_active` (VRAM at offset 0x1A9 of the GS state): the zoom-blur CLUT (0x3E84) is equal; the glow texture blocks 0x3E90–0x3E9D (uploaded every menu entry as PSMT8 64×58, DBW 2) held the same bytes in another order: 214 of 3,584 bytes moved, all in PSMT8 rows 2–3 of each 16-row group.
+- Cause: `kCol8` rows 2 and 3 (`gs_memory.cpp`, and the same table in `tools/research/gsvram.py`) had pixels 2–5 and 10–13 in the wrong order; the correct rows follow the same half-swap rule as rows 6–7 (`{33, 37, 49, 53, 1, 5, 17, 21, …}`). With the corrected table the predicted PCSX2 blocks equal the real ones in all 3,584 bytes; the blocks equal to PCSX2's byte for byte rose from 1,313 to 2,420 (every PSMT8 upload). HYPOTHESIS (not rechecked): the 2026-10-17 column-order check matched its 48 T8 blocks because their bytes were equal within those row pairs (HUD font with large uniform areas).
+- Effect on screens: none for textures written and read as PSMT8 (both sides used the same wrong table); it matters where a frame buffer or other data is read as PSMT8 (`gs_conv.comp` uses the same layout).
+- S2a screens with the current build (`--blend-fields`, mean abs R/G/B): title 0.16/1.39/2.06, main menu 0.78/1.44/1.93, NEW GAME opened 0.21/1.64/2.73, no pixel over 16 except the help-line glyphs (0.09 %). Signed centre G/B −2.1/−3.3 (title), −0.1/−0.4 (menu), −2.3/−4.0 (opened). Unchanged by the table fix; inside the frame-filter exception of `validation-strategy.md` §2.2.
+- Blend test: drawing the zoom blur (`Cs·Ad + Cd`, ALPHA 0x58) with the exact integer GS blend in the shader (`../platform/gs-subset.md`, "All blend equations") instead of the fixed-function DST_ALPHA mapping deepens the centre deficit (menu G/B −1.2/−2.1); the fixed-function mapping stays. The remaining radial pattern therefore comes from the blur's inputs (Ad of the frame, the magnified glow sampling), not from blend rounding: still open (`../open-questions.md`).
 
 ## 2g. Slice S2b checks (2026-10-14)
 
-Reference: run 08 (`../pcsx2/sessions-08.md`), card S, one continuous session. The port replays the owner's button sequence with `--pad-script` on a fresh copy of card S (press spacing 30-150 frames; the PERSONAL DATA confirm is shifted by 8 frames so that `frame_count & 0xF` is 6 as in PCSX2, because the records page pads its allocation by `((frame & 0xF) + 1) * 0x10` bytes; quirk in `../subsystems/frontend.md`).
+Reference: run 08 (`../pcsx2/sessions.md` run 08), card S, one continuous session. The port replays the User's button sequence with `--pad-script` on a fresh copy of card S (press spacing 30-150 frames; the PERSONAL DATA confirm is shifted by 8 frames so that `frame_count & 0xF` is 6 as in PCSX2, because the records page pads its allocation by `((frame & 0xF) + 1) * 0x10` bytes; quirk in `../subsystems/frontend.md`).
 
 ### S2b-1. RAM checkpoints
 
@@ -330,7 +372,7 @@ Expected differences: the S1 and S2a lists plus `ramdiff-expected-s2b.csv`. Clas
 - **Frame parity and animation** (`timing`): the page draw packets beyond the S2a range in both buffer halves, the current-half pointers, the tab fade levels in `g_MenuFade`.
 - **CD latency** (`timing`): the records page data-load timer (4/60 s in the port, 16/60 s on PCSX2) and a page-data read still in flight on PCSX2; a VAG stream position.
 - **Input timing** (`input`): at SOUND SETTINGS exit the pad script pressed X 30 frames after the last change, while the help line was still typing (last SE 9 in the port, 2 on PCSX2; the message box state; the held-button word); a stale main-menu item scale (+0x3FC of the object at 0x00CCFF80, which the options page reuses without clearing) still decaying from 2 to 1.
-- **Owner sequence** (`input`): between LOAD entry and LOAD exit PCSX2 made two more page-data reads (one is DATA 0xB3 into the save page buffer 0x00CD0640), 81 SE requests against 37, more VAG commands, and slot 0 of the menu BGM record holds track 4 (a `PlayMenuBgm(4)` followed by the LOAD page's `FadeOutMenuBgm`). That is the trace of more main-menu → LOAD visits: the owner opened the LOAD page several times while checking why breakpoint 0x0023D4FC did not fire (confirmed by the owner). From SCREEN SETTINGS entry on, the BGM record is identical again.
+- **User sequence** (`input`): between LOAD entry and LOAD exit PCSX2 made two more page-data reads (one is DATA 0xB3 into the save page buffer 0x00CD0640), 81 SE requests against 37, more VAG commands, and slot 0 of the menu BGM record holds track 4 (a `PlayMenuBgm(4)` followed by the LOAD page's `FadeOutMenuBgm`). That is the trace of more main-menu → LOAD visits: the User opened the LOAD page several times while checking why breakpoint 0x0023D4FC did not fire (confirmed by the User). From SCREEN SETTINGS entry on, the BGM record is identical again.
 
 Procedure error: breakpoint 0x0023D4FC (`s2b_load_done`) is in the LOAD page's own read of the save image when the page opens (state 5 → 6, port hit at frame 3291, 25 frames after the page entry). In the procedure it was set 2 s after the entry, so it never fired; not a game difference. The libmc request delay therefore stays uncalibrated (hypothesis, `../formats/folder-memcard.md` §10.1).
 
@@ -365,7 +407,7 @@ Run: card S, `--pad-script 1200:start,1500:cross,1700:cross` (Start, NEW GAME, N
 - Decode cost: 2.2 ms per picture (libmpeg2 portable C, RelWithDebInfo).
 - Regression: the 6 S1 and 4 S2a checkpoints still 0 unexplained (timer model and SOUND reply changes); 62 unit tests pass (new: IPU colour conversion, RCNT0 busy wait).
 
-- Owner report after the first build: frames flicker, colours break, and vertical lines split the screen when the view moves. Two causes, both fixed (2026-10-14):
+- User report after the first build: frames flicker, colours break, and vertical lines split the screen when the view moves. Two causes, both fixed (2026-10-14):
   - **Column seams** (renderer): `gs.vert` moves geometry by half a pixel, so a 1:1 sprite's texture coordinate at the pixel centre is an exact integer. Float interpolation gave values like 0.9999, and `floor` picked the texel on the left. In each 16-pixel movie column, texel 0 was shown twice and texel 15 was lost (gradient at column offset 1: 7.8 against ≈21 elsewhere; at offset 0: 26.8). Fix: `gs.frag` rounds texture coordinates to the GS's 1/16-texel fixed point before sampling. After it the column profile is flat (the remaining bumps at offsets 0 and 8 are the MPEG 8×8 block grid). Effect on the validated screens, same frames against PCSX2 (`--blend-fields`): title 0.21/1.52/2.20 (max 15) → 0.16/1.39/2.06 (max 7); main menu 0.43/1.58/2.29 (max 14) → 0.43/1.56/2.25 (max 13). Both closer.
   - **Corrupt pictures at chunk changes** (decoder): open GOPs across chunks (`../formats/SMV.md`); `sceMpegReset` did a full libmpeg2 reset and lost the reference picture. Fix: partial reset. 90 frames around three open-GOP chunk starts (pictures 214, 615, 2115) contain no corrupt blocks (before: over 8,000 saturated-yellow pixels in two pictures at frames 5984-5987). The pictures per chunk equal the file's, and the movie end comes at the same time as before.
   - Regression after both fixes: 10 S1/S2a checkpoints 0 unexplained, 63 unit tests pass.
@@ -376,9 +418,9 @@ Run: as S3-1 with `--movie-upscale 2` (and 3), `--screenshot-at 3000,5000`.
 - The ×2 output averaged back 2×2 matches the native picture best at the letterbox offset y = 56 (mean absolute difference 3.0 levels; 7-14 levels at offsets 52-60). That is the expected EASU edge reconstruction.
 - The native screenshots at vblank 5000 are byte-identical with and without `--movie-upscale`: the stage is presentation-only. No Vulkan validation messages.
 - Regression after the side-path changes: the 10 S1/S2a checkpoints are still at 0 unexplained. 63 unit tests pass; the new one covers the GIF source marks and `MovieTexelOrigin`.
-- RCAS is not applied. Whether it helps is a visual judgement for the owner on the stage output.
+- RCAS is not applied. Whether it helps is a visual judgement for the User on the stage output.
 
-### S3-3. RAM checkpoints against the PCSX2 batch (run 09, `../pcsx2/sessions-09.md`)
+### S3-3. RAM checkpoints against the PCSX2 batch (run 09, `../pcsx2/sessions.md` run 09)
 Run: card S, `--pad-script 1200:start,1500:cross,1700:cross`, expected lists S1, S2a, S2b and the new `ramdiff-expected-s3.csv`.
 
 | Checkpoint | PCSX2 state | Port | Result |
@@ -411,7 +453,7 @@ Run: card S, `--pad-script 1200:start,1500:cross,1700:cross`, expected lists S1,
 
 ## 2i. Slice S4 checks (2026-10-16; PCSX2 run A of the S4 batch)
 
-Port pad script matching the owner's run A: `1200:start,1500:cross,1700:cross,2000:cross,2100:start,2372:cross,10786:start,11400:cross` (superseded by the frame-aligned script of S4-1) (Start skips SS01, Start leaves the map, X on START MISSION). Frame counter 0x0029F3A8: PCSX2 value + 934 = port value at the title, briefing and campaign checkpoints; the map starts 66 frames earlier in the port (PCSX2's briefing stream waits on CD reads; the movie state at map entry is identical).
+Port pad script matching the User's run A: `1200:start,1500:cross,1700:cross,2000:cross,2100:start,2372:cross,10786:start,11400:cross` (superseded by the frame-aligned script of S4-1) (Start skips SS01, Start leaves the map, X on START MISSION). Frame counter 0x0029F3A8: PCSX2 value + 934 = port value at the title, briefing and campaign checkpoints; the map starts 66 frames earlier in the port (PCSX2's briefing stream waits on CD reads; the movie state at map entry is identical).
 
 ### S4-1. RAM checkpoints (`ramdiff.py` with `ramdiff-expected-s1..s4.csv`)
 Final run 2026-10-16 (S4-7): pad script aligned to the PCSX2 run A frame counters, `--pad-script 700:start,850:cross,950:cross,1166:start,1438:cross,9918:start,10844:cross`, card S, each checkpoint in its own run.
@@ -434,22 +476,22 @@ S1 sub 7 (card S) and the three S3 movie checkpoints rerun with these changes: s
 States `s4_map2`/`s4_map3` (2nd and 3rd hit of 0x00238440), port `--dump-ram-at 238440,2` / `,3`.
 - Before the fix the map camera (object 0x00CCFF80 +0x250) differed in 23 words by 1-2 ulp, e.g. the view matrix entry 0x394CE000 (PCSX2) against 0x394CDFFE, 51200 against 51199.996, while its inputs (look-at record +0x410) were identical. The values do not change between frames 2 and 3: the camera is still (map state 2).
 - Cause: `_sceVu0ecossin` for the pitch -1.57060099. t = pi/2 + a = 1639 * 2^-23 exactly; the polynomial adds c3 t^3 (-1.2e-12) and smaller terms. With chop rounding each negative term pulls the sum 1 ulp down (0x394CDFFE); with round to nearest it stays t (0x394CE000). A Python model of the code (`out/`, not kept) gives exactly the two values.
-- Why nearest although the owner's PCSX2 has VU0 Roundmode = 3 (chop): PCSX2 compiles COP2 macro instructions into the EE block (microVU_Macro.inl) with plain SSE add/sub/mul (microVU_Upper.inl `mVU_FMACa`: `SSE_ADDPS`/`SSE_ADDSS`, no operand masking) and never loads the VU0 MXCSR there, so they run under the EE's mode, round to nearest from the GameDB (`eeRoundMode: 0`). Only VU micro programs use the VU rounding setting.
+- Why nearest although the User's PCSX2 has VU0 Roundmode = 3 (chop): PCSX2 compiles COP2 macro instructions into the EE block (microVU_Macro.inl) with plain SSE add/sub/mul (microVU_Upper.inl `mVU_FMACa`: `SSE_ADDPS`/`SSE_ADDSS`, no operand masking) and never loads the VU0 MXCSR there, so they run under the EE's mode, round to nearest from the GameDB (`eeRoundMode: 0`). Only VU micro programs use the VU rounding setting.
 - Fix: `vu0_math.h` macro helpers (`vu0::`) round to nearest; the chop helpers moved to `vu0::micro::` for the VU1 program HLE. After it: the whole map object matches PCSX2 except timing fields; the map packet area (port half A against PCSX2 half B, frame parity) is byte-identical in the terrain sprites: the 803 halfwords that differed by exactly -1 (1/16 pixel) are gone. Left: DMA tags pointing into the other half and the typing text layer (timing).
 - Hangar picture at the same vblank before/after the fix: no visible change in the 3D scene (the difference is the menu filter dot pattern and animated gauges, frame phase).
 
 ### S4-4. Hangar purchase commit (PCSX2 run B)
-Owner's run: card S, LOAD slot 1, CONTINUE, Start x3 (title card, briefing, map), BUY > AIRCRAFT, X X on the F-5E (52,000; credits 161,000 -> 109,000), Triangle. 0x00233F10 fired on leaving (ra 0x00235C00: the cancel path of `AircraftSelectRun`); `s4_commit_before`/`s4_commit_after`.
+User's run: card S, LOAD slot 1, CONTINUE, Start x3 (title card, briefing, map), BUY > AIRCRAFT, X X on the F-5E (52,000; credits 161,000 -> 109,000), Triangle. 0x00233F10 fired on leaving (ra 0x00235C00: the cancel path of `AircraftSelectRun`); `s4_commit_before`/`s4_commit_after`.
 - Function test vector (`tests/test_vectors_s4.cpp`, reads the states from `AC04_TEST_STATES`, skipped without it): the entry state's RAM, `CommitHangarSelection(a0 = 0x00CCFF80)`, compared with the exit state over all 32 MiB except the original's stack frame: **0 bytes differ**. The function's writes: game[0] (0x0029F350, 2 -> 1), the purchase state back in save order (h+0x40 and its copy 0x002A0320: F-5E bit set) and the credits 0x002A0D30 = 109,000.
 - End to end: the port replays the run (`--pad-script 1200:start,1500:down,1560:cross,1800:cross,1950:cross,2150:up,2200:cross,2600:start,3100:start,3600:start,3800:down,3830:down,3900:cross,4100:cross,4600:cross,4800:cross,5200:triangle --dump-ram-at 233F10`) and reaches the commit with the same purchase state, owned list, selection (h+0xA0..+0xF3), credits, checksum, save copies, game state and campaign selection as PCSX2. Other differences come from the replay's different timing, not from game logic: the hangar timer h+0x164 (7.2 against 18.05 s), viewer camera and object animation, and stale briefing-movie chunks in freed heap (the pad script let the briefing movie run longer before Start). No expected-list entries were added for this run: it is not a fixed-input checkpoint.
 - Shop screen after leaving (`s4_shop.png`, BUY highlighted) against the port at vblank 6360 with `--blend-fields`: 0.26/2.20/3.61, 0.44 % over 16, 0.04 % over 32 (pulsing BUY glow, help line typing).
 
 ### S4-5. VS mission select (PCSX2 run C)
 Port: card S, `--pad-script 1200:start,1500:down,1530:down,1560:down,1620:cross,2300:right --dump-ram-at 23C708`.
-- RAM at the first `MissionSelectRun` 0x0023C708: **1 unexplained range** before classification: the TUTORIAL item scale of the main menu object (+0x3AC) still easing from 2 to 1 on PCSX2 (the owner's Down presses were faster than the script's 30 frames); added to `ramdiff-expected-s4.csv` (input). 0 unexplained after.
+- RAM at the first `MissionSelectRun` 0x0023C708: **1 unexplained range** before classification: the TUTORIAL item scale of the main menu object (+0x3AC) still easing from 2 to 1 on PCSX2 (the User's Down presses were faster than the script's 30 frames); added to `ramdiff-expected-s4.csv` (input). 0 unexplained after.
 - Screens with `--blend-fields`: `s4_vs.png` against vblank 2180: 0.26/1.45/2.10, 0.21 % over 16, 0.06 % over 32; `s4_vs_right.png` against vblank 2540: 0.21/1.40/1.99, 0.02 % over 16. Left: pulsing button icons, crosshair position, cursor box (animation phase). Same layout, texts, thumbnails (VS STAGE 01/02) and slide animation.
 
-### S4-6. Hangar performance (owner report 2026-10-16: about 5 fps)
+### S4-6. Hangar performance (User report 2026-10-16: about 5 fps)
 Measured with temporary stage timers and an in-process sampling profiler (both removed), F-5E hangar, development build. Before: ~200 ms per presented frame (catch-up of ~3.4 ticks): VU1 HLE 15 ms, GIF processing 22 ms, Vulkan recording 16 ms per tick, the last almost all inside the validation layer. Changes (none changes guest RAM or game logic; all verified bit-exact as stated):
 | Change | Where | Check |
 |---|---|---|
@@ -461,7 +503,7 @@ Measured with temporary stage timers and an in-process sampling profiler (both r
 | draw state marked dirty only when a register value changes | `gs_state.cpp` | same-vblank screenshots identical |
 | GIF step buffers recycled (a hangar step is ~3 MB; it was regrown every tick) | `libgraph.cpp`, `renderer.cpp`, `sce_host.h` | — |
 | redundant `vkCmdSetScissor` / `vkCmdBindPipeline` / `vkCmdPushConstants` skipped | `gs_vulkan.cpp` | — |
-| Vulkan validation opt-in: `--vk-validation` (development builds; owner decision 2026-10-16) | `command_line.cpp` | unit test |
+| Vulkan validation opt-in: `--vk-validation` (development builds; User decision 2026-10-16) | `command_line.cpp` | unit test |
 After, per tick: game 5.4 ms (VU1 2.5), GIF 3.3 ms, recording 2.0 ms: a steady 60 fps with ~6 ms of the 16.7 ms frame left. With the validation layer the recording still takes ~11 ms per tick (about 1 µs per Vulkan call; the model and reflection passes alternate per strip with different blend states, so their draws cannot be merged without reordering) and the hangar stays at ~13 fps: validation is therefore off by default and enabled with `--vk-validation`.
 Screenshots of different runs cannot be compared for this purpose: host timing reaches the game state (CD and stream timing, `../open-questions.md`), so the camera orbit is at another phase.
 
@@ -479,7 +521,7 @@ Screenshots of different runs cannot be compared for this purpose: host timing r
 - Results (pad script to the S4 title card and on to vblank 3000, Xbox controller connected): calm run vs `--stress-host` run identical at all 3000 vblanks; recorded run vs its replay identical at all 3000 vblanks. S1 sub 7 and the S4 title-card and hangar checkpoints still 0 unexplained.
 
 ### S5-P2. Input-recording calibration (2026-10-17)
-- Data: `s5_cal.p2m2` (power-on recording, 2098 frames, `../pcsx2/sessions-11.md`): Start held in records 1001–1002, X in 1722–1723 (and 1830–1841, after the confirm); breakpoints 0x0022D748 at record 1002 and 0x0022D880 at record 1723; `frame_count` (0x0029F3A8) in the two states 837 and 1558 (difference 721 = 1723 − 1002, so one count per record).
+- Data: `s5_cal.p2m2` (power-on recording, 2098 frames, `../pcsx2/sessions.md` run 11): Start held in records 1001–1002, X in 1722–1723 (and 1830–1841, after the confirm); breakpoints 0x0022D748 at record 1002 and 0x0022D880 at record 1723; `frame_count` (0x0029F3A8) in the two states 837 and 1558 (difference 721 = 1723 − 1002, so one count per record).
 - Port: `--replay-p2m2 s5_cal.p2m2 --dump-ram-at <bp>` with offsets 165 and 153. Offset 165 reaches both breakpoints with `frame_count` 825 / 1546 (12 low); offset **153** gives 837 / 1558, equal to PCSX2. Both checkpoints with offset 153: 0 unexplained ranges (`ramdiff.py --expected` with the S1, S2a, S2b files; remaining timing ranges are the boot-time counters already listed there).
 - Result: `--p2m2-offset 153` for power-on recordings: port tick *t* reads record *t* + 153. The 153 frames are PCSX2's BIOS and boot before the game's first vblank minus the port's 12-vblank head start before `frame_count` starts; the pad path adds no extra frame on either side (both accept Start on the record that holds its second pressed frame).
 - Limit: valid up to the first load whose length differs between PCSX2 and the port (S4: the briefing map starts 66 frames earlier in the port). Gameplay recordings still need the anchor method of `validation-strategy.md` §3.2, with this offset applied after the anchor.
@@ -493,7 +535,7 @@ Screenshots of different runs cannot be compared for this purpose: host timing r
 - Not yet done: RAM checkpoints 0x0010A230 / 0x0010BD68 against PCSX2 (`OnGuestCheckpoint` added at both; batch S5-A), GS-level comparison with the PCSX2 gameplay dump.
 
 ### S5-A2. Mission 1 load against PCSX2 (2026-10-17)
-- Flow found on the way: New Game mission 1 with the default aircraft is mission id **0x25**, an in-engine special (kind 4) with its own load: subs 0–8 load the opening's world, sub 0x13 plays the carrier sequence, and its end (`UpdateInEngineSequence` 0x00177058: `game[0] = 2`, `game[0x27] = 1`, `game[0x2A] = 0`, `RequestScene(2)`) loads mission 1 proper, which reaches sub 0xA (0x0010A230, the PCSX2 state `s5_m1_start`). The narration screen the owner saw after the carrier scene is mission 1's loading screen. The frozen frame of S5-A was the opening's world, not mission 1.
+- Flow found on the way: New Game mission 1 with the default aircraft is mission id **0x25**, an in-engine special (kind 4) with its own load: subs 0–8 load the opening's world, sub 0x13 plays the carrier sequence, and its end (`UpdateInEngineSequence` 0x00177058: `game[0] = 2`, `game[0x27] = 1`, `game[0x2A] = 0`, `RequestScene(2)`) loads mission 1 proper, which reaches sub 0xA (0x0010A230, the PCSX2 state `s5_m1_start`). The narration screen the User saw after the carrier scene is mission 1's loading screen. The frozen frame of S5-A was the opening's world, not mission 1.
 - Port run: S5-A pad script plus `11850:start` (`--freeze-sim` keeps the original skip rule in sub 0x13, `command-line.md`), `--dump-ram-at 0x0010A230 --log-allocs`, twice with `--heap-fill 0x00` / `0xFF`; checkpoint at vblank 11978.
 - **Allocation exact:** work-heap offset 0x019C5180 (98.4 % of 0x01A318A4) and the retry mark S+0x1664 = 0x012F9480, both equal to PCSX2: every allocation size and its order match for the whole mission 1 load (3,108 live allocations, 27 MB).
 - **Heap contents:** 4.79 MB were never written since the scene change (leftovers; masked). Of the written bytes, 8,145 differed in 19 allocations: the AI states' byte +0xF5 and effect pool 19's +0xFC (and one pool-11/12 field), all from `NextRandomFloat`. The random cursor (0x00411780) was 0x22E1 in the port and 0x10A45 in PCSX2: the opening sequence PCSX2 played consumed reads the skipped one did not. Started at the cursor PCSX2 must have had (0x10A45 − 0x1152 reads of the load = 0xF8F3; temporary experiment, removed), **every random-derived byte matched**; the remaining 10 bytes are timing: the double-buffer parity (S+0x1540 bucket pointers, `AllocDoubleBuffer` +0x224), the loading-screen frame counter S+0x166C (PCSX2 350 frames, port 95: CD latency) and S+0x1684.
@@ -514,13 +556,13 @@ Screenshots of different runs cannot be compared for this purpose: host timing r
 - Tool: `tools/research/sample_profile.py` (sampling profiler, dbghelp) used to find the cost.
 
 ### S5-A3. Missions 3 and 4 against PCSX2; mission renderer features (2026-10-17)
-Reference: S5-A run 2, missions 3 and 4 (`../pcsx2/sessions-12.md`): states `s5_m3_start`, `s5_m4_start` at 0x0010A230, GS dumps `s5_m3_frame`, `s5_m4_frame` (zstd again, unpacked into `out/gs/`), loading and frame screenshots.
-- **Routes in the port** (card S copy, `--freeze-sim`): mission 3 `--pad-script 1200:start,1500:down,1560:cross,1800:cross,1950:cross,2150:up,2200:cross,2600:start,3100:start,3600:start,4200:cross,4700:cross,5000:cross,5400:cross` (LOAD file 1, CONTINUE, Start through title card, briefing and map, START MISSION, X on aircraft and weapon, X on PRESS START BUTTON); mission 4 the same with `1650:down,1680:down,1710:down` before the file is picked (file 4, MISSION 04 / BLOCKADE). Both reach 0x0010A230 at vblank 5434 with the game state of the owner's runs (mission id 3 / 0x10, aircraft 2, colour 0, weapon 0, mode 1, difficulty 3).
+Reference: S5-A run 2, missions 3 and 4 (`../pcsx2/sessions.md` run 12): states `s5_m3_start`, `s5_m4_start` at 0x0010A230, GS dumps `s5_m3_frame`, `s5_m4_frame` (zstd again, unpacked into `out/gs/`), loading and frame screenshots.
+- **Routes in the port** (card S copy, `--freeze-sim`): mission 3 `--pad-script 1200:start,1500:down,1560:cross,1800:cross,1950:cross,2150:up,2200:cross,2600:start,3100:start,3600:start,4200:cross,4700:cross,5000:cross,5400:cross` (LOAD file 1, CONTINUE, Start through title card, briefing and map, START MISSION, X on aircraft and weapon, X on PRESS START BUTTON); mission 4 the same with `1650:down,1680:down,1710:down` before the file is picked (file 4, MISSION 04 / BLOCKADE). Both reach 0x0010A230 at vblank 5434 with the game state of the User's runs (mission id 3 / 0x10, aircraft 2, colour 0, weapon 0, mode 1, difficulty 3).
 - **Heap** (`heapdiff.py --mask`, fills 0x00/0xFF): mission 3 3,171 live allocations (27.1 MB), mission 4 4,345: allocation sizes, order and addresses equal; differing bytes only in the packet double buffers (loading-screen packets, frame phase), the flight scene's loading counters (+0x166C..+0x1687) and effect-block records that add the effect clock (block +0x6249C).
-- **Effect clock (leftover read by the original).** `InitEffects` reads the clock before anything in the scene writes it (`../subsystems/mission-load.md`), so record start times include whatever the memory held: PCSX2 0x80000000 (mission 3), 0x80312B1F (mission 1), 0 (mission 4); the port 0x808D5853 (mission 3) — RGBA pixels with alpha 0x80 left by the briefing movie's picture buffer, which depend on the moment the briefing was skipped. Listed as `leftover` for the mission 3 layout. An exact match needs the same skipped picture (pad timing and IDCT rounding, S3-3).
+- **Effect clock (leftover read by the original).** `InitEffects` reads the clock before anything in the scene writes it (`../subsystems/mission-flow.md`), so record start times include whatever the memory held: PCSX2 0x80000000 (mission 3), 0x80312B1F (mission 1), 0 (mission 4); the port 0x808D5853 (mission 3) — RGBA pixels with alpha 0x80 left by the briefing movie's picture buffer, which depend on the moment the briefing was skipped. Listed as `leftover` for the mission 3 layout. An exact match needs the same skipped picture (pad timing and IDCT rounding, S3-3).
 - **Static areas:** the ranges left in S5-A2 (terrain holder draw state, sequence state, image rows) do not occur in missions 3 and 4: they were the opening's history. Remaining differences, all classified in the new `ramdiff-expected-s5a.csv`: briefing state at the skip and the movie audio feeder's fade (input timing), VAG slots 2/4 and the VAG command queue (the loading screen's length: CD latency), libkernl internals, newlib's stdio buffer after the work heap (debug printf text), deeper dead stack frames. **0 unexplained ranges** for both missions outside the scene heap, with the expected lists S1, S2a, S2b, S3, S4, S5a.
-- **Black screen before gameplay** (owner's `*_loading_2.png`): the loading screen fades to black after Start, 0x0010A230 runs on the black frame and the mission fades in over about 30 frames (port: Start at 5400, black at 5430, checkpoint 5434, picture from 5440). The PCSX2 screenshot was taken while paused at the breakpoint.
-- **GS dumps through the port's renderer** (`--play-gsdump`, compared with the owner's screenshots, `imgdiff.py --blend-fields`). New tool `tools/research/gsdraws.py` (every draw with its state and screen box). Missing features found and implemented (`../platform/gs-subset.md` 2026-10-17): fog (FGE), TEX1 filter choice with trilinear mipmaps (MTBA), DATE, AA1 blending, frame buffers read and written in other formats or widths (compute conversion and target sync), a frame buffer drawn earlier in the same frame as texture source, presented height at most 448 lines.
+- **Black screen before gameplay** (User's `*_loading_2.png`): the loading screen fades to black after Start, 0x0010A230 runs on the black frame and the mission fades in over about 30 frames (port: Start at 5400, black at 5430, checkpoint 5434, picture from 5440). The PCSX2 screenshot was taken while paused at the breakpoint.
+- **GS dumps through the port's renderer** (`--play-gsdump`, compared with the User's screenshots, `imgdiff.py --blend-fields`). New tool `tools/research/gsdraws.py` (every draw with its state and screen box). Missing features found and implemented (`../platform/gs-subset.md` 2026-10-17): fog (FGE), TEX1 filter choice with trilinear mipmaps (MTBA), DATE, AA1 blending, frame buffers read and written in other formats or widths (compute conversion and target sync), a frame buffer drawn earlier in the same frame as texture source, presented height at most 448 lines.
 
 | Dump | before (mean R/G/B, % over 16) | after |
 |---|---|---|
@@ -534,6 +576,532 @@ Reference: S5-A run 2, missions 3 and 4 (`../pcsx2/sessions-12.md`): states `s5_
 ### S5-T3. `--mission` and the parallel regression suite (2026-10-17, port only)
 - `--mission <n>` (`command-line.md`): all 18 campaign missions started from card S with `--freeze-sim --pad-script 800:cross,...`: 17 reach 0x0010A230 at vblank 834 with the expected game state (mission id from `GetMissionId(0, n)`, aircraft 2, mode 1, difficulty 2, entry kind 1) and draw their world from the start camera with no renderer warning. Mission 12 (id 0x0A) stops at its first sub-state: the scripted sequence 0x0010B500 (block C) is not translated yet (logged as an unregistered indirect call).
 - `tools/research/runmany.py` with `tools/research/regress.json` (24 jobs: front-end route screenshots, the mission 1/3/4 routes with their checkpoints, calm vs `--stress-host` hash logs to vblank 6000, the 18 missions): 111 s with 8 instances in parallel on the development PC. A second run is pixel-identical to the saved baseline for every screenshot, and the calm and stressed hash logs are identical at every common vblank.
+
+## 2k. Internal resolution, 16:9 and code clean-up (2026-10-19)
+
+Reference: the User's Slices folder (S1-S5 PCSX2 screenshots and GS dumps). Tools: `tools/research/full.json` + `runmany.py` (logic oracle), `pcsx2_compare.json` + `pcsx2_compare.py` (screens).
+
+### IR-1. Logic oracle: RAM and hash logs at every scale
+- Baseline saved from the build before any change of this session (`out/runs/baseline_full`, not committed): 30 jobs without `--freeze-sim` (S1 card S / card E / no card, S2a, SS01, the S4 front end to the hangar, VS select, the shop commit, the mission 3 and 4 routes, a replayed gameplay run on mission 4, the mission 1 opening, all 18 missions): 47 screenshots, 27 RAM checkpoints, 5 per-vblank RAM hash logs (up to 12,000 vblanks).
+- A second run of the unchanged build: identical RAM and hashes; screenshots identical except where the shot was taken at normal speed (one vblank late), so every job now uses `--fast-until` up to its last shot.
+- Final build at internal scale 1: every RAM checkpoint and hash log identical, every screenshot identical (the loading fade may differ by up to 6 levels with host presentation timing, `--tolerance 8`). At 2, 4 and 8: every RAM checkpoint and hash log identical to the 1x baseline, the same renderer warnings, no errors. **The internal scale changes no guest state.**
+- Known, dev tool only: with `--fast-until` the frames before the 60-tick settle window are not drawn, so which frame buffers the renderer has seen depends on host timing; a shot in the mission 1 opening can show the 224-line display buffer (2 of 6 runs). RAM is unaffected; normal-speed play draws every step.
+
+### IR-2. Screens against PCSX2 (Slices folder)
+Best match per reference over a vblank window (`pcsx2_compare.py`); at N > 1 at the 1x best vblank, with the port's N x N box average (`native_<vblank>.png`). Mean R/G/B difference:
+
+| Screens | 1x | 2x | 8x |
+|---|---|---|---|
+| S1 splash 0/1, card messages (5) | 0.01-0.09 | 0.4-0.9 | same as 2x |
+| S2a title, menu, NEW GAME (3) | 0.2-0.7 / 1.4-1.6 / 1.9-2.7 | 1.0-1.6 / 3.1-3.6 / 4.2-5.1 | same |
+| S2b pages incl. LOAD, CONTINUE (7) | 0.1-0.5 / 1.5-2.0 / 2.0-3.2 | 0.6-3.7 / 3.8-6.3 / 5.4-7.7 | same |
+| S2b 16:9: SCREEN RATIO, menu, CONTROLLER SETUP (3) | 0.3-0.5 / 1.9-2.6 / 2.9-5.0 | 1.2-4.9 / 3.9-8.4 / 5.7-10.6 | same |
+| SS01 (2), mission 1 movie | 0.4-0.9 | 1.1-4.0 | same |
+| S4 title card, campaign, shop, VS (5) | 0.1-0.3 / 1.1-2.1 / 1.7-3.4 | 0.9-2.7 / 2.6-5.0 / 3.5-6.1 | same |
+| S4 briefing map | 2.1 / 3.1 / 3.5 | 4.3 / 6.1 / 6.7 | same |
+| S5 loading screens m3/m4 | 1.2 / 4.1 / 5.6 | 1.2 / 3.8 / 5.1 | 1.0 / 3.5 / 5.0 |
+| S5 GS dumps m1/m3/m4 (`--play-gsdump`) | 1.2-4.0 / 1.5-4.4 / 1.8-4.3 | 1.7-4.4 / 3.2-5.7 / 3.1-5.5 | same |
+
+- 1x equals the earlier slice results (S1-2 to S5-A3): nothing regressed. The G/B bias is the open menu-filter rounding question (S2a-4).
+- Not matched by timing (as before): the hangar (orbit camera phase, 10-12 levels) and the briefing map's second frame (map animation phase, `s4_map`, 2-10 levels).
+- At N > 1 the means rise by 1-5 levels: lines one native pixel wide are N host pixels (the average blurs their edges less), the menu filter's feedback blur samples the scaled buffer (the fine dot pattern averages out), and movies come from the FSR picture. 2x, 4x and 8x give the same numbers within 0.3, so the scaling is consistent. Visually checked: flight HUD and terrain, menus, CONTROLLER SETUP, SS01 at 2x/4x (no seams between movie columns or atlas cells).
+
+### IR-3. 16:9 (the game's SCREEN RATIO option)
+- Before: `Renderer::SetDisplayAspect` was never called; the port always presented 4:3.
+- Now the main loop reads ctx flag 0x10000 after each frame. Run (card S): LOAD slot 1, OPTIONS > SCREEN SETTINGS > SCREEN RATIO > 16:9 (`pcsx2_compare.json` run `s2b_169`): the log shows `display aspect 16:9` when the option is confirmed; the output pass then fits a 16:9 rectangle (`FitAspect`). The anamorphic menus and CONTROLLER SETUP match PCSX2 (IR-2).
+
+### IR-4. Performance (development build, RX 9070 XT)
+- Sampling profile of mission 4 gameplay: texture decoding (`GsState::DecodeTexture`, one call through `PixelAddress`/`ReadPixel` per texel) was the largest item, 18 % of all samples (the game simulation about 5 %). `GsMemory::ReadRect` (one loop per format, inline addressing) brought it to 8 %; unit test `ReadRect gives the ReadPixel values for every format`, and the 1x screenshots are pixel-identical.
+- Normal speed, hangar route to vblank 12,000: 0 dropped ticks at 1x and at 8x. Mission 4 with a replayed recording: the same 23-24 dropped ticks at 1x and 8x, right after the fast-forward, so not from the scale.
+
+## 2l. Opening fixes, port menu features, caches and leaks (2026-10-20)
+
+User requests of 2026-10-20 (the opening's black aircraft and corrupted frames; performance and caching; clean-up; GRAPHICS page; Modern control types; settings rules; memory leaks). Port features as built: `port-features.md`.
+
+### OP-1. Mission 1 opening: corrupted frames (game-code translation error)
+- Seen: about a third of the opening's frames black with a strip of garbage pixels near line 300, and coloured speckles over the sea in the last carrier shots. `gsdraws.py` on a `--dump-dma-at` capture: after a deck-crew strip, 1,747 garbage sprites (TEX0 TBW 53, PSM 0x6); the GIF stream lost sync there, so the field copy at the end of the frame never came.
+- Cause: `func_002206C0` (sequence character parts' GS register list) writes the A+D GIF tag at part +0 (`sd v0,0(a0)` at 0x002208AC, NLOOP = count − 1); the translation had it at +0x70. `func_002238E0` copies the list from +0, so the GS read the stale qword at +0 as a tag.
+- After the fix: no garbage draws, every frame of the opening presented, the deck crew textured. Guest RAM changes where the opening runs (the character parts and the packet buffers that copy them, heap 0x5F0000–0x630000 and 0xDB0000–0xDD0000): the translation now writes what the original writes.
+
+### OP-2. Mission 1 opening: black F-4E (renderer)
+- The player aircraft's texture is T8H at block 0xE00 = FBP 0x70 × 32; the opening draws RGB into FBP 0x70 with FBMSK 0xFF000000, so the renderer took the aircraft's texture from that target, whose top byte never held the indices (`../platform/gs-subset.md`, "Textures in the bits a frame buffer never writes"). Vertex colours (mean 118 per channel) and the light set (ambient 0.48) were fine.
+- After the fix the F-4E has its blue camouflage in every carrier shot; no other screen of the regression suite changed (OP-4).
+
+### OP-3. Performance, memory and leaks (development build, RX 9070 XT)
+- Sampling profile, mission 4 with the replayed recording, normal speed: main thread 19.8 % → 15.9 % of samples, GIF processing 15.2 % → 10.6 %, `DecodeTexture` 8.4 % → 5.2 %. Cause: the terrain textures (T8 512 × 512 with 3 mip levels at 0x2900) are rebuilt every frame from tile uploads; every change re-decoded the whole texture (11,839 decodes in 4,500 vblanks). Now only the 256-byte blocks written since the last decode are decoded again; unit test `re-decoding only the written blocks equals a full decode` (T8, T4, CT32, unaligned texture, patches across blocks, outside the texture, and a mostly rewritten one).
+- Memory: the decoded-texture cache was bounded by 4096 entries only, and the terrain made a new 1.4 MB version almost every frame: private memory climbed to about 6 GB within a minute of flight before the cache emptied. Now bounded at 256 MiB as well: 400–740 MB over the same run (unit test `the decoded-texture cache stays within its byte budget`).
+- Dropped ticks in that run: 35–37 → 0. The backend's per-frame lists (texture placement, uploads, vertices) are reused instead of allocated every frame.
+- Leaks: no raw `new` / `malloc` in host code; every file opened is closed; a session with `--vk-validation` (menus, the GRAPHICS page changing the internal resolution, clean exit) reports no Vulkan error, including no objects left at device destruction. New Debug-build tests with the CRT debug heap (`tests/test_leaks.cpp`): settings store and GS state allocate nothing that outlives them.
+
+### OP-4. Regression suite
+- `full.json` against the baseline of 2026-10-19 (`out/runs/baseline_full`), 1x: 27 of 30 jobs identical (screens, RAM checkpoints, hash logs). Different, all explained: the opening (OP-1 and OP-2: screens and hash log), `s4_frontend` (its last 268 vblanks are the opening: same heap ranges; its opening screenshot shows the fixed aircraft), `m3_route` (one pixel column of the loading fade, at most 6 levels, also in the 2026-10-19 runs: host timing, `--tolerance 8` in IR-1).
+- New baseline from this build: `out/runs/baseline_s9` (not committed).
+- At 8x against the new baseline (`--shots-only`): every hash log and 29 of 30 RAM checkpoints identical. The other one, `s1_cardE`, is the only job without a pad script, so it reads live devices: 8 bytes of pad 1's raw and converted analog values (0x004121F4, 0x00412214; a connected gamepad's stick at 0x78 / 0x7D instead of the centred 0x7F, the input class of `ramdiff-expected-s1.csv`), not the scale.
+- PCSX2 screens (`pcsx2_compare.py`, runs `s2b` and `s2b_169`): every S2b page as before (IR-2) except the two pages that changed on purpose: SCREEN SETTINGS 0.33 / 2.19 / 3.43 (the extra GRAPHICS line) and CONTROLLER SETUP 1.41 / 2.67 / 3.32, 16:9 2.07 / 4.14 / 6.34 (the two extra squares, the longer CONTROL TYPE name and, with Modern, the swapped shoulder rows).
+
+### OP-5. Port menu features (port only)
+- GRAPHICS (SCREEN SETTINGS, after HUD UNIT): opened with card S, rows typed out as the BRIGHTNESS view, values changed with left/right; ACCEPT applied 4x at once and wrote `internal_scale: 4` to `settings.json`; CANCEL left the file unchanged; reopening shows the stored values and the list returns with the cursor on GRAPHICS.
+- CONTROLLER SETUP: four CONTROL TYPE squares; left from NORMAL (MODERN) runs EASY (CLASSIC), NORMAL (CLASSIC), EASY (MODERN) and back, the game's type bit stepping as over the original two squares; the table shows the swapped shoulder rows with Modern; ACCEPT wrote `modern_controls: [false, true]`. Unit test for the swap (`modern control types: L1/L2 and R1/R2 swapped, buttons and pressures, nothing else`).
+- `settings.json`: a file with an invalid value, an unknown key, another version or broken JSON is rejected and replaced with the defaults (unit tests in `test_settings.cpp`).
+
+## 2m. Settings, texture residency, sprite edges at N×, frame-rate overlay (2026-10-20)
+
+User requests of 2026-10-20 (second batch): texture loader, settings defaults and immediate application, the frame-rate overlay, tests of the graphics and controller settings and of saving, the deck crew of the mission 1 opening. Port features as built: `port-features.md`. Runs under `out/cc/` and `out/runs/cc_x1`, `cc_x4` (not committed). Display of the test machine: 3840 × 2160 at 60 Hz (so the defaults are fullscreen with v-sync on), RX 9070 XT.
+
+### ST-1. GRAPHICS page in the menus (normal speed)
+- Route with card S: OPTIONS > SCREEN SETTINGS > GRAPHICS (`--pad-script` …2550:cross,2750:up,2900:cross; up from the first item wraps to GRAPHICS). Then every row was changed, CANCEL, every row changed again, ACCEPT, reopened, DEFAULT, CANCEL.
+- Each change applied at once (log: `presentation: …` per change, `window …`, `swapchain …, present mode …`): fullscreen 3840 × 2160 ↔ windowed 1280 × 960; v-sync on = FIFO, off = IMMEDIATE (this driver has no MAILBOX in that mode); internal scale 1 → 2 → 3; filter sharp → smooth.
+- CANCEL restored the values the page opened with (all four at once); ACCEPT wrote `settings.json` (`windowed`, `vsync false`, `frame_cap 240`, `internal_scale 2`, `smooth`); DEFAULT applied the display defaults (fullscreen, v-sync on, 1×, sharp) and the next CANCEL went back to the saved values.
+- With v-sync on, the FRAME RATE CAP row shows "V-SYNC" without squares and the cursor skips it; with v-sync off it shows its value and squares (screenshots 3150, 3300).
+- Presented rates per period (`previous presentation: …` lines): v-sync 60.2 fps; cap 360: 355 fps; cap 240: 239.7–240.2 fps; 3× with cap 240: 230.8 fps.
+
+### ST-2. Combinations during gameplay (normal speed)
+Mission 4 with the replayed PCSX2 recording from vblank 1500; `settings.json` rewritten every 7 s while the port ran (the watcher reloaded each version within a second).
+
+| Combination | Presented | Ticks dropped |
+|---|---|---|
+| defaults (fullscreen, v-sync, 1×, sharp) | 59.0 fps (period includes the fast-forward) | 0 |
+| fullscreen, v-sync, 4×, smooth | 59.2 fps | 5 |
+| fullscreen, v-sync, 8×, sharp | 54.8 fps | 35 |
+| windowed, cap 144, 2×, smooth | 142.1 fps | 0 |
+| windowed, cap 360, 8×, sharp | 323.4 fps | 31 |
+| fullscreen, cap 60, 3×, smooth | 59.3 fps | 1 |
+| windowed, v-sync, 6×, sharp | 57.4 fps | 16 |
+| fullscreen, cap 360, 1×, sharp | 357.1 fps | 0 |
+
+The dropped ticks are one hitch at the switch to a higher internal scale (render targets rebuilt, grown on the first frames with a device wait), not a lower sustained rate: 385 presented + 35 dropped = 420 = 7 s × 60. 8× windowed still presents 323 fps. Session total 88 dropped ticks, all at switches.
+
+### ST-3. Controller settings and the save data
+- CONTROLLER SETUP (card S, after LOAD): NORMAL (MODERN) → EASY (MODERN) → NORMAL (CLASSIC); the button table follows (Modern: L1 YAW LEFT / L2 THROTTLE DOWN; EASY: the yaw rows "------"; Classic: the original rows); REVERSE ON swaps PITCH UP / PITCH DOWN. ACCEPT wrote `modern_controls: [false, true]` to `settings.json`.
+- Then CONTINUE > campaign menu > SAVE > slot 01 > overwrite YES: "Save complete". The card file `BASLUS-20152AC04` differs from the card before in exactly two places: player 1's controller word (slot 1 +0x12B8: 0x0008 → 0x000A, REVERSE bit) and the checksum at +0x0C, which is valid. The Modern flag never reaches the card.
+- A new session with the same card and `settings.json`: LOAD, then CONTROLLER SETUP shows NORMAL (CLASSIC), REVERSE ON.
+
+### ST-4. Texture residency (performance)
+Renderer summary at exit (averages per drawn frame, `--fast-until` part included), same build with residency switched off for the "before" column (a temporary switch, removed):
+
+| Run | Recording ms (before → after) | Textures uploaded per frame | Bytes uploaded per frame |
+|---|---|---|---|
+| mission 4 replay, 1× | 0.26 → 0.10 | 74 → 0.13 whole + 0.01 in place | 108 KiB → 1 KiB |
+| mission 1 opening, 1× | 1.53 → 1.39 | 14.2 → 0.19 | 3,165 KiB → 18 KiB |
+| mission 1 opening, 4× | 1.54 → 1.36 | 14.4 → 0.19 | 3,103 KiB → 18 KiB |
+
+GS processing (decoding the game's GIF stream and textures) is unchanged at 0.48 ms (mission 4) and 3.7 ms (opening). In the opening most of that is the game's own per-frame image uploads into GS memory (`GsMemory::WriteImage`) and primitive building; no atlas reset in any run. Unit test: `re-decoding only the written blocks equals a full decode` now also checks that the changed rectangles applied to the previous decode give the new one.
+
+### ST-5. Seams at internal scale 2× and above (renderer fix)
+- Seen in the mission 1 opening at 2× and 4× (and in flight): dark vertical lines every 32 native pixels over the whole picture below line ~30. `gsdraws.py --verts` (new option) on a capture of vblank 1700: the glow pass's upsampling draws 2836/2837 are 16 sprites 32 pixels wide that end at x = 31.5 and start at x = 32.0. The GS draws pixel 31 with the first and pixel 32 with the second (sample points at whole coordinates); at N× the host pixels between 31.5 and 32.0 belong to native pixel 32 but neither sprite covered them.
+- Fix (`renderer.md` §1 fix 9): at N > 1 sprite edges move to the borders of the native pixels they cover. After the fix the 4× opening has no seams.
+- Regression: `full.json` at 4× (`--shots-only`) against `baseline_s9`: all 30 jobs identical in RAM checkpoints and hash logs.
+
+### ST-6. Regression at 1×
+`full.json` against `out/runs/baseline_s9`: 29 of 30 jobs identical (screenshots, RAM checkpoints, hash logs). `m4_route` screenshot 5300 differs in one pixel column (x = 409, rows 20–419, at most 12 levels): the loading-fade column of IR-1 (host timing). `m3_route` logged "texture atlas full for this frame" once; the same warning is in earlier runs of that job (`full_check`, `full_s9_x8`) and depends on how ticks were grouped into frames, not on the residency (a frame whose own textures do not fit would have failed before as well).
+
+### ST-7. Defaults, SCREEN RATIO and the frame-rate overlay
+- Start-up log: `display: 3840x2160, 60 Hz (wider than 4:3)`; a new `settings.json` gets `fullscreen`, `vsync true`. Unit test `settings: defaults follow the display` covers 50/60/75/120/144/165/240/500 Hz and unknown rates, and the wide-display rule.
+- Fresh user data with the port's own saves folder (no save) and live input: `SCREEN RATIO default: 16:9 (monitor wider than 4:3)`, `display aspect 16:9`; the no-save intro runs in the game's 16:9 mode. Every validation run above logged `SCREEN RATIO default: 4:3 (validation run: PS2 default)`.
+- `--fps-overlay` in fullscreen 4:3 (desktop capture of the top right corner): "59 FPS / 17.00 ms" in small white text in the pillarbox; the game image and screenshots are unaffected.
+
+### ST-8. Deck crew in the mission 1 opening (User report)
+- With this build the deck crew is drawn in every carrier shot of the opening at 1×, 2× and 4× (`--mission-id 0x25`, screenshots every 50 vblanks from 850 to 2400), and in the New Game route's opening (`s4_frontend` screenshot 11950). The crew was missing or garbage before OP-1 (the GIF tag of `func_002206C0`, fixed earlier on 2026-10-20), so the User's observation probably came from a build before that fix. A PCSX2 reference of the opening (S5-C batch, `../pcsx2/procedures.md`) is still needed to compare shot by shot.
+
+## 2n. Anti-aliasing: FXAA and SMAA before the HUD (2026-10-20)
+
+User request: FXAA and SMAA if their licences are GPL-3.0 compatible, with the HUD drawn after the anti-aliasing pass. Licences: SMAA MIT; FXAA 3.11 BSD-3-Clause in NVIDIA's 2014-2015 GraphicsSamples release (the older 2010-2011 header grants no licence and is not used); both compatible (`../decisions/dependencies.md`). Feature as built: `port-features.md` §2.
+
+### AA-1. Where the pass runs
+- Mission 4 and the mission 1 opening: the point is built once per view (`BuildFlightDrawLists`, overlay table tag 0x006133B0 / 0x00629E30, rectangle 0 0 511 447), the DMA walker marks the GIF data there (offset 1,491,696 / 1,362,592 of the step), the draw list gets the `aa_point` and the backend finds the target FBP 0, FBW 8, CT32 (temporary log lines, removed).
+- HUD: a crop of the mission 4 HUD (GUN / MSSL / UGBM / DMG) is pixel-identical with `off`, `fxaa` and `smaa`: the HUD is drawn after the pass.
+- Unit tests: `anti-aliasing point: a mark becomes a draw-list entry between the 3D and the HUD` (position, FRAME_1, rectangle, no merging across the point; a movie mark adds nothing), `settings: anti-aliasing` (values, round trip, an invalid value rejects the file).
+
+### AA-2. Effect
+- Pixels changed against `off` (1×): mission 4 frame 2500 (sky, terrain, HUD): FXAA 1,533, SMAA 33 of 229,376; the opening frame 1700 (carrier deck, F-4E, crew): FXAA 15,969, SMAA 4,245. FXAA softens edges and some texture detail; SMAA smooths the stair steps of geometric edges and leaves the rest (zoomed crops, `out/cc/aa/`). At 1× the opening is already soft from the game's glow pass, so the gain is small; at 4× SMAA visibly cleans the strut and gear outlines.
+- 4× with `--vk-validation`, FXAA and SMAA: no Vulkan validation message.
+
+### AA-3. Regression
+- `full.json`, anti-aliasing off (default), against `baseline_s9`: 29 of 30 jobs identical; `m4_route` screenshot 5300 differs only in the loading-fade column x = 409 (at most 9 levels, ST-6 / IR-1).
+- `full.json` with `--antialiasing smaa` (`--shots-only`): every RAM checkpoint and hash log identical in all 30 jobs: the pass changes presentation only.
+
+### AA-4. Movies are not anti-aliased (User rule)
+- SS01 (New Game route with card S, screenshots at vblanks 2036, 2960, 3500), `--antialiasing smaa` against `off`: native screenshots identical at 1×; at 2× the internal-resolution screenshots, the native ones and the FSR 1 stage output (`movie_x2_*`) identical. The movies get only the FSR 1 stage.
+
+## 2o. New memory card, first save, startup messages (2026-10-20)
+
+User requests: create a new save from scratch when there is none (compatible with the PCSX2 folder format), make sure the SMV movies are not anti-aliased (AA-4 in §2n), clearer pop-up messages.
+
+### NS-1. A new card and the game's first save
+- Fresh user data (no `saves` folder): log `no memory card in …\saves: a new one was created (PCSX2 folder card, 8 MB, formatted)`; the folder holds `_pcsx2_superblock` (0x2000 bytes).
+- Superblock: bytes 0x000–0x153 equal those of the User's two PCSX2-formatted cards (`Memory Card Folder`); the rest differs (their leftover block 0 data, not read by PCSX2, `../formats/folder-memcard.md` §9).
+- New Game route (`--pad-script 900:start,1050:cross,1200:cross,2200:start,2900:start,3600:start,5200:start,6800:start,7400:start,7800:down ×5 (30 apart),8000:cross,8300:cross,8600:cross,8900:cross,9200:cross`): campaign menu, SAVE, "No AC04 files found on memory card (PS2). Create save file?" YES, File 1, "Save to File 1. Is this OK?" SAVE, "Save complete".
+- Files: `BASLUS-20152AC04/` with `icon.sys` (964 bytes) and `icon1.ico` (52,120) byte-identical to the PCSX2-made save, `BASLUS-20152AC04` (19,216; magic `AC04`, size 0x4B10, checksum valid) and `_pcsx2_index` in PCSX2's layout and write order (`icon.sys` 1, `icon1.ico` 2, `BASLUS-20152AC04` 3, `$ROOT` times).
+- New session on that folder: LOAD shows "MISSION 01 / SITTING DUCK, NORMAL", load from File 1, CONTINUE goes to the mission 01 title card.
+- Unit test `folder card: a new card made from scratch has PCSX2's format fields`.
+
+### NS-2. Startup messages
+- Fresh user data without a disc image: the box "AC04 Port - Disc image" shows "No disc image selected", the explanation, "What to do:" with two numbered steps, the supported disc and the settings file, buttons **Select ISO...** and **Quit** (desktop capture; an earlier, longer button label was cut off by the Windows message box and was shortened).
+- Select ISO... (Enter), the path typed into the file picker: log `disc image chosen: …`, `settings.json` `paths.iso` set, the SHA-1 computed (17.9 s), a new memory card created, the game ran to vblank 400 and exited cleanly.
+- Unit test `disc image messages: headline, steps and details in one layout`.
+
+## 2p. Engine flames off the nozzles (2026-10-21)
+
+User report with a PCSX2 screenshot: in the mission 1 opening (mission id 0x25, the close-up of the F-4E nozzles before the launch) the afterburner flames were drawn far from the nozzles.
+
+### EF-1. Cause and fix
+- The flames are pool +0x22C30 flash records (`func_001E43D8`) placed by `UpdatePlayerTrails` 0x00126970 at the engine nodes 0x42 + e: point = body rotation × (node matrix × `one`) + unit position, with `one` = vf0 = (0, 0, 0, 1).
+- Port bug (stack layout, not a game behaviour): the node matrix of the engine loop was at frame +0x70, so its translation row overlapped `one` at +0xA0. `func_00149EC8` overwrote `one` with the node translation t, and the point became R·t + t, about twice the nozzle offset. Logged values at vblank 1950: nozzle offsets (7.2, −2.7, −19.6) and (17.1, −2.7, −12.0) instead of (3.56, −1.80, −9.77) and (8.51, −1.80, −5.97).
+- Fix: the matrix moved to frame +0xD0 (`src/game/player_flight.cpp`; the original keeps it at sp+0x140, apart from vf0 at sp+0x150).
+- Result: `--mission-id 0x25 --mission 1 --pad-script 800:cross --screenshot-at 1950` shows the flame discs inside both nozzles and the haze trailing behind, as in the PCSX2 screenshot. The same path runs in gameplay for every player aircraft (external views), so the flames there move back to the nozzles too.
+- Guest RAM: the flash record positions (effect block +0x22C30) now differ from earlier port runs. Earlier `--hash-log` baselines that cover flames need to be recorded again.
+
+## 2q. Hands-on run from zero and debug overlay test (2026-10-22)
+
+User request before the first release (branch `test`): play from zero to mission 1 gameplay at normal speed and test every debug overlay function and its user experience. Development build (RelWithDebInfo), fresh `--user-data`, no other parameters; 3840×2160 60 Hz display (fullscreen, v-sync, 1×), AMD RX 9070 XT; Xbox One controller connected but unused. Driven with real keyboard and mouse input (Windows `SendInput`), observed through desktop captures (`out/ux/`, not in the repo).
+
+### UX-1. Route from zero (passed)
+- First start: "No disc image selected" box, **Select ISO...**, file picker, image chosen and verified (SHA-1 computed in 7.8 s), new memory card created, game boots.
+- No-save intro (mission id 0x23), title, NEW GAME, NORMAL, opening movie (played to the end), story slides, mission 1 briefing, campaign menu, SAVE to a new file (create, File 1, "Save complete"; folder card files as NS-1), START MISSION, F-4E, weapon, PRESS START, the mission 1 opening (0x25), gameplay: HUD, radio, timer, keyboard flight. A crash into the sea (aircraft left banked with no input) led to the replay and the RETRY / QUIT MISSION / RETURN TO TITLE menu.
+- Second start on the same user data: no box, `verified … (cached result)`, LOAD File 1, CONTINUE, mission 1 title card, briefing (skipped with Start), hangar, gameplay. Both sessions ended with `clean exit`.
+
+### UX-2. Debug overlay functions
+| Function | Result |
+|---|---|
+| `\` toggle (open/close) | works, **until an ImGui text field has been used** (UX-3 a) |
+| Panel checkboxes, × close, collapse, move, resize, wheel scroll | work; × unticks the checkbox |
+| Performance | values live; FPS overlay checkbox works (session only, by design) |
+| Scene | scene/sub-state/flags/counters/mission id correct through intro, menus, briefing and flight; request log scrolls |
+| Memory | hex address, `0x` prefix, symbol name (`g_MissionNo`), "not found" for an unknown name, `-- not RAM/scratchpad --` past 32 MB and at 0x12000000, scratchpad at 0x70000000, bytes/u32/f32, ±0x100 |
+| Session log | lines, colours, filter |
+| Keyboard routing | a focused panel (also right after opening) takes the keyboard; clicking the game image gives it back, then flight keys reach the game with the panels open |
+
+### UX-3. Problems found (a–g fixed 2026-10-22, UX-5)
+a. **Toggle key dead after using a text field.** `imgui_impl_sdl3` calls `SDL_StopTextInput` when an ImGui text field loses focus (backend lines 191–193); the port starts text input only once (`src/platform/window.cpp:28`) and the toggle listens to `SDL_EVENT_TEXT_INPUT`, so after typing in the Memory address or log filter field `\` no longer opens or closes the overlay until restart. Reproduced twice. Fix idea: start text input again after each ImGui frame when it is off.
+b. **No DPI scaling.** At 3840×2160 the panels use the 13 px default font (about 1/5 of the screen width for all four panels); the FPS overlay text is equally small. No `FontGlobalScale`/`ScaleAllSizes` call in `overlay.cpp`.
+c. **Default panel layout overlaps**: the Session log (8, 420) covers the bottom of Performance and the left of Memory (360, 330).
+d. **Truncated columns at default sizes**: Performance lines ("worst 24.36 m…", the texture KiB), the Scene request column (`RequestSubSt…`, the argument only shows after widening), the Memory label column (`g_MissionNo` without the `+offset`); the Scene request table keeps about 8 rows when the window is made taller.
+e. **Log filter is case-sensitive** ("warn" finds nothing, "WARN" finds the warnings).
+f. Memory: rows after a small global are all labelled with it (`g_MissionNo+F8` …), because `symbols.csv` has no sizes; the looked-up address is not highlighted. Mission id is shown in decimal (35 for 0x23).
+g. Opening the overlay gives a panel keyboard focus, so Start/flight keys go to ImGui until the game image is clicked (UX-2 last row): surprising while playing.
+
+### UX-4. Other observations
+- **Renderer warnings in the no-save intro (both sessions):** `texture atlas full for this frame (draws skipped)` and `GS blend equation not mapped (normal alpha blend used)` during the seagull shots; there the Performance panel showed 40–50 fps, GS CPU 34–37 ms, atlas resets rising. Frame times measured during desktop captures are inflated, but the atlas overflow is logged by the renderer itself. Worth a look before the release.
+- First-start polish: the ISO box uses the error icon and the log records `ERROR iso No disc image selected` for the normal first start; while the SHA-1 runs (about 8 s) the window shows the milestone-B test pattern with no progress text; the file picker opens at the top-left of the screen. The window title still reads "AC04 Port".
+- `pad vibration output not implemented yet` with a gamepad connected: no rumble.
+- Not compared with PCSX2 (open): a white band across the hangar MOBILITY row, and the jagged "shattered skies" letters in the no-save intro.
+
+### UX-5. Fixes (2026-10-22, User go-ahead: debugger, intro, texture atlas, renaming, vibration)
+- **Debugger** (`port-features.md` §8.7.1): text input is switched on again after every ImGui frame (UX-3 a); UI scale from the window height with the scalable font (b); a layout without overlaps (c); wider defaults, a request table that fills the window, mission id in hex (d, f); case-insensitive log filter (e); the looked-up memory row highlighted (f); no panel focused when the overlay opens (g). Checked at 3840×2160: panels readable, nothing cut off, Start reaches the game with the panels open, `\` closes and reopens them after typing in the Memory field, "sound" finds the SOUND lines.
+- **Texture atlas**: the seagull frame needs 34 textures (19 of 1024×1024, several 768×512), about 23.2 M texels, more than a 4096² atlas holds; the atlas now grows once to 8192² (`port-features.md` §6) and rebuilt atlases are packed tallest first. Intro run at normal speed: `texture atlas grown to 8192x8192`, no `atlas full`; average recording time unchanged (1.80 ms against 1.86 ms).
+- **Intro blending**: ALPHA 0x54 and 0x56 (and every other equation fixed-function blending cannot express) are blended in the shader from a copy of the target (`../platform/gs-subset.md`, "All blend equations"); no blend warning is logged in the intro any more. Not compared with PCSX2.
+- **Renaming**: the window title, message boxes, log banner and Vulkan application name read "ProjectStonehenge"; the executable and the user data folder kept their old names that day and were renamed the same evening (§2r, RN-1).
+- **Vibration** (`port-features.md` §1): switching VIBRATION off and on in CONTROLLER SETUP sends motors (1, 255) through `scePadSetActDirect` to the Xbox One controller (`port 1: vibration started`). In 2,400 vblanks of mission 1 flight (afterburner, missiles, gun) the game requested no rumble: AC04 rumbles for damage, nearby explosions, stalls and high G, which that flight did not reach. Felt on the pad: to be confirmed by the User.
+- Seen once, not reproduced in four attempts: a fresh-user-data start hung at "verifying disc image 0%" (no CPU, window not responding) while synthetic keys and focus changes were being sent; no debugger was available to take stacks.
+- Build: development and release build clean, `ctest` passes.
+
+## 2r. No-save intro: transitions and stutter; renaming (2026-10-22)
+
+User report: in the no-save intro's in-engine cutscenes with the seagulls, wrong colours cover the picture at the transitions, and the playback stutters. Found with screenshots every 10 vblanks (600–2600), then every vblank, a `--dump-dma-at` capture of a transition frame and the draw list (`tools/research/gsdraws.py`, plus the uploads in stream order).
+
+### IN-1. Orange noise over the picture at the two cloud transitions
+- Vblanks about 1540–1700 and 2270–2420: the screen filled with orange/red banded noise. The frame (capture at 1560) uploads a 200×200 PSMT8 cloud texture to 0x2500 and its palette to 0x3E00 (CT32), then draws large rotating alpha-blended quads of it over the picture (`(Cs−Cd)·As+Cd`, As from the palette's alpha ramp 0–128).
+- The draws' TEX0 has **CPSM 1 (PSMCT24)**, not a documented CLUT format. The port took every CPSM other than 0 and 0xA as CT16 and read the 32-bit palette as 16-bit entries. The GS selects 16-bit entries with CPSM bit 1 (PCSX2's CLUT writers treat CT24 as CT32); fixed in `gs_state.cpp` (`Clut16`): CPSM 1 now reads 32-bit entries with their alpha.
+- Result: white clouds fade in over the feathers and out to the city (first transition) and over the F-22s to the seagulls (second). Not compared with a PCSX2 picture of these frames yet.
+
+### IN-2. Stutter
+- At normal speed only 31 of 101 requested screenshots (vblanks 900–1000) were written: the port presented about 31 frames for 101 game ticks. A per-frame log showed frames 912–929 with 40–50 ms of GS processing and 20–40 ms of recording, 30–50 texture decodes (3–4 M texels) and an atlas restart every frame.
+- Cause 1: triangles decode their whole texture (`gs-subset.md`, S4); the seagull models use T4 textures declared 1024×1024 but in REGION_CLAMP to 16×16 texels, so each draw decoded a million texels. Triangles now decode only the [MIN, MAX] range of a REGION_CLAMP axis (not with mip levels).
+- Cause 2: a decoded texture was keyed by a hash of every GS page in the linear span from its first to its last texel (`RegionHash`): for a 1024×1024 texture that span includes the terrain tiles and cloud textures the intro uploads every frame, so the textures were decoded again every frame. Level 0 is now keyed by the pages under the decoded rectangle only (`GsMemory::RectHash`, pages found on a 32-pixel grid).
+- Result (normal speed, vblanks 0–2600): the run of slow frames at the seagull close-ups (about vblank 912–929, 40–50 ms of GS processing each) is gone; 2,460 frames presented for 2,600 ticks (2,219 before); the atlas no longer needs to grow. 55 frames still take over 15 ms (41 over 25 ms, worst 77 ms), almost all in one stretch: the seagull shot after the second cloud transition (about vblank 2390–2460).
+- Still open there: the terrain below draws many triangles with different 64 × 64 REGION_CLAMP slots of one mipmapped 512 × 512 T8 texture (0x2900), and the game streams new terrain data into that memory between draws: 600–990 of its 1,360 blocks change between consecutive decodes, about 4 full CPU decodes (with mip levels) and atlas uploads per frame. Tried and reverted: decoding only the REGION_CLAMP slot with mip levels (over 1,000 small textures per frame, 230–250 ms per frame), decoding triangles by vertex range (model draws stop merging, about 260 textures per frame), and caching the texel indices across palettes (no measurable gain). The fix would be decoding paletted textures on the GPU (palette applied in the shader, as `gs_conv.comp` already does for frame buffers): a renderer design change for the User to decide. Done the same day (User approval): §2s, the stretch now peaks at 12.5 ms of CPU work per frame instead of 41.
+
+### Regression (`full.json` against `out/runs/baseline_s9`, final build)
+- All 30 RAM checkpoints equal; all 18 missions' screenshots equal.
+- Hash logs differ in the jobs that reach a mission with the player aircraft (front end, mission 3 and 4 routes, mission 4 fire, opening): first difference at the mission 1 opening (vblank 11734, heap 0x00CD0000), the flame records of EF-1 (§2p).
+- Screenshots: card E boot (vblank 600) now shows the narration text "The flames of hatred scorch the skies… Igniting Gaia's funeral pyre." where the baseline had red noise (from the PSMT8 table or the CT24 CLUT fix; which one was not isolated); mission 1 opening (front end 11950): the deck and background behind the aircraft differ slightly (HYPOTHESIS: the glow/depth pass reads frame buffers as PSMT8, S2a-6), not compared with PCSX2; mission 4 route 5300: the known one-pixel column (IR-1).
+
+### RN-1. Renaming finished
+- Executable `ProjectStonehenge.exe` (CMake project and target `ProjectStonehenge`), user data folder `%LOCALAPPDATA%\ProjectStonehenge\` (ADR-005 updated; Linux/macOS names for later: `projectstonehenge`, `ProjectStonehenge`), usage text, comments, docs, rules and the research tools' job files. No migration code (first release); on the User's PC the old folder's `settings.json`, `iso_cache.json` and (empty) `saves\` were moved to the new folder and the old folder with its stale log and a RAM dump was deleted. `ac04::` namespaces, `AC04_` macros and `ac04_*` libraries keep their names (they name the game, User decision 2026-10-22). Two records above (§2o NS-2, §2q UX-4) quote the old window title as it was shown that day.
+
+## 2s. GPU texture decoding, generation-based texture cache, texture images (2026-10-22)
+
+User-approved plan `renderer.md` §2 (all three items). Built: GS textures are decoded on the GPU (`shaders/gs_decode.comp`) from a 4 MiB GPU copy of local memory that `GsState` keeps in step through `TextureOp` (memory blocks, then decodes, in stream order); the decoded-texture cache keeps one entry per texture, valid while the GS blocks it read keep their generations (the page content hashes are gone); one image per decoded texture replaces the atlas. The CPU decoder stays as the reference (`--cpu-texture-decode`, `--verify-texture-decode`).
+
+### GD-1. Correctness
+- Tests: 87 test cases pass (development build). New: a decode stays valid until a block it reads is written (writes elsewhere and rewrites of the same bytes keep it); the GPU ops of a stream that rewrites its texture between draws, replayed on a second memory and decoded there with the reference decoder, give each texture's CPU decode (T8, T4 with CT32 and CT16 palettes, CT32, CT24, CT16, CT16S, with TEXA). The incremental-decode and cache-budget tests were adapted (no atlas slot updates; one entry per key).
+- `--verify-texture-decode` on the six scenes of `renderer.md` §2.5 (no-save intro at 1× and 8×, hangar/shop route, mission 1 opening, mission 1, mission 4 replay): 666,000 GPU decodes, every one byte-identical to the CPU decode. The first run found one difference: the intro samples its Z24 buffer (TBP 0x1500 = FBP 0xA8) as a texture; the CPU decoder had always given 0 for Z formats (an accident of its default branch), the shader the raw word. Both now give 0 explicitly with a log-once warning, so the picture is unchanged; depth sampled as a texture remains unimplemented (`../open-questions.md`).
+- Release build: two command-line tests fail (`determinism options`, `--mission options`): a development-only option with a value (`--replay-input D:/in.ac4i`) counts as two errors in release builds (the option, then its value as an unknown argument). Not related to this change; fixed in §2t.
+
+### GD-2. Regression (`full.json`, run `gpu_1022`)
+- Against last session's final run (`out/runs/final_1022`): all 27 RAM checkpoints and all 6 RAM hash logs identical; 75 of 77 screenshots pixel-identical; `m3_route` and `m4_route` screenshot 5300 differ only in column x = 409 (400 pixels, at most 5 levels): the loading-fade column of IR-1 (host timing).
+- Against `baseline_s9`: the differences listed in §2r (card E narration, mission 1 opening at 11950, hash logs of the jobs with the player aircraft, the x = 409 column), nothing new.
+
+### GD-3. Speed (`renderer.md` §2.7)
+Same six runs as step 1 (§5 there), same conditions (windows not focused); CPU = game tick + GS processing + recording per presented frame.
+
+| Scene | CPU mean | Worst frame | Frames with CPU > 16 ms |
+|---|---|---|---|
+| No-save intro 1× | 9.0 → 6.6 ms | 91.5 → 21.2 ms | 200 → 4 |
+| No-save intro 8× | 10.0 → 7.4 ms | 93.0 → 30.6 ms | 286 → 173 |
+| Hangar/shop route | 4.0 → 3.6 ms | 36.2 → 30.8 ms | 579 → 60 |
+| Mission 1 opening | 9.5 → 8.1 ms | 30.9 → 26.5 ms | 86 → 80 |
+| Mission 1 | 9.0 → 8.4 ms | 34.0 → 35.2 ms | 310 → 300 |
+| Mission 4 replay | 10.7 → 8.2 ms | 39.3 → 20.9 ms | 621 → 245 |
+
+- The intro stretch still open in §2r IN-2 (seagull shot after the second cloud transition, vblank 2390–2460): CPU 14.4 → 9.8 ms per frame on average, worst 41.2 → 12.5 ms.
+- Hangar viewer (vblank 4160–4650): the game cycles several textures through the same memory every frame; without the content hash each return is a new GPU decode (about 158 per frame, before 6 CPU decodes). GS processing 9.1 → 6.5 ms, recording 1.8 → 2.5 ms (per-decode descriptor set and dispatch), CPU 16.8 → 15.3 ms per frame.
+- Remaining frames over 16 ms in the missions and at 8× carry two game ticks (the unfocused windows presented at ~50 Hz, so many frames ran two ticks): game tick 6–13 ms plus GS processing about 7 ms. Not texture work.
+
+## 2t. Release 0.9 preparation (2026-10-22)
+
+- **Development parameters in release builds**: every development-only parameter (23 branches of `command_line.cpp`, among them `--vk-validation` and `--replay-input`) is rejected in release builds and enables nothing. Their values are now skipped (`dev_only`), so `--replay-input D:/in.ac4i` gives one error instead of two; the two release-build test failures of §2s GD-1 are fixed by this. Development and release tests: 87 test cases pass in both.
+- **Version 0.9.0** (`CMakeLists.txt`); `--version`: `ProjectStonehenge 0.9.0 (<commit>, development build)`.
+- **File properties** (`src/platform/win32/version.rc.in`, configured to `build/.../generated/version.rc`): read back from the release executable: CompanyName and ProductName `ProjectStonehenge`, FileDescription `Unofficial native PC port of Ace Combat 04: Shattered Skies`, FileVersion and ProductVersion `0.9.0`, LegalCopyright `Copyright (C) ProjectStonehenge. Licensed under the GNU GPL v3.`, OriginalFilename `ProjectStonehenge.exe`.
+- **Startup image**: until the GS renderer has a frame, release builds show black; development builds keep the test pattern (`Renderer::UploadTestPattern`).
+- **No game data in the executable** (release build, 7.5 MB): no VAG, TIM2, GIM, PS2I or IOPRP signatures and no embedded PS2 ELF; 0 of about 26,000 sampled 64-byte runs of every section of `SLUS_201.52` (code, `.data`, `.rodata`, VU code and data) occur in it. Two 4-byte MPEG start codes in `.rdata` are inside constant tables (not followed by a sequence header). The executable reads all game data from the user's disc image at runtime.
+- **Release folder**: the build writes `ProjectStonehenge.exe` next to build leftovers (`ac04_core.lib`, `ac04_platform.lib`) and a stale `ac04port.exe` from before the rename (2026-10-22 00:50); there is no packaging step yet, so a release archive must be put together by hand from `ProjectStonehenge.exe` (plus `LICENSE`, `THIRD_PARTY_NOTICES.md`, `README.md`).
+- **Packaging step** (User request, same day): `cmake --build --preset release --target package_release` (`cmake/PackageRelease.cmake`) writes `out/release/ProjectStonehenge-0.9.0-win64.zip` with `ProjectStonehenge.exe`, `LICENSE`, `README.md` and `THIRD_PARTY_NOTICES.md` in a `ProjectStonehenge-0.9.0-win64/` folder (3.2 MB; checked by listing the archive). The script refuses other configurations (checked with `--preset dev`) and stops on game-data file names, the VAG, TIM2 and IOPRP signatures and embedded PS2 ELF headers (checked with a test file holding `VAGp`). The stale `ac04port.exe` and every other build leftover under the old name (its intermediate folder, project files, the old solution) were deleted from `build/` (User approval).
+
+## 2u. No-save intro: terrain uploads written block by block (2026-10-22)
+
+User report: stutters remain in the first in-engine cutscene (the no-save intro). Measured with a temporary per-frame probe and `tools/research/sample_profile.py` (development build, normal speed, window not focused):
+- No single game tick needed more than 16.1 ms of CPU, but the end of the intro (vblank 2500–2620) needed about 15 ms per tick (game tick 4.8, GS processing 7.0, recording 3.7 ms), leaving almost nothing for presentation. The profile of that stretch: `GsMemory::WriteImage` alone was about 40 % of all CPU work (about 83 % of GS processing): the game streams terrain tiles into texture memory every frame (about 1.8 MB per frame), written pixel by pixel.
+- Pipeline creation is not a cause: 14 pipelines in the whole intro, 2.4 ms in total.
+- Fix (`gs_memory.cpp`): an upload that arrives in one piece with its rectangle on block boundaries is written block by block (the 256 bytes of a block assembled in the GS layout, compared and stored at once); everything else takes the run loop as before. Same bytes, same changed blocks and generations: new test `GS memory: whole-block image writes equal pixel-by-pixel writes, with the same block changes` (every format, into zeros and over existing contents with some blocks unchanged).
+- Result (same run): `WriteImage` from about 12 % to 3 % of the samples; vblank 2500–2620 at 11.7 ms of CPU per tick on average (GS processing 3.7 ms), worst 14.3 ms; ticks needing more than 13 ms in the whole intro: 151 → 13.
+- Left: recording costs about 3.4 ms per frame in that stretch, mostly in the Vulkan driver's command recording (barriers and render pass changes around frame-buffer reads); reducing it needs the draws grouped differently, a larger renderer change not made before the 0.9 release. The game tick itself (translated code and the VU1 programs) is about 4.7 ms.
+- Version raised to **0.9.1** after this change (User request); the release archive is `out/release/ProjectStonehenge-0.9.1-win64.zip`.
+- **Static C/C++ runtime in Release builds** (User decision, same day): the 0.9.1 release executable imported `MSVCP140.dll`, `VCRUNTIME140.dll` and `VCRUNTIME140_1.dll` (`dumpbin /dependents`), which a clean Windows does not have. `CMakeLists.txt` now sets `CMAKE_MSVC_RUNTIME_LIBRARY` (Release `/MT`; development builds keep `/MD`, `/MDd`) and `CMAKE_POLICY_DEFAULT_CMP0091` before the dependencies are fetched, so every library uses the same runtime. The release executable now imports only Windows system DLLs (KERNEL32, USER32, GDI32, WINMM, IMM32, ole32, OLEAUT32, VERSION, ADVAPI32, SETUPAPI, SHELL32); `vulkan-1.dll` is loaded at runtime by volk, as before. Size 7.56 → 7.90 MB. Release and development tests pass; the release executable started with the ISO and reached the first vsync wait with no warning or error in its log.
+- Regression (`full.json`, run `rel09`, against this morning's `gpu_1022`): all 27 RAM checkpoints and all 6 hash logs identical; 75 of 77 screenshots identical, `m3_route` and `m4_route` screenshot 5300 differ only in the loading-fade column x = 409 (IR-1). Development and release tests pass.
+
+## 2v. QUIT GAME in the main menu (2026-10-22)
+
+User request: a QUIT GAME item after the existing ones in the main menu, built from the same components and style as the other items (like GRAPHICS in SCREEN SETTINGS). Port baseline (`../decisions/port-baseline.md`), `port-features.md` §9.
+
+- Built: `src/game/quit_item.*` and `port:` hooks in `src/game/menu.cpp`: QUIT GAME is appended to column 0 (after OPTIONS) only while the menu tree is built or its cursors are stored (`QuitItemPatch`, the GRAPHICS mechanism); selections are mapped back to the game's ids (`MainMenuSelection`: the later columns' ids shift by one while the item is there). Selecting it fades the menu, the screen and the menu BGM out (0.5 s, port state 9) and then sets `port::Menu().quit`; the main loop ends the session as when the window is closed.
+- Checked with card S and a pad script (before the validation-run rule below): the item is drawn as the sixth item (NEW GAME, LOAD, TUTORIAL, VS MODE, OPTIONS, QUIT GAME), typed in and highlighted like the others; the cursor wraps over it; the help line is empty on it (the help texts are glyph messages of the page's font block, which has no text for it); × on it at vblank 1480 ended the session cleanly at 1511 (`stopped after 1511 vblanks`, `clean exit`).
+- First regression run: RAM changes outside the port area: (1) every menu sound counter one higher after the main menu, because the list widget types a column for as long as its longest item (`UpdateListWidget`) and QUIT GAME (9 characters) was longer than the visible items (8), so one more typing tick played. Fixed: items in the port area do not count toward the typing length (`port_menu::Contains`, `port:` line in `menu_widgets.cpp`); they are still typed in full (typing runs 3 characters past the longest item; NEW GAME, 8 characters, is always shown). (2) Leftovers of the main menu in later checkpoints (`s4_vs`): its menu tree in the freed work-heap object (one more item, the QUIT GAME text pointer 0x01FFFD40, shifted ids) and its draw packets in both packet buffers (0x004D1480, 0x008D1480). Presentation data nothing reads later, but not comparable with PCSX2.
+- Therefore, as the SCREEN RATIO default: QUIT GAME is added only outside validation runs (`port::Boot().quit_item`; development runs with a pad script, an input log, a PCSX2 recording, `--memcard` or `--no-memcard` see the PS2 menu). The session log says which (`QUIT GAME in the main menu: on` / `off (validation run)`); a normal session logs `on`.
+- Regression (`full.json`, run `quit3`, against `rel09`): all 27 RAM checkpoints and all 6 hash logs identical; 75 of 77 screenshots identical, the two route shots at 5300 differ only in the loading-fade column x = 409 (IR-1). Development tests pass.
+
+## 2w. Save texts for a computer (2026-10-22)
+
+User request: the save and load messages mention the console; reword them just enough for a computer ("saving, do not turn off the computer..."). Port baseline (`../decisions/port-baseline.md`), `port-features.md` §10.
+
+- Search (`tools/research/msgscan.py` over every font block of DATA.CDP; glyph codes decoded from the disc: `../subsystems/sound.md` "Text engine"): no message contains "console". The references are "memory card (PS2)" (about 40 messages: save/load page DATA 0xB3, main menu help 0xB0, save menus 0xB1, 0xB2, 0x110, in-mission save 0x14D), the two-line warning "Do not remove memory card (PS2) / or switch off power" (saving, loading, formatting), and "(for PlayStation 2)" / "Do not turn power off" in the hard disk drive texts, which are unreachable in the release (HDD items hidden as on a PS2 without HDD) and stay unchanged.
+- User choice: "memory card (PS2)" becomes "memory card"; "or switch off power" becomes "or switch off the computer".
+- Built: `src/game/pc_texts.*`, called after `IndexMessages` in `LoadFontBlock` (`port:` line): every message just indexed is reworded in guest memory; a shorter one in place, a longer one into a port menu area slot (22-31; one per distinct text and end code) with its message table entry pointing there. The end code is kept (0xFFFF: the next message continues the text). Off in validation runs (`port::Boot().pc_texts`, the QUIT GAME rule); the startup log line names both.
+- Tests: `tests/test_pc_texts.cpp` (messages built with the game's glyph codes: "(PS2)" dropped, the warning line moved and reworded with its end code, the HDD text unchanged, applying twice changes nothing more; off in validation runs). 90 test cases pass (development and release).
+- Live check with the texts forced on for a scripted run (temporary local edit, reverted): main menu, LOAD, card S: the save/load page shows "Accessing memory card... / Do not remove memory card / or switch off the computer" in the game's font.
+- Regression (`full.json`, run `texts2`, against `quit3`): all 27 RAM checkpoints and all 6 hash logs identical; 76 of 77 screenshots identical, `m4_route` 5300 the loading-fade column (IR-1). A first run (`texts1`) still used the forced build: restoring `main.cpp` with its old timestamp (`cp -p`) left it older than the object compiled from the temporary edit, so it was not recompiled; touched and rebuilt before `texts2`. Lesson: restore temporary edits without preserving the timestamp.
+
+## 2x. Defaults: v-sync, FXAA and the internal resolution of the display (2026-10-22)
+
+User request: when there is no saved data yet (no `settings.json`, no saves), start with v-sync on, FXAA and the internal resolution closest to the monitor resolution.
+
+- Built (`src/platform/settings.cpp` `DefaultSettings`, `DefaultInternalScale`): v-sync on at every refresh rate (before: only at 60 / 120 Hz); FXAA; internal scale N with 448 x N lines closest to the display height, 1-8 (720p / 1080p 2x, 1440p 3x, 4K 5x, 8K clamped to 8x; unknown height 1x). The frame cap still takes the highest value at or below a refresh rate other than 60 / 120 Hz (it applies when the player turns v-sync off). These are the defaults wherever the port uses them: no `settings.json` yet (first start), a rejected file replaced with the defaults, missing keys of a file, and the GRAPHICS page's DEFAULT button. An existing `settings.json` keeps its values; saves do not influence the settings defaults.
+- Validation runs (pad script, input log, PCSX2 recording, `--memcard`, `--no-memcard`; development builds only) keep 1x and no anti-aliasing (`SetValidationDefaults`), so their screenshots compare with the baselines. The startup log line names the default scale (`display: 3840x2160, 60 Hz (wider than 4:3); default internal scale 5x`, or `1x (validation run)`).
+- Tests: `tests/test_settings.cpp` updated (v-sync on at every rate with the caps as before, FXAA, 1440p 3x, a file's missing keys on a 4K display 5x) and two new cases (the scale per display height; validation-run defaults). Development and release tests pass.
+- Live check (fresh user-data folder, normal start, 3840 x 2160 at 60 Hz): `settings.json` written with `"vsync": true`, `"internal_scale": 5`, `"antialiasing": "fxaa"`; the renderer started at 5x.
+- Regression (`full.json`, run `defaults1`, against `texts2`): 26 of 27 RAM checkpoints and all 6 hash logs identical; 76 of 77 screenshots identical (`m3_route` 5300: the loading-fade column, IR-1). `s1_cardE` differs in 3 bytes at 0x004121F5 and 0x00412214-15: the raw analog stick bytes of the live pad (that job has no pad script; 0x7C / 0x7B against 0x7F / 0x7E, the same in a rerun in this session), category `input` (`ramdiff-expected-s1.csv`).
+
+## 2y. Sprites at internal scale > 1: native sample point (2026-10-22)
+
+User report (0.9.1/0.9.2 release, 4K, INTERNAL RES. 7X): the "7" of "7X" on the GRAPHICS page drawn with a stray left stroke, like a "П".
+
+- Cause: `gs.frag` flag 26 (2D sprites at N > 1 sample at the UV of their native pixel, `renderer.md` §1 fix 1) took the native sample point as floor(g), g = the host pixel's GS position. A native pixel *n* covers g in [n − ½, n + ½) (fix 9), so the host pixels of its left/top half sampled pixel *n* − 1: every sprite was shifted half a native pixel. The "7" is glyph (0, 90) of the menu font (T4 1024 × 1024, TBP 0x3D40, REPEAT): its left neighbour texel wraps to u = 1023, outside the decoded rectangle, and the clamp to the rectangle took its right edge, a stroke of the "4".
+- Fix: sample point floor(g + ½). Same GRAPHICS page (pad script through OPTIONS → SCREEN SETTINGS → GRAPHICS, vblank 2400) at 7× against 1×, native screenshots: pixels over 16 from 3.47 % to 0.15 % (the rest is the value "7X" against "1X"); the glyph is a 7. 1× is unchanged (the flag is set only at N > 1).
+
+## 2z. Explosions at internal scale > 1 and the sun flare's palette (2026-10-22)
+
+User report (0.9.2, 4K, internal scale 4): explosions of hit aircraft drawn as black squares (fine when the game runs fast-forwarded), and a large square with speckled rings when looking at the sun. Reproduced from the User's input log (`--memcard` copy of the User's card, `--replay-input`, mission 1; not committed: `out/runs/user_1022.ac4i`, `out/cards/user`).
+
+Explosions (black at N > 1, correct at 1×):
+- The flight draws its work page at FBP 0x180 (512 × 128) every frame: CT32 sprites and strips, then the same bytes as CT16S (512 × 256, the page read as CT16S and written back), then CT32 with FBMSK 0xFFFF0000. The explosion debris strips sample it (TBP 0x3000, CT32). The CT16S pass moves bits between pixels; the scaled views, synchronised through native conversions and nearest upscaling, lost the result (black). With the page forced to 1× the debris is correct at 4×.
+- Fix (`gs_vulkan.cpp` `GetTarget`, `DownscaleTarget`): the rule of `renderer.md` §1 row 7. A frame buffer drawn both in the 32-bit layout and in a 16-bit one is held at 1×, all its views; a view already scaled is rebuilt at 1× from its centre host pixels when the second layout appears (logged once: `frame buffer FBP 0x180 drawn in 32- and 16-bit layouts: kept at 1x`). At 4× the debris now matches 1× (vblanks 6400-6430). "Fine when fast-forwarded": the fast-forward shows only every few frames' last draws, so the debris was rarely on screen.
+
+Sun flare (wrong at every scale; not a regression, the port never supported it):
+- Per frame (dump at vblank 7800): the sun sprite is drawn depth-tested against the scene into FBP 0x120 (T4HL, ZTST GEQUAL); 225 points sample that area and add into one pixel of FBP 0x190 (the visible part of the sun); sprites spread it and scale the base palette (CBP 0x3F48) into a 16 × 16 CT32 palette at FBP 0x190; the flare (strip, T8H 128 × 128 at TBP 0x2000) is drawn with CLUT CBP 0x3200 = that palette. The port loaded CLUTs from its local-memory copy, which never holds what the GPU drew: the flare got stale bytes (rainbow rings, opaque square).
+- Fix: `GsState::LoadClut` sees an 8-bit CT32 CLUT load from a frame buffer drawn earlier (and not overwritten by a transfer since) and gives the CLUT the identity (entry i = i), so the texture is decoded to palette indices and stays cacheable; the draw carries the CBP (`DrawCommand::clut_from_frame`). The backend copies the palette's 16 × 16 pixels from the newest 32-bit view at that page (after synchronising other views) into a 16 × 16 image right before the draw, and `gs.frag` (flag 29, binding 4) looks each texel up there before filtering (CSM1 index swizzle). The flare now shows the sun glow without the square at 1× and 4× (vblanks 7700-7950). Only 8-bit CT32 palettes take this path; a 4-bit or 16-bit palette from a drawn buffer is still read from local memory. `--cpu-texture-decode` uses the same path (the lookup is in the shader). A PCSX2 reference of the flare is still to be taken (`../pcsx2/procedures.md`).
+
+Mission title card (User report: frame lines broken at the top left, 4K): the title image on the disc (DATA 0xBC for mission 2, a 544 × 192 T8 image) has no frame lines; the page draws the image, then the menu frame filter, which copies the frame onto itself with a zoom blur. In the User's recording the MISSION 01 card ("SITTING DUCK", vblanks 2330-2600) is clean at 4× at normal speed with this build.
+
+Regression (`full.json`; run folders compared file by file, because `runmany.py --baseline` expects a `--save-baseline` folder):
+- 1× (`clut1`) against `defaults1`: every RAM checkpoint, hash log and screenshot identical except the known ones: `m3_route` / `m4_route` screenshot 5300 in the loading-fade column x = 409 only (IR-1), `s1_cardE` the 3 live-pad bytes at 0x004121F5 and 0x00412214-15 (input class).
+- 4× (`clut1_x4`) against `clut1`: every RAM checkpoint and hash log identical (`m3_route` has one vblank more at exit, identical at every common vblank). Held at 1× by the new rule: FBP 0x180 in every flight, FBP 0x1C0 in mission 3 (its 4× screenshots match 1× up to edge detail: 0.9 % and 1.5 % of pixels over 16).
+
+## 2aa. In-engine cutscenes: ticks per frame with v-sync (2026-10-22)
+
+User report: strong stutters remain in the in-engine cutscenes (no-save intro 0x23, mission 1 opening 0x25). Measured with a temporary per-frame probe in the main loop (tick time, GS processing, `DrawFrame`, pacing, ticks run; development build, window 1920 × 1080 on the 3840 × 2160 / 60 Hz display, internal scale 5, FXAA, v-sync on):
+- Not CPU or GPU load: with v-sync off no frame of the opening needs more than 17.5 ms (tick about 1.7 ms, GS processing 0.65 ms, recording 0.5-0.8 ms on average), and 1× and 5× give the same picture with v-sync on.
+- Cause: the ticks released per frame. With v-sync on, 450 of the opening's 1,552 frames after vblank 850 ran 0 or 2 ticks, in a repeating 1, 0, 1, 2 pattern (vblanks 1170-1215): the CPU is released at irregular times (`DrawFrame` blocks 2, 12, 20, 2 ms in turn, waiting for a swapchain image or a frame in flight), and `TickClock` turned that measured time into ticks. Four frames still took four refreshes, but the picture advanced 1, 0, 1, 2 ticks: a visible judder at 15 Hz.
+- Fix (`sce::RefreshSnap`, `main.cpp`): with v-sync on, each frame counts as one refresh of the window's display (`SDL_GetCurrentDisplayMode`, exact rational rate, read again every 60 frames). The difference from the measured time is carried and paid out in whole refreshes once it passes one refresh (a refresh really missed), so the total follows the host clock and the game speed is unchanged (the 59.94 / 60 Hz difference still gives one frame without a tick about every 17 s). V-sync off is unchanged. New test `refresh snap: one refresh per frame despite jitter, missed refreshes paid out`.
+- Result: opening 2 of 1,552 frames with other than one tick (was 450); no-save intro 9 of 1,840, all at two single slow frames.
+- Those two frames (vblanks 1335 and 1874, 120-140 ms in `DrawFrame`) came only in the first run after the shader was rebuilt; three more runs had none. Neither target creation nor recording nor the fence wait took over 30 ms (temporary logs). HYPOTHESIS: the driver compiling the changed pipelines the first time each is used (it keeps them in its own cache afterwards), so a player sees such a hitch once per new effect after installing a new version. A pipeline cache of our own would need a new file in the user data folder: for the User to decide.
+- Regression (`full.json`, run `snap1`, against `clut1`): every RAM checkpoint, hash log and screenshot identical except `m4_route` 5300 in the loading-fade column x = 409 (IR-1).
+
+## 2ab. Depth copy for the cloud pass; SPU2 reverb (2026-10-22)
+
+User request after the review of unimplemented features: build the Z buffer read as a texture and the reverb.
+
+### ZC. Z buffer drawn into another Z buffer
+- What the game does (no-save intro first at vblank 1335, step capture at 1336; mission 12): a sprite reads the scene's Z buffer (ZBP 0xA8, TBP 0x1500, PSMZ24 texture) at half size (UV 0-512 × 0-448 over 256 × 224) into FBP 0x150 with a Z24 frame format; FBP 0x150 is then the Z buffer (ZTST GREATER, DATE) of small alpha strips drawn into the half-resolution buffer FBP 0x128 (mission 12: into the work page FBP 0x180). The port read the texels as 0, so those strips were never hidden behind nearer geometry.
+- Built (`gs_vulkan.cpp` depth copy, `shaders/gs_depth_copy.frag`): a textured sprite whose texture is a Z format at a Z buffer the renderer knows, drawn into a frame buffer that is itself a known Z buffer, is a depth copy: the destination owner's depth image gets the source owner's depth image, sampled at the native texel under each pixel (nearest, the source's internal scale honoured) and moved between Z formats by 2^(bits difference). Colour is not written. Z buffers tested in a frame are now registered before its draws, so the copy works in the first frame. Target depth images are created with the sampled usage. A Z-format texture in any other draw is not drawn (logged once); the CPU and GPU decoders still give 0 for Z formats.
+- Checked: Vulkan validation layer clean over the intro's first two cloud transitions; the copy runs every frame of them (source FBP 0 at 1×, destination FBP 0x128 / mission 12 FBP 0x180, same Z format). Screenshots every 8 vblanks over both intro transitions (vblanks 1300-1460, 1840-2000) and mission 12 at 2000 / 3000 are byte-identical with and without the copy: in these frames the strips are small (x 0-9, y 150-177 in the capture) and in front of the scene anyway. A PCSX2 comparison of a frame where they pass behind geometry is still to be taken.
+
+### RV. Reverb
+- What the game does (`SOUND.IRX` disassembled from its symbol table; `../subsystems/sound.md` corrected): command 6 `set_reverb_mode(core, mode)` = `sceSdSetEffectAttr` with mode | 0x100 (clear the work area) and depth 0 (0x5E0); command 7 `set_reverb_depth(core, l, r)` = `sceSdSetCoreAttr(EFFECT_ENABLE, 1)` and EVOL L/R (0x628); commands 8 / 9 `set_reverb_on` / `set_reverb_off(voice)` set or clear **the voice's** VMIXEL / VMIXER switch bits (0x6A4 / 0x75C; the voice is the signed byte at +5): the per-sound reverb flag (request +0x1C bit 1, `func_0021D0C8`), not a per-core switch. The game uses mode 2 (studio A) on core 1 at depth 10000 (menus) and mode 3 (studio B) on core 0 with an altitude-dependent depth (flight).
+- Presets: libsd's table in the disc's `IRX/LIBSD.IRX` at 0x4224, ten modes of 0x44 bytes (32 registers in the PS1 layout, then 4 more bytes; mode 1 is the well-known room preset, mode 9 pipe). Read from the ISO at startup like other game data (the image's SHA-1 is verified, so the offset is fixed; the loader also checks room's first two registers).
+- Built (`spu_mixer.*`, `iop_services.cpp`): one effect unit per core: input = the core's voices with the reverb bit (after their volume), the PS1 / SPU2 reverb formula (same-side and cross reflections, four combs, two all-pass stages) at 24 kHz with left and right on alternate samples, 39-tap half-band FIR down- and upsampling, work area in sound RAM from the core's ESA to EEA (cleared on a mode change), output × EVOL added to the core's mix. Echo / delay parameters (modes 7, 8) are not modelled (logged; the game does not use them). Presentation only: the voice status the game reads is unchanged.
+- Checked: new tests `mixer: reverb only for voices sent to an enabled effect unit` and `mixer: reverb presets are found only at the libsd table`; audio dumps with and without the presets: menu sounds differ by 600-1,300 RMS where they play, the music (no reverb bit) is identical, a hit sound's tail decays (283 → 20 → 0.7 RMS per second), no clipping. A PCSX2 audio capture to compare levels is still to be taken.
+
+Regression (`full.json`, run `rz1`, against `snap1`): every screenshot, RAM checkpoint and hash log identical except `m3_route` / `m4_route` 5300 (column x = 409, IR-1) and `s1_cardS`, the job without a pad script: the live controller's stick bytes 0x004121F4-F7 and 0x00412214-17 (input class). No warning in any session log (the Z-texture warning is gone).
+
+## 2ac. Frame interpolation (2026-10-22)
+
+User request: build the frame interpolation of ADR-002 (approved baseline). Design and limits: ADR-002 "Implementation (2026-10-22)"; feature: `port-features.md` §2.
+
+- How (`platform/render/frame_interpolator.*`, `vu1/vif1.*`, `main.cpp`): while interpolation is active the VIF records every VU1 program run of a step (output range in the step's GIF stream, program, entry, TOP/ITOP, absolute VU qwords 0-63 and the TOP-relative input: fixed block and vertex records). Runs of the newest step are matched with the step before by key: model programs (A, B, C, E) and the glow program (D) by the guest address of their vertex records plus occurrence; terrain cells (T) by cell origin, vertex count and class. Each presented frame rebuilds the newest step's GIF stream with every matched run executed again on its recorded VU memory, the matrices blended at the clock's alpha (models: screen, clip and normal matrices; terrain: camera matrices and position; glow: node matrix); the rest of the stream (2D, HUD, effects the EE projects, unmatched runs) is the newest step's. That copy replaces the newest step in the renderer (the same GS register and local-memory changes); earlier steps of the same frame are processed without drawing.
+- Guards: a run whose projected origin moves more than 160 pixels between the steps is not blended; a terrain cell that moves that far marks a camera cut (the step is shown unblended); a node that turns more than 25° (the propellers, 30-60° per step) has only its position blended (it stays on its parent with the newest orientation).
+- Active only when it helps: the setting `presentation.frame_interpolation` (default on), more than 62 presented frames per second (v-sync: the display's refresh rate; otherwise the frame cap), not in validation runs (pad script, input log, PCSX2 recording, `--memcard`, `--no-memcard`: their screenshots compare with PCSX2) and not while fast-forwarding. At 60 Hz nothing changes.
+- Found on the way: in flight the game uses the VIF double buffer (BASE 128, OFST 448: TOP alternates 128 / 576); the menus keep TOP 0 (`../subsystems/vu-programs.md` corrected).
+- Checked: a rebuilt stream at alpha 1 is byte-identical to the step (temporary check, 301 flight steps of the User's recording, 168,502 runs, 0 differences), so the recorded VU memory is complete. 562 of 565 runs of a flight step are matched. Your recording at vblank 6440 (bomber after the hit) with alpha fixed at 0, 0.5 and 1: the bomber moves smoothly, the HUD is the newest step's, the propellers stay on the engines. No-save intro in a normal session (no input, empty user data, v-sync off, cap 144): no warning, 4,687 frames for 2,700 steps (2,689 with interpolation off), no visible artifacts in 12 screenshots; the first run after a rebuild dropped 83 ticks (pipeline compilation and screenshot readbacks), a second run none.
+- Cost (mission 1, 1×, per frame): with a step 11.0 ms (tick 4.4, stream and GS processing 4.1, recording 2.5), without a step 5.7 ms: about 2 frames per step on this PC (120 Hz holds; 144 Hz about 130). A step's own GS pass is skipped when its blended copy replaces it.
+- Not blended (ADR-002): 2D and HUD, effects and particles the EE projects itself (smoke, sparks, the sun and its flare: they follow the newest step), SMV movies.
+- Regression (`full.json`, run `fi1`, against `rz1`; validation runs keep interpolation off): identical except the known `m3_route` / `m4_route` 5300 column and `s1_cardS` live stick bytes. Tests: `settings: frame interpolation`.
+
+### FI-1. Hangar: flickering dark rectangles (User report, 0.9.3, v-sync off, no cap, 8×)
+- Reproduced with interpolation on (mission 3 route, hangar at vblank 4450-4600, v-sync off, cap 360), not with it off, at 1× and 8× alike. The other marks in the report (the row of boxes after the red cross, MOBILITY and MSSL washed out by the windows, the blocky floor reflection) are in the PCSX2 picture too (`Slices/Slice4/s4_hangar_a.png`).
+- Three causes, found by blending one program at a time (only B and C produced it), alpha forced to 0 and 1, and a byte comparison of the copy with the step it replaces (equal):
+  1. In frames that caught up several steps (the hangar at 360 fps: up to 4), the earlier steps were processed without drawing, assuming the newest step redraws everything. The hangar keeps what earlier steps drew in its frame buffers: those parts went stale (the dark panels). Earlier steps are now always drawn; only the newest is replaced by its blended copy.
+  2. Repeated meshes (the hangar's wall panels: one mesh, many places) were paired by their order in the step; when the order changed, a panel was blended halfway to its neighbour. Runs with the same key are now paired with the unused candidate whose screen matrix is closest.
+  3. A node whose origin is behind the camera (large walls) failed the jump guard and stayed unblended while coplanar parts were blended (depth fighting). The guard now applies only when both origins project; the pair is chosen by the closest matrix anyway.
+- Performance: the hangar has about 5,000 program runs per step and 7 ms of GS processing per step; with interpolation it dropped 119 ticks in 600 (259 frames). Steps with more than 2,000 runs are no longer blended (flight: 550-850), and a frame that catches up more than one step adds no blended copy. (The 2,000-run limit was removed again on 2026-10-23, §2ad: mission 1 flight steps have 2,200-2,600 runs, so it switched interpolation off there.) Hangar afterwards: 0 ticks dropped, 658 frames (706 with interpolation off); mission 1: every run with output matched, 3,468 frames for 2,500 steps, 0 dropped; no-save intro session: 4,414 frames for 2,700 steps, 0 dropped.
+
+## 2ad. Frame interpolation speed; explosions at 7× (2026-10-23)
+
+User report (0.9.3, 4K display, 8×, SMAA, v-sync off, cap 360): interpolation gives very low frame rates; and are explosions at 7× the same as at 1×? Runs from the User's mission 1 input log (`--mission 1 --replay-input`, recorded with `--mission 1`; a copy that switches to missiles with SELECT at vblank 6360 and fires every 30 vblanks from 6380, `out/fi2/fire_m.ac4i`, not committed). New development parameter `--frame-interpolation on|off` (`command-line.md`), new log lines: frames at normal speed and blended copies (main), GPU wait per frame (renderer).
+
+### FI-2. Speed
+
+Mission 1, vblanks 6300-7500 at normal speed, 8×, SMAA, fullscreen 3840 × 2160, v-sync off, cap 360, RX 9070 XT. CPU-bound throughout (GPU wait under 0.1 ms per frame with interpolation).
+
+| Build | fps | blended frames | notes |
+|---|---|---|---|
+| interpolation off | 113-116 | - | |
+| 0.9.3 changes of §2ac FI-1 (2,000-run limit) | 95-107 | 54 of 1,912 | mission 1 steps have 2,224-2,589 runs: almost never blended, but the runs were still recorded |
+| limit lifted, otherwise unchanged | 56 | 954 of 1,129 | 172 frames had to catch up 2+ ticks |
+| + run logs reused | 84 | 1,680 of 1,683 | |
+| + blended copy built on 4 threads | 96.5 | 1,929 of 1,932 | build 1.49 → 0.70 ms |
+| + repeated texture uploads skipped | 99 | 1,982 of 1,985 | GS processing 6.0 → 5.3 ms per frame |
+
+Hangar (mission 3 route, vblanks 4400-5000, same settings): 80 fps with interpolation (795 of 801 frames blended), 163 without; 0 ticks dropped either way.
+
+- **Run logs reused** (`sce_host.h` `gs_runs_pool`, `libgraph.cpp`, `main.cpp`). The VIF records about 4 MB of VU memory per flight step for the interpolator; each step got a new log grown from empty and freed afterwards. In the profile (`tools/research/sample_profile.py`) the vector growth and page faults (`_Insert_counted_range`, `RtlAllocateHeap`, `NtFreeVirtualMemory`) under `Vif1::RunProgram` were 7.5 % of all samples, more than the GS processing (5.4 %) and over three times the VU1 programs they record (2.2 %). Finished logs now go back to a pool with their capacity, as the GS step buffers already did.
+- **Parallel build** (`frame_interpolator.cpp`). Every repeated run starts from its own recorded VU memory, so the runs are independent: up to 3 helper threads (when the CPU has more than 4 hardware threads) and the main thread each repeat a quarter of them into per-run buffers, which are then joined in stream order. The output is the same bytes as before. The marks are shifted with a binary search instead of a scan per mark.
+- **Repeated uploads skipped** (`gs_memory.cpp` `WriteImage`). A packet of an image transfer that repeats the last packet written at the same place (BITBLTBUF, TRXPOS, TRXREG, start pixel and size) with the same bytes, while every block it wrote still has the generation it had after that write, would store bytes the blocks already hold, so it is skipped. Exact: block generations change on every write that changes a byte. Flight steps upload about 1 MB of textures (mostly T8) in about 670 packets; 73 % of the packets are now skipped; the rest are real changes (texture slots reused within a step). Each blended copy repeats its step's uploads, so this helps interpolation most.
+- **2,000-run limit removed** (`frame_interpolator.cpp`). It was added for the hangar's dropped ticks (§2ac FI-1); with the changes above the hangar keeps up.
+- Checks: guest RAM hash log identical at all 7,600 vblanks with interpolation on and off (8×, SMAA). Screenshots of 141 vblanks (6600-8000) identical byte for byte to the build before these changes at 1× and at 7× (interpolation off). Hangar at vblanks 4450-4600 with interpolation on: no dark panels (FI-1), only the expected small motion differences against interpolation off. `ctest`: passed.
+- Remaining cost per blended frame: GS processing of the whole step (5.3 ms) and the Vulkan command recording (2.6 ms) on the main thread. Moving `SubmitGsSteps` and `Record` to a render thread (`renderer.md` §2.2) would be the next step; not done.
+
+### EX-1. Explosions at 7× against 1×
+
+- Native screenshots (the 7× image box-averaged to 512 × 448) of the same vblanks at 1× and 7×, AA off: missile run vblanks 6600-8000 every 10 (141 frames), the User's original recording 4500-8100, the mission 1 opening (mission id 0x25) 920-4000, the no-save intro (0x23) 300-3000. Mean absolute difference 0.0-2.1 levels per channel, at most 0.94 % of pixels differing by more than 48 (vblank 6630: falling UGBM bombs a few pixels in size, thinner at 7×).
+- Missile hit on the TU-95 at vblank 7376 and the burning bomber at 7400: compared in crops of the 7× image against the 1× image enlarged 7×. The burst has the same size, place and colours; at 7× it is sharper. Fire and smoke match. The fix of §2z (work page FBP 0x180 kept at 1×) holds at 7×.
+- Not covered: a kill explosion close to the camera (none in these runs).
+
+## 2ae. Invalid guest reads; mission 6 crash (2026-10-23)
+
+User report: a session (development build of §2ad, 8×, interpolation on) with many `guest invalid read` errors and a crash in mission 6. The session log (saved to `out/m6crash/`, not committed) has 821 invalid reads and ends with exception 0xC0000094 (integer divide by zero).
+
+### IR-1. Light colours read as pointers (fixed)
+
+- The reads come in bursts of fading values (e.g. 0x180A1B35, 0x170A1B35, … 0x02000205): colours being darkened from frame to frame and used as addresses. They also occur in the attract-mode demos (title screen left idle; `--memcard` with a copy of the User's card, `--fast-until 40000`): 221 reads, the first at the same addresses as in the User's session.
+- A stack capture on the first reads (temporary, removed) gave `func_001483A0` (player aircraft, `aircraft_models.cpp`): light 2 of the model pass took its colour as `word (word A+0x70)[p]`, a pointer to a table. The original reads `lw a2, 0x70(A + 4p)` (0x001490DC, 0x00149604) and `lw a2, 0x78(A + 4p)` (0x00149238, 0x0014984C): the colours are words in A itself, after the two light vectors at A+0x50/A+0x60. The port read the colour, then used it as an address: light 2 got colour 0 (address outside RAM) or some unrelated RAM word. Both sites fixed; rendering.md corrected.
+- Only the light-2 colour of the player aircraft's model passes changes (drawing only). The demo run now has 0 invalid reads; `ctest` passed.
+
+### CR-1. Mission 6 crash (not reproduced)
+
+- Crash in `func_00252C30` (radio chatter, `radio_chatter.cpp`): the period u16 at header +2 (header = word 0x004BA300) was 0. The original has a `break 7` for a zero divisor at 0x00252D74, so on the PS2 the same state would also stop the game: the header or its pointer was overwritten earlier.
+- About 1.4 s before, one burst of invalid reads: 10 one-byte reads at 0xFA13E7A0…0xFFFB0999, then reads of 8 and 4 bytes from 0x02050008 up through every 64 KiB page to 0x03D40008, then 0x3CA00058. This looks like a loop that ran with a garbage count or pointer and walked from inside RAM to past its end, and probably overwrote RAM on the way (writes inside RAM are not logged). No invalid writes were logged.
+- Not related to IR-1 (those are reads only). Mission 6 idle for 50,000 vblanks (`--mission 6`) did not reproduce it; it needs the User's flight. The log does not say which function made the reads; the next step is an input recording of a session that shows it (`--record-input`), or the caller in the invalid-access log line.
+
+## 2af. Mission 6 report (2026-10-23)
+
+User report from campaign mission 6 (mission id 5: `GetMissionId(0, 6)`, table 0x00384800), compared with PCSX2: (1) explosions differ at 8×; (2) no QUIT GAME after a save is loaded (the campaign menu, page 5); (3) after a landing, rearm and takeoff the game does not go back to the mission; (4) after the landing the camera keeps shaking with the aircraft standing still; (5) terrain textures broken at times (low over the city).
+
+### TO-1. Takeoff after a rearm (fixed)
+
+- `func_0017AC68` sub 0x1A: the original resets the counter +0x27C while aircraft +0x188 bit 0x20000000 (all three wheels on the ground, `player_flight.cpp`) is set and adds K = *0x0040EC14 (1/60) while it is clear (0x0017ADB4-0x0017ADEC: `beql` on the masked bit stores 0); above 5, i.e. 5 s in the air, it requests sub 0x1B (success: radio 0x11 "Altitude restrictions canceled", fade, sub 0xB). The translation had the two branches swapped: the counter grew only while rolling on the runway and was reset at lift-off, so in the air sub 0x1A stayed until its timer (0xE10 frames) ran out. Branches swapped back. Checked by the User in the game (2026-10-24) and in the replay of the User's recording: sub 0x1B and the return to the mission at vblank ~13300.
+
+User recording 2026-10-24 (port, development build, 8×, interpolation on): mission 6 from the User's save (card unchanged since 2026-10-23 22:35, copy in `out/m6crash/card`), a kill, landing, rearm, takeoff, quit to the campaign menu; 14,301 vblanks, `out/m6rec/input.ac4i` (not committed). It replays in sync to the end (`--memcard` copy of the card, `--replay-input`).
+
+### VB-1. Vibration and camera shake after the landing (fixed)
+
+- User report: once landed the controller keeps vibrating (and, report of 2026-10-23, the camera keeps shaking: its strength is the pad vibration level, `func_00257360`).
+- Temporary per-tick log of the vibration slots in the replay: from touchdown to the rearm menu a kind 0 slot (curve kind, limits *0x00410464 / *0x00410468 = 0.2 / 0.8) ran every tick with the value 1 at full strength (120).
+- Kind 0 is requested by `UpdatePlayerAircraft` (`player_flight.cpp`) with the air-brake level P+0x24C, which rises to 1 at idle throttle. The original skips the request while P+0x188 bit 0x40000000 (a wheel on the ground) is set (0x0011FD7C-0x0011FD8C: `nor`, `and`, `beql` to the skip): the air-brake vibration runs only in the air. The translation requested it only on the ground. Fixed; after the fix both motors are 0 from touchdown (sub 0x16) on, and the takeoff roll (sub 0x1A) vibrates by speed as before.
+- TO-1 and VB-1 are the same mistake: a bit test written `(~x & m) == 0` whose taken `beql` branch is the *skip*. Every other `(~x & m) == 0` site in `src/game` that acts on the bit (20 sites: `FlightPlayFrame`, `FlightSimStep`, `RunMissionEvents`, 0x0011A3D8, the landing subs 0x0017A1B8, 0x00126758, `UpdatePlayerSound` 0x001270B8, 0x00128090, `UpdateGroundUnit`, `DetectAIEvents`, ...) was compared with its branch in the disassembly: all match.
+
+### EX-2. Explosions at 8×
+
+- Mission 1 missile run of §2ad EX-1 at 8× against 1× (`--fast-until` past the screenshots so they land on the vblank asked for): 0.08-0.10 % of pixels differ by more than 48 at vblanks 7370-7400, the TU-95 hit included. The difference the User sees is specific to mission 6; not reproduced yet.
+- Note: screenshots taken after `--fast-until` has ended can show an older step at 8× (the HUD clock 3 ticks behind): compare only screenshots inside the fast-forward range.
+
+### EX-3. Explosion fire missing at every internal scale (fixed)
+
+- User report with a PCSX2 picture: an aircraft destroyed in mission 6 explodes in an orange fireball in PCSX2; in the port only debris and black smoke. Replay of the User's recording at 1×: the same, so not a scaling problem (EX-2 compared 7× / 8× with 1×, never with PCSX2).
+- The game spawns the explosion (kind 0x81 hit, 0xC1 kill: type 1 of the table *0x002B856C, with debris) and `func_001F1678` draws its 8 particles in two passes: smoke (colour 0x030105, ALPHA (Cs-Cd)·As+Cd, texture rows 64-127) and fire (colour 0x437DFF, additive, rows 0-63) from the 512 × 128 CT32 work page at TBP 0x3000 (FBP 0x180).
+- The work page is drawn every frame by `func_001EEBE0` in GS context 2: glow strips, then a copy with RGBAQ 0x4000, then the page read as CT16S with region-repeat clamp U & 0x3F7 (each 32-bit word's low half copied into its high half: B := R, A := G), then R and G set to 0x80 with FBMSK 0xFFFF0000. Result: RGB (0x80, 0x80, 0), alpha = the glow shape.
+- Port bug (`effect_draw.cpp`): the SCISSOR_2 values of these passes were translated as 0x7F01FF0000 / 0xFF01FF0000 (SCAY0 0x7F, SCAY1 0): an empty box, so the port drew nothing into the page and the fire sampled stale local memory (the city's textures; the smoke looked right because it is nearly black). The original builds them as `lui 0x7F; dsll 16; ori 0x1FF; dsll 16` = 0x007F000001FF0000 (0x001EED14, 0x001EFFB4, 0x001F0628). The same slip in the large-smoke overlay `func_0020D258` / heat haze `func_0020DE08` (0x01BF000000FF0000, 0x01BF000001FF0000: 0x0020D3D4, 0x0020DA34, 0x0020DFCC), which therefore never drew either. Six constants fixed. Found by reading the page back from the GPU (temporary): `used_height` 0, every draw rejected by its scissor.
+- After the fix: the fireball at the hit and the kill (vblanks 6290-6440) and burning debris, as in the PCSX2 picture. A temporary log of every draw with an empty scissor over the whole 14,301-vblank replay found none left.
+- Still to compare: a PCSX2 frame of the same explosion (the GS dump `gameplay_attacking_bombers_explosions_hud` has no close explosion, and its memory image holds no GPU-drawn page).
+
+### QG-1. QUIT GAME in the campaign menu
+
+- User clarification 2026-10-24: the menu without QUIT GAME is the campaign menu (START MISSION ... LOAD) reached after quitting a mission. QUIT GAME added as its last item, after LOAD (port-features §9). Checked with QUIT GAME forced on in a scripted run (temporary): the item is typed in with the others, the help line is empty on it and the next item's help is typed again, selecting it fades out and ends the session (31 vblanks after the press).
+- Also fixed in both menus: after QUIT GAME, moving back to the item shown before it left the help line empty (`SetMessageBoxText(-1)` keeps the shown message id); the port line now resets it.
+
+### Not reproduced yet
+
+- (2) QUIT GAME (resolved by QG-1, kept for the record): User clarification: it is missing from the main menu (NEW GAME, CONTINUE, LOAD, TUTORIAL, VS MODE, OPTIONS) after coming back from a mission. Not reproduced (QUIT GAME forced on for these scripted runs with a copy of the User's card, temporary change removed): present after LOAD from the main menu; after `--mission 1`, QUIT MISSION, campaign menu, OPTIONS > TITLE, START; and the same with `--frame-interpolation on` (the menus get no blended copies). Every builder of the main menu tree (`MainMenuSetup`, the cursor stores) applies `QuitItemPatch`. Needs the User's route.
+- (4) camera shake (resolved by VB-1, kept for the record): its strength is the pad vibration level (`func_00257360`: strong motor D_00411888, else weak D_00411880), so a vibration left running would also shake the camera. The vibration tick `func_00257890` matches the original instruction by instruction; the ground roll request (kind 3) scales with the ground speed P+0x130, which is clamped to exactly 0 at a standstill, and the ground model resets P+0x2DC/P+0x2E0 (kinds 8, 9) to 1. Needs the landing.
+- (5) terrain: mission 6 flown straight (`--mission 6`), vblanks 1200-4200, 1× against 8×: at most 0.09 % of pixels differ, nothing broken. Needs the low flight over the city.
+
+## 2ag. Second mission 6 crash (2026-10-24)
+
+User report: in mission 6 an enemy subtitle turned black (normally red) a few seconds before the game crashed. No input recording of that session; the session log (development build with §2af, 8×) is saved in `out/m6crash2/` (not committed).
+
+### CR-2. What the log shows
+
+- 13.9 min into the mission (log 935.8 s): 15 one-byte accesses in one frame at addresses made of two halfwords (0x1F710101, 0x0D5A0028, ...): a byte loop following broken pointers. Then the black subtitle (the subtitle colour comes from the speaker class of the request, `func_00252B88`).
+- 948.8 s: two-byte accesses at 0xFFFD1BBD, 0xFFFE0001, 0xFFFF0001, then accesses walking up through every 64 KiB page from 0x02000008 (the end of RAM) to 0x0C6D0000 (29,015 one-byte, 1,253 four-byte, 470 eight-byte); the log ends there (the game stopped responding or was closed). The one-byte addresses are floats plus 0x98 (0x45F19898 = 7731.0 + 0x98, 0x3F800098 = 1.0 + 0x98, 0xC33E0098 = -190.0 + 0x98) and strings plus small offsets: a loop reading pointers from a table and a byte at +0x98 from each, run past the table into float data and on past the end of RAM.
+- That matches the per-unit loops over `Unit(i)` (table 0x002A1F70) with the count `W(W(0x00410640))`, e.g. `UpdateUnitStates` 0x0011BE30, which **writes** 0 to every `Unit(i) + 0x98`: with a garbage count it zeroes a byte at every word-as-pointer + 0x98 in RAM. This also explains the first crash (CR-1: the radio header 0x004BA300 overwritten after the same kind of walk) and the black subtitle (radio request data hit). Writes through `GRef` to an invalid address were logged as "read", which hid that these loops write.
+- The unit count is only written at mission load (`flight_units.cpp`), so something else overwrites the count or the list pointer 0x00410640 first. Not found: the User's earlier recording continued from after the takeoff with neutral input (`out/m6rec/cont.ac4i`, 70,000 more vblanks) shows no invalid access (the aircraft is shot down within a minute and the replay loops); mission 6 idle (CR-1) neither.
+- Audited on the way: `func_00252C30`'s ring store and its threshold selection match the original.
+
+### Diagnostics added
+
+- `GuestMemory::ReportInvalid` (`src/common/guest_memory.cpp`): the line now says `read`, `write` or `access (read or write)` (a `GRef` / `ps2ptr` reference, which the caller may write), and ends with `from` and the host return addresses (`ProjectStonehenge.exe+0x...`, up to 6, `platform::DescribeCallers` in `src/platform/win32/crash_win32.cpp`), symbolised with the PDB: `python tools/research/symbolize.py <exe> --log <session.log>` (the exact build that wrote the log). Still once per 64 KiB page. Test: `guest memory: an invalid page is logged once, with the kind of access and the host caller`.
+- Next step: a session that shows it again, with this build and preferably `--record-input` (a copy of the saves folder taken before playing, so the replay starts from the same card).
+
+## 2ah. Third mission 6 crash: the track stream runs into the radio header (2026-10-25)
+
+User session with the §2ag build and `--record-input` (36,507 ticks; log, recording and the card copy in `out/m6crash3/`, not committed). The log has one invalid access, a two-byte access at 0xFFFD1DCF from `func_00251050` (`radio_chatter.cpp`), then the crash: integer divide by zero in `func_00252C30` (`rem = frame % period`, period read through the same garbage bank pointer) about 540 s into the mission.
+
+### CR-3. Cause
+
+- The replay (`--memcard <card copy> --replay-input out/m6crash3/input.ac4i`) reproduces the crash exactly.
+- New research tool `tools/research/watch_guest.py`: runs the port under a minimal debugger and sets x64 hardware write breakpoints on guest addresses (host stack symbolised from the PDB, optional RAM dump at hit N). No port changes. Run with `python -P` (the local `tools/research/dis.py` shadows the standard `dis` module).
+- Watching 0x004BA300 (the radio header copy: word 0 = bank header pointer) gives 2 writes at mission load (the header copy) and then, at the crash, 2 more from **`func_0024CDD0`** (`flight_sequences.cpp:801-802`): the position stores of the once-a-second track block.
+- `func_0024CBE0` starts the track stream at 0x0043A300; `func_0024CDD0` appends one block per mission second (status +0x28 counts frames, the block is written when it is a multiple of 60): `{1, second}`, then a 4-byte record per tracked unit of kind 2/3 and a 16-byte record per other tracked unit, and a 0 terminator. The stream has no bound check (neither has the original); 0x80000 bytes after its start lie the radio header (0x004BA300) and the message pointer table (0x004BA570).
+- RAM at the first write to 0x004BA200 (`--dump`): 540 blocks with 110 records in second 0 and 83-94 later, about 970 bytes per second, so the buffer was full after 9 minutes (mission 6's limit is 15 minutes, rules +0x14 = 54,000 frames).
+- **PCSX2 (run 13 of `../pcsx2/sessions.md`)**: mission 6 to 1'54" before the end with no overrun; 7 units in second 0 (the player and units 44-49), 22-37 later; 227 KB used after 785 s. The port recorded exactly the units the original skips.
+- **Cause: an inverted test in the translation.** The unit test at 0x0024CFE8 is `nor v0, zero, flags`, then `and` with 0x10000000 and `andi v0, v0, 0x2000`, both on `~flags`: a unit is skipped when bit 0x10000000 **or bit 0x2000** is clear. The translation skipped units with bit 0x2000 set (the old comment said "not 0x2000"). Applied to the PCSX2 state, the original's test gives the 34 units that the PS2 recorded in its last block.
+- This explains all three mission 6 reports: the overrun wrote over the radio header and message pointers (black subtitle: a speaker class read from overwritten request data; CR-1: header overwritten; CR-2: the garbage pointers then fed other loops, with a wrong unit count, that wrote around RAM until the game hung).
+
+### Fix and verification
+
+- `src/game/flight_sequences.cpp` `func_0024CDD0`: `(~flags & 0x2000u) != 0` (skip without bit 0x2000), comment corrected. `ctest --preset dev` passes.
+- The User's recording replayed with the fix to vblank 37,500 (past the old crash): no invalid access, no crash; 0x004BA300 written only at mission load. The units recorded in seconds 0, 1 and 30 are the same as in the PCSX2 session (other inputs); later they differ with the targets destroyed. About 280 bytes per second (250 KB for 15 minutes).
+- Ghidra: plate comment on `func_0024CDD0` (logged).
+- Lesson for translations: `nor` followed by several `and`/`andi` tests means every test is on the inverted flags.
 
 ## 3. Recommendations
 

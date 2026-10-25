@@ -1,0 +1,503 @@
+{
+ "_comment": "Full regression suite (no --freeze-sim): screenshots, RAM checkpoints and RAM hash logs of the front end, movie, routes, the 18 missions and a replayed gameplay run. Baseline: --save-baseline out/runs/baseline_full. Logic regression: every RAM checkpoint and hash log must equal the baseline; at another internal scale (--extra-args \"--internal-scale N\" --shots-only) too. Set AC04_ISO to the disc image.",
+ "suite": "full",
+ "exe": "build/windows/src/RelWithDebInfo/ProjectStonehenge.exe",
+ "iso": "",
+ "memcard": "out/cards/S",
+ "args": [],
+ "timeout": 1200,
+ "jobs": [
+  {
+   "name": "s1_cardS",
+   "args": [
+    "--dump-ram-at",
+    "0x00261378",
+    "--screenshot-at",
+    "300,450,600",
+    "--hash-log",
+    "--exit-at",
+    "800",
+    "--fast-until",
+    "800"
+   ]
+  },
+  {
+   "name": "s1_cardE",
+   "memcard": "out/cards/E",
+   "args": [
+    "--dump-ram-at",
+    "0x00261378",
+    "--screenshot-at",
+    "300,450,600",
+    "--exit-at",
+    "800",
+    "--fast-until",
+    "800"
+   ]
+  },
+  {
+   "name": "s1_nocard",
+   "memcard": "",
+   "args": [
+    "--no-memcard",
+    "--pad-script",
+    "320:cross",
+    "--dump-ram-at",
+    "0x00261378",
+    "--screenshot-at",
+    "250,450",
+    "--exit-at",
+    "600",
+    "--fast-until",
+    "600"
+   ]
+  },
+  {
+   "name": "s2a_menu",
+   "args": [
+    "--pad-script",
+    "1200:start,1450:cross",
+    "--dump-ram-at",
+    "0x0022D748",
+    "--screenshot-at",
+    "720,1376,1996",
+    "--exit-at",
+    "2000",
+    "--fast-until",
+    "2000"
+   ]
+  },
+  {
+   "name": "s3_movie",
+   "args": [
+    "--pad-script",
+    "1200:start,1500:cross,1700:cross",
+    "--screenshot-at",
+    "2036,2960,4000",
+    "--hash-log",
+    "--fast-until",
+    "4000",
+    "--exit-at",
+    "4010"
+   ]
+  },
+  {
+   "name": "s4_frontend",
+   "args": [
+    "--pad-script",
+    "700:start,850:cross,950:cross,1166:start,1438:cross,9918:start,10844:cross,11300:cross,11500:cross,11700:cross",
+    "--dump-ram-at",
+    "0x00235AB8",
+    "--screenshot-at",
+    "1232,5094,8100,9925,10861,11000,11950",
+    "--hash-log",
+    "--fast-until",
+    "11990",
+    "--exit-at",
+    "12000"
+   ]
+  },
+  {
+   "name": "s4_vs",
+   "args": [
+    "--pad-script",
+    "1200:start,1500:down,1530:down,1560:down,1620:cross,2300:right",
+    "--dump-ram-at",
+    "0x0023C708",
+    "--screenshot-at",
+    "2180,2540",
+    "--exit-at",
+    "2600",
+    "--fast-until",
+    "2600"
+   ]
+  },
+  {
+   "name": "s4_shop",
+   "args": [
+    "--pad-script",
+    "1200:start,1500:down,1560:cross,1800:cross,1950:cross,2150:up,2200:cross,2600:start,3100:start,3600:start,3800:down,3830:down,3900:cross,4100:cross,4600:cross,4800:cross,5200:triangle",
+    "--dump-ram-at",
+    "0x00233F10",
+    "--screenshot-at",
+    "4700,6360",
+    "--fast-until",
+    "6390",
+    "--exit-at",
+    "6400"
+   ]
+  },
+  {
+   "name": "m3_route",
+   "args": [
+    "--pad-script",
+    "1200:start,1500:down,1560:cross,1800:cross,1950:cross,2150:up,2200:cross,2600:start,3100:start,3600:start,4200:cross,4700:cross,5000:cross,5400:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "5300,5500,6500,7500",
+    "--hash-log",
+    "--fast-until",
+    "7500",
+    "--exit-at",
+    "7510"
+   ]
+  },
+  {
+   "name": "m4_route",
+   "args": [
+    "--pad-script",
+    "1200:start,1500:down,1560:cross,1650:down,1680:down,1710:down,1800:cross,1950:cross,2150:up,2200:cross,2600:start,3100:start,3600:start,4200:cross,4700:cross,5000:cross,5400:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "5300,5500,6500,7500",
+    "--fast-until",
+    "7500",
+    "--exit-at",
+    "7510"
+   ]
+  },
+  {
+   "name": "m4_fire",
+   "args": [
+    "--mission",
+    "4",
+    "--replay-p2m2",
+    "out/runs/b3_combined.p2m2",
+    "--hash-log",
+    "--screenshot-at",
+    "1500,2500,3500,4500,6000",
+    "--fast-until",
+    "6000",
+    "--exit-at",
+    "6010"
+   ]
+  },
+  {
+   "name": "opening",
+   "args": [
+    "--mission-id",
+    "0x25",
+    "--mission",
+    "1",
+    "--pad-script",
+    "800:cross",
+    "--screenshot-at",
+    "1200,1800,2400",
+    "--hash-log",
+    "--fast-until",
+    "2400",
+    "--exit-at",
+    "2410"
+   ],
+   "known": "screenshots only: with --fast-until the frames before the settle window are not drawn, so which frame buffers the renderer has seen (and whether the field copy is recognised) depends on host timing; a shot can show the 224-line display buffer. RAM and hashes are unaffected"
+  },
+  {
+   "name": "mission01",
+   "args": [
+    "--mission",
+    "1",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission02",
+   "args": [
+    "--mission",
+    "2",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission03",
+   "args": [
+    "--mission",
+    "3",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission04",
+   "args": [
+    "--mission",
+    "4",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission05",
+   "args": [
+    "--mission",
+    "5",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission06",
+   "args": [
+    "--mission",
+    "6",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission07",
+   "args": [
+    "--mission",
+    "7",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission08",
+   "args": [
+    "--mission",
+    "8",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission09",
+   "args": [
+    "--mission",
+    "9",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission10",
+   "args": [
+    "--mission",
+    "10",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission11",
+   "args": [
+    "--mission",
+    "11",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission12",
+   "args": [
+    "--mission",
+    "12",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission13",
+   "args": [
+    "--mission",
+    "13",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission14",
+   "args": [
+    "--mission",
+    "14",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission15",
+   "args": [
+    "--mission",
+    "15",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission16",
+   "args": [
+    "--mission",
+    "16",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission17",
+   "args": [
+    "--mission",
+    "17",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  },
+  {
+   "name": "mission18",
+   "args": [
+    "--mission",
+    "18",
+    "--pad-script",
+    "800:cross,900:cross,1000:cross,1100:cross,1200:cross,1300:cross,1400:cross,1500:cross,1600:cross,1700:cross",
+    "--dump-ram-at",
+    "0x0010A230",
+    "--screenshot-at",
+    "2000,3000",
+    "--fast-until",
+    "3000",
+    "--exit-at",
+    "3010"
+   ]
+  }
+ ]
+}

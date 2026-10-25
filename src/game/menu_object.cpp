@@ -1,4 +1,4 @@
-// Menu 3D objects and light sets (render module; docs/port/s4-inventory.md §3): the aircraft models
+// Menu 3D objects and light sets (render module; docs/port/slices.md §A.3): the aircraft models
 // of the hangar and the aircraft viewer. A menu object (0xD0 bytes) holds a model instance, its
 // world matrices, the VU1 program packet it draws with, a texture and optional extras (glow model,
 // effect list); DrawMenuObject builds its VIF1 packets with EmitModelInstance (model.cpp).
@@ -29,12 +29,6 @@ namespace ac04::game {
 using guest::GRef;
 
 namespace {
-
-void Put(u32 p, u32 i, u32 v) { GRef<u32>(p + 4 * i) = v; }
-
-void CopyQword(u32 dst, u32 src) {
-    for (u32 i = 0; i < 16; i += 4) GRef<u32>(dst + i) = GRef<u32>(src + i);
-}
 
 // RGBA bytes of `rgba` as floats (cvt.s.w of each byte: gcc's unsigned conversion, whose
 // halve-and-double path is never taken for bytes) scaled by 1/128.

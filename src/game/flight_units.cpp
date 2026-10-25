@@ -1,7 +1,7 @@
 // Units of a mission (block A of S5): the unit list (*0x00410640), the 255 unit records
 // (0x002A1F70[i], 0xA0 bytes), their placement from mission block 22 (SetupMissionUnits) and the
 // per-kind state records (player 0x4C0, AI aircraft 0x110, ground 0xD0). docs/subsystems/
-// mission-load.md "SetupMissionUnits" and "Callees of SetupMissionUnits"; random reads:
+// mission-flow.md "SetupMissionUnits" and "Callees of SetupMissionUnits"; random reads:
 // docs/game/random.md (one NextRandomFloat per path-kind-4 ground unit, one per aircraft unit).
 //
 // `sqc2 vf0` stores VU0 vf0 = (0, 0, 0, 1.0).
@@ -16,19 +16,11 @@ namespace ac04::game {
 
 using guest::GRef;
 
-
 namespace {
 
 u8 Game(u32 i) { return GRef<u8>(g_GameState().addr + i); }
 u32 Unit(u32 i) { return GRef<u32>(0x002A1F70 + 4 * i); }
 u32 UnitCount() { return GRef<u32>(g_UnitList()); }
-
-void StoreVf0(u32 p) {
-    GRef<u32>(p + 0) = 0;
-    GRef<u32>(p + 4) = 0;
-    GRef<u32>(p + 8) = 0;
-    GRef<u32>(p + 12) = 0x3F800000;
-}
 
 void StoreZeroQword(u32 p) {
     for (u32 o = 0; o < 16; o += 4) GRef<u32>(p + o) = 0;

@@ -1,0 +1,89 @@
+#version 450
+// GS texture decode (docs/port/renderer.md §2.3): one rectangle of a decoded texture (gs_state.h
+// DecodeRect) from the GPU's copy of GS local memory into the texture's image, texel for texel what
+// DecodeOnCpu (src/platform/render/gs/gs_state.cpp) gives: the texel's address from its format's
+// page table (the GsMemory layout, docs/platform/gs-subset.md), its raw bits, and its colour
+// (palette for the paletted formats, TEXA for CT24 and CT16).
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(std430, binding = 0) readonly buffer Memory { uint m[]; } mem;     // 4 MiB local memory
+layout(std430, binding = 1) readonly buffer Tables { uint t[]; } tables;  // gs_vulkan.cpp BuildConvTables
+layout(std430, binding = 2) readonly buffer Palette { uint c[]; } pal;    // 256 RGBA8 entries
+layout(binding = 3, rgba8) uniform writeonly image2D dst;
+
+layout(push_constant) uniform Params {
+    int psm;
+    int bp;  // blocks
+    int bw;  // 64-pixel units
+    int su, sv;  // first texel
+    int w, h;    // texels
+    int dx, dy;  // where in the image
+    int texa;    // TA0 bits 0-7, AEM bit 15, TA1 bits 16-23
+} pc;
+
+// Offsets of the tables in the buffer (as gs_conv.comp).
+const uint kFwd32 = 0u;              // CT32 page 64x32 -> word in page
+const uint kFwd16 = kFwd32 + 2048u;  // CT16 page 64x64 -> halfword
+const uint kFwd16S = kFwd16 + 4096u; // CT16S
+const uint kFwd8 = kFwd16S + 4096u;  // T8 page 128x64 -> byte
+const uint kFwd4 = kFwd8 + 8192u;    // T4 page 128x128 -> nibble
+
+const uint kMask = 0x3FFFFFu;  // 4 MiB
+
+uint Byte(uint a) {
+    a &= kMask;
+    return (mem.m[a >> 2] >> ((a & 3u) * 8u)) & 0xFFu;
+}
+
+void main() {
+    ivec2 g = ivec2(gl_GlobalInvocationID.xy);
+    if (g.x >= pc.w || g.y >= pc.h) return;
+    uint x = uint(pc.su + g.x), y = uint(pc.sv + g.y);
+    uint bp = uint(pc.bp), bw = uint(pc.bw);
+    int psm = pc.psm;
+    // Raw value as GsMemory::ReadRect gives it.
+    uint raw;
+    if (psm == 0x13) {  // T8: page 128x64, bw / 2 pages per row
+        uint page = (x >> 7) + (y >> 6) * (bw >> 1);
+        raw = Byte((bp + page * 32u) * 256u + tables.t[kFwd8 + (y & 63u) * 128u + (x & 127u)]);
+    } else if (psm == 0x14) {  // T4: page 128x128; the table holds the nibble number
+        uint page = (x >> 7) + (y >> 7) * (bw >> 1);
+        uint n = (bp + page * 32u) * 512u + tables.t[kFwd4 + (y & 127u) * 128u + (x & 127u)];
+        raw = (Byte(n >> 1) >> ((n & 1u) * 4u)) & 0xFu;
+    } else if (psm == 0x02 || psm == 0x0A) {  // CT16, CT16S: page 64x64
+        uint page = (x >> 6) + (y >> 6) * bw;
+        uint a = (bp + page * 32u) * 256u + tables.t[(psm == 0x0A ? kFwd16S : kFwd16) + (y & 63u) * 64u + (x & 63u)] * 2u;
+        raw = Byte(a) | Byte(a + 1u) << 8;
+    } else {  // 32-bit layout: CT32, CT24 and the high-bit palette formats T8H, T4HL, T4HH
+        uint page = (x >> 6) + (y >> 5) * bw;
+        uint a = ((bp + page * 32u) * 256u + tables.t[kFwd32 + (y & 31u) * 64u + (x & 63u)] * 4u) & kMask;
+        raw = mem.m[a >> 2];
+    }
+    uint ta0 = uint(pc.texa) & 0xFFu, ta1 = (uint(pc.texa) >> 16) & 0xFFu;
+    bool aem = (pc.texa & 0x8000) != 0;
+    uint rgba;
+    if (psm == 0x13) {
+        rgba = pal.c[raw & 255u];
+    } else if (psm == 0x1B) {
+        rgba = pal.c[raw >> 24];
+    } else if (psm == 0x14) {
+        rgba = pal.c[raw & 15u];
+    } else if (psm == 0x24) {
+        rgba = pal.c[(raw >> 24) & 15u];
+    } else if (psm == 0x2C) {
+        rgba = pal.c[raw >> 28];
+    } else if (psm == 0x02 || psm == 0x0A) {
+        uint a = (raw & 0x8000u) != 0u ? ta1 : ta0;
+        if (aem && (raw & 0x7FFFu) == 0u) a = 0u;
+        rgba = ((raw & 0x1Fu) << 3) | (((raw >> 5) & 0x1Fu) << 11) | (((raw >> 10) & 0x1Fu) << 19) | (a << 24);
+    } else if (psm == 0x01) {
+        uint a = (aem && (raw & 0xFFFFFFu) == 0u) ? 0u : ta0;
+        rgba = (raw & 0xFFFFFFu) | (a << 24);
+    } else if (psm >= 0x30) {
+        rgba = 0u;  // Z buffer sampled as a texture: not implemented, 0 (as DecodeOnCpu)
+    } else {
+        rgba = raw;
+    }
+    imageStore(dst, ivec2(pc.dx, pc.dy) + g, unpackUnorm4x8(rgba));
+}

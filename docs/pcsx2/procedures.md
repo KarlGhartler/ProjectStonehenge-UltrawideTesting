@@ -1,8 +1,21 @@
 # Pending PCSX2 checks
 
-Checks that need the original game running in PCSX2 2.8.2, ordered by importance. Results go into a new `sessions-NN.md` file (latest: `sessions-12.md`); answered checks are removed from this list. Save states contain game memory: keep them in the save-state folder outside the repo (`*.p2s` is never committed).
+Checks that need the original game running in PCSX2 2.8.2, ordered by importance. Results go into a new run section of `sessions.md` (latest: run 13); answered checks are removed from this list. Save states contain game memory: keep them in the save-state folder outside the repo (`*.p2s` is never committed).
 
 General: open the debugger with **Debug → Open Debugger**. "Execute breakpoint" = Breakpoints tab → New → Execute, address as given. "Memory watch" = Memory view, go to the address, and read the value while the game runs or is paused.
+
+## R. References for the renderer and sound work of 2026-10-22 (one session, about 45 minutes)
+- **Purpose:** compare the features built from code alone with the original: the sun flare's palette drawn on the GPU (`../port/validation.md` §2z), the depth copy of the cloud pass (§2ab ZC), the reverb (§2ab RV), the mission title card (§2z), and the memory card exchange with the port (`../formats/folder-memcard.md`).
+- **Blocks:** nothing; the port runs without them. They decide whether the new code needs corrections.
+- **Preparation:** Internal Resolution **Native**, PNG screenshots "Internal Resolution (Aspect Uncorrected)", 4:3, GS dumps **Uncompressed**, save states **Uncompressed**. Files into `Slices/Reference_1022/`.
+- **Steps:**
+  1. **Sun flare** (any campaign mission in daylight; mission 1 is fine): turn towards the sun until the flare rings show. Screenshot + GS dump (`r1_flare_full`). Then fly so that the sun is half behind a bomber or a cloud: screenshot + GS dump (`r1_flare_partial`). Save a state at each (`r1_flare_full.p2s`, `r1_flare_partial.p2s`).
+  2. **Depth copy, no-save intro:** boot with no AC04 save in slot 1 (as section 1 run A). When the first cloud transition starts (about 22 s into the in-engine intro, right after the seagull shots), take a GS dump of 3 consecutive frames (`r2_intro_cloud_1` … `_3`) and screenshots. If possible repeat at the second transition (about 31 s).
+  3. **Depth copy, mission 12:** any frame of free flight in mission 12 (campaign save or free mission): GS dump + screenshot (`r3_m12`).
+  4. **Reverb:** with audio recording on (Tools → Start Video Capture, which records the sound too; or the audio dump option of the build), record (a) 15 s of the main menu moving the cursor up and down and opening/closing OPTIONS, (b) 30 s of flight in mission 1 or 4 including a missile launch and a hit. Files `r4_menu`, `r4_flight`.
+  5. **Mission title card:** finish mission 1 (or load a state just before its end) and let the game reach the MISSION 02 title card ("IMMINENT THREAT"): screenshots at its start, while it zooms in, and when it stands (`r5_title_1` … `_3`).
+  6. **Memory card round trip:** (a) copy the port's save folder `%LOCALAPPDATA%\ProjectStonehenge\saves\BASLUS-20152AC04` into a PCSX2 folder memory card, load it in PCSX2 and check the campaign progress and options; save once in PCSX2. (b) Copy the folder back into a copy of the port's `saves\` and load it in the port (give me the folder; I run the port side). Note anything that differs.
+- **Record:** the state and dump names, what was on screen, and for step 6 what loaded correctly on each side.
 
 ## S7. Slice 7 batch: results screen and post-mission menu (one session, about 30 minutes; can follow C2)
 - **Purpose:** reference data for scene 5 (results) and the post-mission menu (`../subsystems/results-startup.md` "Scene 5"), translated 2026-10-18 in `src/game/results_scene.cpp` and `src/game/post_mission_page.cpp`. The port cannot reach the results screen on its own yet: a `--mission` start diverges from PCSX2 (its RNG and heap differ), so replaying `b3_m4_full.p2m2` over it does not complete mission 4 (tried 2026-10-18). Hence test vectors and screenshots.
@@ -18,7 +31,7 @@ General: open the debugger with **Debug → Open Debugger**. "Execute breakpoint
 - **Record:** the mission played, the rank shown, which pages appeared after the results (story movie or not), anything unusual.
 
 ## S5-C. Slice 5 block C batch: sequences, replay, title demo, carrier, game over (one session, about 75 minutes)
-- **Purpose:** reference data for block C (cutscenes and in-engine sequences, replay and title demo, carrier landing/takeoff, game-over and rearm menus; `../port/s5-plan.md` §7): recordings that start from save states, with checkpoint states the port compares RAM against.
+- **Purpose:** reference data for block C (cutscenes and in-engine sequences, replay and title demo, carrier landing/takeoff, game-over and rearm menus; `../port/slices.md` §B.7): recordings that start from save states, with checkpoint states the port compares RAM against.
 - **Blocks:** validation of block C only. Documentation and translation go on meanwhile. Section 1 below (VU0 skinning vectors) belongs to this batch too; do it in the same session if it is still open.
 - **Preparation:** as for S5-B (states uncompressed, Internal Resolution Native, PNG screenshots, 4:3, pad 2 not connected, Enable Recording Tools on, GS dumps uncompressed). Files into `Slices/Slice5c/`. Recordings start exactly as in S5-B ("How a recording starts"): load the state paused, Tools → Input Recording → New, "Record from: Current frame / Save state", resume. Checkpoint states are named with the recording frame number shown by PCSX2.
 
@@ -46,7 +59,7 @@ Execute breakpoint **0x0010B500** (sub-states 0xD–0xF); at the first hit save 
 - **Record:** per recording the file name, the checkpoint state names, which path was taken (C3: landing retries; C4: crash place), anything unusual.
 
 ## S5-B. Slice 5 block B batch: gameplay recordings, test vectors, effect frames, HUD, sound (one session, about 90 minutes)
-- **Purpose:** reference data for block B (flight, AI, mission rules, weapons, effects, HUD, mission sound; `../port/s5-plan.md` §6): input recordings the port replays with full-RAM checkpoints, entry/exit states of the riskiest functions (test vectors), GS dumps of effect-heavy frames, HUD pictures and a sound capture.
+- **Purpose:** reference data for block B (flight, AI, mission rules, weapons, effects, HUD, mission sound; `../port/slices.md` §B.6): input recordings the port replays with full-RAM checkpoints, entry/exit states of the riskiest functions (test vectors), GS dumps of effect-heavy frames, HUD pictures and a sound capture.
 - **Blocks:** validation of block B only. The port work (documentation, then translation) goes on meanwhile.
 - **Preparation:** as for S5-A (save states uncompressed, Internal Resolution Native, PNG screenshots "Internal Resolution (Aspect Uncorrected)", 4:3, pad 2 not connected, Enable Recording Tools on) and **GS dump compression: Uncompressed** (Settings → Graphics → Debug/Advanced; the S5-A dumps came as `.zst` twice). Files into `Slices/Slice5b/`. Keep `s5_m3_start.p2s` and `s5_m4_start.p2s` from run 12: every recording starts from them.
 - **How a recording starts (all of B1-B4):** load the state (`System → Load State` from file), leave it **paused** (it is at the breakpoint 0x0010A230; remove the breakpoint), then Tools → Input Recording → **New**, "Record from: **Current frame / Save state**", file name as given. Then resume and play. The recording's frame 0 is the anchor. Stop with Tools → Input Recording → Stop.
@@ -93,7 +106,7 @@ Tools → Start Video/Audio capture (as for the S3 movie capture), during missio
 
 ## 1. VU0 micro skinning reference data: part types 0 and 3
 
-- **Purpose:** test vectors for the two VU0 skinning paths not yet captured. Path 0x00225110 (part type 1) was captured in run 05 (`sessions-05.md`) during the opening sequence before mission 1, where the other two paths never ran.
+- **Purpose:** test vectors for the two VU0 skinning paths not yet captured. Path 0x00225110 (part type 1) was captured in run 05 (`sessions.md` run 05) during the opening sequence before mission 1, where the other two paths never ran.
 - **Blocks:** verification of the cutscene character engine only. Not the skeleton, not gameplay.
 - **Background:** `FUN_002236A0` skins each character part by its type (+0x140): type 0 → `FUN_00224180` → loop 0x002250E8; type 1 → `FUN_00224410` → loop 0x00225110; type 3 → `FUN_00224848` → loop 0x00225140. Type 0 comes from the character data; type 3 is set only while a morph track is active (`FUN_00223F58`). The other in-engine sequences are the **no-save intro** (mission id 0x23, plays at boot when the card has no AC04 save) and the **sequence after mission 18** (id 0x24).
 - **Preparation:** save states set to **Uncompressed**. For run A, a PCSX2 memory card **without** an AC04 save in slot 1 (a new empty card, or eject the card: Settings → Memory Cards → uncheck slot 1).
@@ -110,13 +123,13 @@ Tools → Start Video/Audio capture (as for the S3 movie capture), during missio
   5. If neither run hits an address, write that down: that path is then unused in the shipped data and only needs the code-level rewrite check.
 - **Record:** which run, the address, a0–a3, ra and the state names.
 
-Answered in runs 11 and 12 (`sessions-11.md`, `sessions-12.md`, 2026-10-17): the S5-A batch (calibration recording, mission start of missions 1, 3 and 4). Answered in run 05 (`sessions-05.md`): carrier takeoff after a rearm (subs 0x19–0x1B, 0x1D), VU0 skinning path 0x00225110.
+Answered in runs 11 and 12 (`sessions.md` run 11, `sessions.md` run 12, 2026-10-17): the S5-A batch (calibration recording, mission start of missions 1, 3 and 4). Answered in run 05 (`sessions.md` run 05): carrier takeoff after a rearm (subs 0x19–0x1B, 0x1D), VU0 skinning path 0x00225110.
 
 Answered without PCSX2 (static analysis, see `../open-questions.md`): HUD warning texts, DATA 291–332 / BD 2 loaders, mission data for other aircraft, trial follow-up, result mode names.
 
 ## 2. Boot values at the first `SceneStep` (skeleton milestones C and E)
 
-**Answered 2026-10-12** (owner: `scenestep_first.p2s` at the breakpoint, `scenestep_first_2.p2s` about 10 s later). `frame_count` = 0 at the breakpoint. Values: reverb address 0x001DB7C0 (was assumed 0x001FE0C0, fixed); voice states all 0 at the breakpoint and 4 for voices 42–47 at 10 s; TOC `04 02 F2 00 86 72 … 01 02 01 00 00 03 00 00 00 1D 7C 0F` (bytes 0x0C–0x17 were missing, fixed); GParam `01 00 02 00 01 00 1B 00` and radio timers as assumed. Full comparison: `../port/validation.md` E-1. The procedure below is kept for reruns.
+**Answered 2026-10-12** (User: `scenestep_first.p2s` at the breakpoint, `scenestep_first_2.p2s` about 10 s later). `frame_count` = 0 at the breakpoint. Values: reverb address 0x001DB7C0 (was assumed 0x001FE0C0, fixed); voice states all 0 at the breakpoint and 4 for voices 42–47 at 10 s; TOC `04 02 F2 00 86 72 … 01 02 01 00 00 03 00 00 00 1D 7C 0F` (bytes 0x0C–0x17 were missing, fixed); GParam `01 00 02 00 01 00 1B 00` and radio timers as assumed. Full comparison: `../port/validation.md` E-1. The procedure below is kept for reruns.
 
 - **Purpose:** check four values the port's SDK layer currently assumes (`../port/validation.md` C-2), and give milestone E its reference RAM image.
 - **Blocks:** nothing in milestone C (the boot runs with the assumed values); milestone E's RAM comparison needs the save state.
@@ -132,3 +145,13 @@ Answered without PCSX2 (static analysis, see `../open-questions.md`): HUD warnin
      - 0x003FAAA0: 0x10 bytes (GS GParam: interlace, omode, ffmode, version);
      - 0x004BE0B0: 0x10 bytes (radio timers from the static constructor 0x002596F8).
 - **Report:** the save state name, `frame_count` at the breakpoint (word at 0x0029F3A8 = MainContext 0x0029F380 + 0x28), and the values above.
+
+## Functions waiting for a PCSX2 answer (formerly `pcsx2/procedures.md`)
+
+User rule (2026-10-16, `../port/slices.md` §B): a function that cannot be translated with confidence from the code alone is not guessed. Its translation is skipped (or done with the open point marked `// HYPOTHESIS:`) and logged here. The User collects the answers in the next PCSX2 batch (this file).
+
+| Function | Question | What to capture | Status |
+|---|---|---|---|
+| `func_00116060` 0x00116060 (star corner projection, `../subsystems/sky.md`) | The MAC-flag read at 0x0011609C (`cfc2 v0, $17`, `andi 0x11`) follows `vmulq.xyz vf9`; PCSX2 has no GameDB patch for it. Does it ever return −1 there (stars behind the camera), i.e. does PCSX2 clear the w flags of a `.xyz` op? | Breakpoint at 0x001160A4 during a night mission with stars visible (mission with R+0xC0 bit 1): record `v1` (= flags & 0x11) over a few hits, plus a GS dump of the frame. Expected (HYPOTHESIS): always 0. | open |
+| `func_001152D8` 0x001152D8 (cloud sprites, `../subsystems/sky.md`) | vf2 is loaded with `qmtc2` from a GPR whose low 64 bits come from `ld W+0xB0`; the upper 64 bits (vf2.z, vf2.w) are whatever the GPR held before. The translation assumes 0 (HYPOTHESIS), which makes the sprite depth that of the projected centre. | Breakpoint at 0x001155EC in a mission with clouds (R+0xC0 bit 2): record the full 128-bit `v0` and, after the `qmtc2`, VU0 `vf2` over a few hits. Expected: z = w = 0. | open |
+| `func_00113D70` 0x00113D70 (animated cloud texture) | The corner dwords take their z / w halves from VU0 vf15, which the function never writes (left by the last `func_00114ED8` call or other VU0 code). The port carries vf15 in its host VU0 state; only the RAM checkpoint is affected (GS: ZTST always, Z masked). | Breakpoint at the function entry in a cloud mission: record VU0 `vf15`; compare with the port's value at the same frame. Only needed if the RAM checkpoint shows a difference in the cloud packet. | open |

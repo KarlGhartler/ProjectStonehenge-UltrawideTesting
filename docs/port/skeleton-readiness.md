@@ -22,7 +22,7 @@ Names: Ghidra names (`../symbols.csv`). `(H)` = hypothesis (plate comment only).
 | crt0 + main + main loop | 6 | 6 | 0 | 0 |
 | Init sequence in `main` | 17 | 14 | 3 | 0 |
 | Bump allocator | 6 | 6 | 0 | 0 |
-| Scene system | 6 + 8 handlers | 6 | — | handlers: `../game/scenes.md` |
+| Scene system | 6 + 8 handlers | 6 | — | handlers: `../game/boot.md` |
 | File pipeline (CD queues, TBL/CDP) | 23 | 23 | 0 | 0 |
 | Per-frame helpers: DMA/display | 9 | 8 | 1 | 0 |
 | Per-frame helpers: pads + USB joystick | 26 | 24 | 2 | 0 |
@@ -107,7 +107,7 @@ Order and roles (also in `../game/boot.md`):
 | 0x00100AF8 | `SetRequestFlags` | understood | |
 | 0x00100B08 | `SetReturnScene` (H) | understood | dead (`dead-code.md`) |
 | 0x001008B0 | `SceneBootLoader` (H) | understood | first scene; leads to scene 6 startup |
-| 0x0029FDA0 table | 8 handlers | see `../game/scenes.md` | |
+| 0x0029FDA0 table | 8 handlers | see `../game/boot.md` | |
 
 ## 5. File pipeline
 
@@ -171,7 +171,7 @@ SDK: `scePadInit/PortOpen/Read/GetState/GetReqState/InfoMode/SetMainMode/InfoAct
 
 ## 8. Sound RPC client (SOUND.IRX, RPC 0x81000101)
 
-All are EE game code and are translated. The IOP side is HLE (ADR-004 B, `../subsystems/iop-sound.md`).
+All are EE game code and are translated. The IOP side is HLE (ADR-004 B, `../subsystems/sound.md`).
 
 | Address | Name | Status |
 |---|---|---|
@@ -180,7 +180,7 @@ All are EE game code and are translated. The IOP side is HLE (ADR-004 B, `../sub
 | 0x00218F18 | `UpdateSoundRpc` | understood (reply records 6 / 10 / 0xF) |
 | 0x00217578 / 0x00217888 / 0x002178F0 / 0x00217960 | `QueueSoundVoiceCmd` / `QueueSoundCmd8/12/16` | understood |
 | 0x00217A48 / 0x00217A88 / 0x00217BF8 / 0x00217F28 | voice table init / status update / `AllocSoundVoice` / request-id renumbering | understood |
-| 0x002174D0, 0x002181E8, 0x002183E8, 0x002187B0, 0x00218620, 0x00218318, 0x00218008, 0x0021D138, 0x0021E058, 0x0021E240 | voice command builders (key on, set attr, key off, find by request id) | understood; 72-byte record layout matches `../subsystems/iop-sound.md` |
+| 0x002174D0, 0x002181E8, 0x002183E8, 0x002187B0, 0x00218620, 0x00218318, 0x00218008, 0x0021D138, 0x0021E058, 0x0021E240 | voice command builders (key on, set attr, key off, find by request id) | understood; 72-byte record layout matches `../subsystems/sound.md` |
 | 0x00218868, 0x00218C20, 0x0021CD70 | sound-bank lookup (bank table 0x0033E190/0x0033E194/0x0033E214/0x0033E298), note→pitch adjust | partly (bank header format open) |
 | 0x0021CE08 / 0x0021CF08 / 0x0021CF70 / 0x0021CFA0 | `SetSoundOutputMode` (0xE) / `SetSoundDataInputVolume` (0xD) / cmd 6 / cmd 7 | understood |
 | 0x0021A1C0, 0x0021A328, 0x0021A680, 0x0021A800, 0x0021AD48, 0x0021ADF8, 0x0021CCF0, 0x00219110, 0x00219260 | volume groups (16 group volumes 0x0042CA50, channel map table in `0x0021A328`), pan law table 0x0042A4E8, defaults | partly (group meaning) |
@@ -248,17 +248,42 @@ Hypothesis names (plate comments, from the fileio/cdvd RPC function numbers): `s
 
 ## Boot-path facts the port must honour
 
-1. **Heap size probe.** `ProbeLargestMallocSize` depends on where the ELF's `.bss` ends and how newlib's heap works. The work heap size decides when `WorkHeapAlloc` returns 0. The port must use the same size the PS2 gets: base 0x004CC760, size 0x01A318A4 (`../pcsx2/sessions-03.md`). Mission 1 fills it to 98.4 %, so allocation sizes must match exactly.
+1. **Heap size probe.** `ProbeLargestMallocSize` depends on where the ELF's `.bss` ends and how newlib's heap works. The work heap size decides when `WorkHeapAlloc` returns 0. The port must use the same size the PS2 gets: base 0x004CC760, size 0x01A318A4 (`../pcsx2/sessions.md` run 03). Mission 1 fills it to 98.4 %, so allocation sizes must match exactly.
 2. **SPR→GIF ring buffer.** `InitSprRingBuffer` sets `D_RBOR`/`D_RBSR` at boot but clears the drain bits, and `FlushSprWorkBuffer`/`GetSprWorkBuffer` are dead. The renderer only needs `sceDmaSend` chains.
 3. **Field parity and `sceGsSyncV`.** The boot waits for a non-zero `sceGsSyncV` return, and `UpdateDisplayFrame` uses the parity. `sceGsSyncV` 0x00261C20 returns GS `CSR.FIELD` (bit 13) in interlaced mode, and 1 otherwise (disassembly). The port's frame clock must alternate parity exactly like the PS2 (ADR-002 already says so).
-4. **RPC timing.** `InitSoundRpc`/`InitVagStream` are step functions that loop until the IOP replies. The SOUND/VAG HLE must answer the first calls (fno 0) with the same reply layout, or boot hangs. Measured (`../pcsx2/sessions-03.md`): SOUND fno 0 reply = count 2 then zeros; VAG fno 0 reply = IOP stream base 0x0008DA40, ring indices 1,1,1,1 at +0x24, 0x200 at +0x50 and +0x60.
-5. **USB joystick RPC.** `UpdatePads` calls `ReadUsbJoy` every frame (blocking `sceSifCallRpc` fno 2). The HLE answers "no device": word 0 = 0, axes 0x80, button words 0xFF (`../pcsx2/sessions-03.md`).
+4. **RPC timing.** `InitSoundRpc`/`InitVagStream` are step functions that loop until the IOP replies. The SOUND/VAG HLE must answer the first calls (fno 0) with the same reply layout, or boot hangs. Measured (`../pcsx2/sessions.md` run 03): SOUND fno 0 reply = count 2 then zeros; VAG fno 0 reply = IOP stream base 0x0008DA40, ring indices 1,1,1,1 at +0x24, 0x200 at +0x50 and +0x60.
+5. **USB joystick RPC.** `UpdatePads` calls `ReadUsbJoy` every frame (blocking `sceSifCallRpc` fno 2). The HLE answers "no device": word 0 = 0, axes 0x80, button words 0xFF (`../pcsx2/sessions.md` run 03).
 6. **`rand()` sequence.** `InitRandomTable` seeds 1 then 123456789. The port must reproduce the ELF's `rand` 0x00291BD8 (verified in disassembly: `x = x*0x41C64E6D + 0x3039`, returns `x & 0x7FFFFFFF`, state at impure+0x58), not the host CRT. This affects all random tables (`ee_math`).
 7. **HDD paths.** `GetCdFileLsn(0)` returns −1 when the HDD-install flag is set. No live code sets it, so it stays 0. The code stays translated.
 8. **Partly-known data.** Sound-bank headers, VPK headers, pad mapping tables and option defaults are read by translated code as-is. They only need to be understood for debugging, not for the skeleton.
 
 ## PCSX2 measurements behind these facts
 
-Results in `../pcsx2/sessions-03.md`. Breakpoints: 0x00100220 in `main` (return from `InitWorkHeap`: u32 size at 0x00411784, base at 0x00411788); 0x00100130 in `InitSubsystems` (SOUND reply buffer 0, 0x600 bytes at 0x00429800); 0x00100138 (VAG reply buffer 0, 0x100 bytes at 0x0042CC90); 0x001097F8 in `ReadUsbJoy` (USB joystick reply, 0x80 bytes at 0x004204C0).
+Results in `../pcsx2/sessions.md` run 03. Breakpoints: 0x00100220 in `main` (return from `InitWorkHeap`: u32 size at 0x00411784, base at 0x00411788); 0x00100130 in `InitSubsystems` (SOUND reply buffer 0, 0x600 bytes at 0x00429800); 0x00100138 (VAG reply buffer 0, 0x100 bytes at 0x0042CC90); 0x001097F8 in `ReadUsbJoy` (USB joystick reply, 0x80 bytes at 0x004204C0).
 
 `frame_count` is incremented only by the main loop, so it is 0 at the first `SceneStep`; the vsyncs spent in the boot waits are not counted.
+
+## Phase 3 outcome (moved from `../STATUS.md` 2026-10-20)
+
+### 5. Readiness for the skeleton
+
+**Ready:**
+- Boot path closure: 199 game functions (about 168 understood, 31 partly, all read) and the 99 SDK entry points they call (`skeleton-readiness.md`).
+- Boot values measured in PCSX2: work heap base/size, SOUND/VAG first replies, USB joystick "no device" reply.
+- Main loop order, scene dispatch, file pipeline (TBL/CDP), ISO verification data, save image and folder-card layout.
+- Every game function classified; dead code catalogued; records validated (`validation.md`).
+- Architecture decisions ADR-001 to ADR-006 accepted (no open sub-decisions); ADR-007 (translation strategy) accepted 2026-10-13.
+
+**Started (phase 3):** milestones A (build, platform) → B (ISO, guest memory) → C (boot path, main loop) → D (debug overlay) → E (validation). Progress: section 6.
+
+### 6. Skeleton progress (phase 3)
+
+| Milestone | Status |
+|---|---|
+| A. Build system and platform | done (2026-10-11) |
+| B. ISO and guest memory | done (2026-10-11), awaiting User review: ISO reader, verification with cache, guest memory/ps2ptr/stack/call table, ELF load checked against PCSX2 (`validation.md` B-1, B-2) |
+| C. Boot path and main loop | done (2026-10-12), reviewed; hardware register writes moved to explicit `src/sce/ee_hw.h` calls: 245 game functions translated (`translated-functions.csv`), SDK layer `src/sce/`, IOP stand-ins `src/platform/iop/`, game thread at 59.94 Hz; boot reaches the scene 6 stub after ~33 frames (`validation.md` C-1) |
+| D. Debug overlay (minimal) | done (2026-10-12), reviewed: Dear ImGui overlay with performance, scene (+ request log), memory viewer with symbols, session log (`port-features.md` §8.7) |
+| E. Validation | done (2026-10-12), awaiting User review: 46 doctest cases; RAM at the first `SceneStep` compared with PCSX2: every difference classified (`ramdiff-expected.csv`, 0 unexplained), three fixes (malloc chunk sizes, TOC, reverb address); EE FPU switched to round-to-nearest as PCSX2 runs AC04 (User decision 2026-10-13; `validation.md` E-1, E-2) |
+
+Command-line parameters: `command-line.md`.

@@ -11,7 +11,7 @@ start,end,category,reason
 0x00353BF8,0x00353D20,timing,VAG slots 0/1 (title and menu BGM): stream positions and ring indices follow how long the music has played
 0x0042CC90,0x0042CD00,timing,VAG client reply area: stream positions (as above)
 0x0029F5AA,0x0029F5AC,input,ctx pad repeat counter: the confirm press is held for a different number of frames
-0x00410D00,0x00410D04,input,SE request counter: number of type-out ticks depends on when the cursor was moved during the help-line type-out (owner pressed Down/Up at another moment than the pad script)
+0x00410D00,0x00410D04,input,SE request counter: number of type-out ticks depends on when the cursor was moved during the help-line type-out (User pressed Down/Up at another moment than the pad script)
 0x00424250,0x00424FD0,input,SOUND voice table: request ids of the type-out / cursor SE voices (as above)
 0x00429E00,0x0042A400,input,SOUND reply area: voice status of the SE voices at the checkpoint (as above)
 0x0042A400,0x0042A410,input,menu SE record: last request id (as above)

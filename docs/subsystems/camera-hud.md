@@ -138,7 +138,7 @@ The player position predicted 600 frames ahead (position + 600 × velocity, x an
 | 9–12 | never selected | CAUTION / PULL DOWN, TURN RIGHT, TURN LEFT, RADAR CLEAR (unused) |
 | 0xFF | none | — |
 
-The texts come from the executable, read at runtime: `DrawHudWarning` 0x0016D348 takes 4 bytes per id from table 0x002B7450 (text index of line 1, text index of line 2 or 0xFF, colour flag, padding). The texts are a table of 8-byte entries {string pointer, two half-widths for the two HUD layouts} at 0x002B73D8. The colour flag is set only for id 1. The box fades in and out over 8 steps (blink phase +0x70, counter +0x64). Id 5 was confirmed on screen in PCSX2 (`../pcsx2/sessions-04.md`), which also confirms the table decoding.
+The texts come from the executable, read at runtime: `DrawHudWarning` 0x0016D348 takes 4 bytes per id from table 0x002B7450 (text index of line 1, text index of line 2 or 0xFF, colour flag, padding). The texts are a table of 8-byte entries {string pointer, two half-widths for the two HUD layouts} at 0x002B73D8. The colour flag is set only for id 1. The box fades in and out over 8 steps (blink phase +0x70, counter +0x64). Id 5 was confirmed on screen in PCSX2 (`../pcsx2/sessions.md` run 04), which also confirms the table decoding.
 
 ## Things the port must keep
 

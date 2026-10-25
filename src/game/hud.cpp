@@ -24,8 +24,6 @@ using namespace fl;
 
 namespace {
 
-void Put64(u32 p, u32 i, u64 v) { GRef<u64>(p + 8 * i) = v; }
-
 bool Wide() { return (Ctx()->flags & 0x10000) != 0; }
 
 constexpr u64 kZFar = 0x00FFFFFF00000000ull;  // XYZ2 Z = 0xFFFFFF
@@ -370,7 +368,6 @@ s32 func_00160098(u32 list, s32 index, u16 x, u16 y, u16 u, u16 v, u16 w, u16 h)
     Put64(p, 7, 0);
     return 0;
 }
-
 
 namespace {
 

@@ -63,13 +63,13 @@ Exact steps for each: `pcsx2/procedures.md` (same numbers).
 | S5-B | block B batch: recordings of mission 4 (free flight, firing run, to the end) and mission 3 from the S5-A start states, 10 test-vector entry/exit pairs, 2 GS dumps of effect frames, HUD screenshots (incl. 16:9), a sound capture | reference data for block B (flight, AI, rules, weapons, effects, HUD, sound) | validation of block B only |
 | 1 | VU0 skinning test vectors for part types 0 and 3 (bp 0x002250E8, 0x00225140) during the no-save intro or the post-mission-18 sequence | inputs/outputs of the remaining two skinning paths | verification of decision 14 only |
 
-Answered 2026-10-17 (`pcsx2/sessions-12.md`): S5-A run 2 missions 3 and 4 (states, GS dumps, screenshots; 0 unexplained RAM ranges, `port/validation.md` S5-A3). Answered 2026-10-17 (`pcsx2/sessions-11.md`): S5-A run 1 (calibration recording, frames 1002/1723), run 2 mission 1 (state, GS dump, 2 screenshots), S2b-B (BGM player state, screenshot, cleared card). Answered 2026-10-15/16: the slice S4 batch, runs A-C (13 save states, 9 screenshots; results in `port/validation.md` S4). Answered in `pcsx2/sessions-08.md` (2026-10-14): the slice S2b batch (9 save states, 10 screenshots, button sequence) and S2a-R (software-renderer screenshot). Answered in `pcsx2/sessions-07.md` (2026-10-14): the slice S2a batch (4 save states, 3 screenshots, S1 splash bug report). Answered in `pcsx2/sessions-06.md` (2026-10-14): the slice S1 batch (6 save states, 5 screenshots, card folders S and E; card messages appear only with no card). Answered in `pcsx2/sessions-05.md` (2026-10-11): carrier takeoff after a rearm (0x19 → 0x1A → 0x1B → 0x0B, rearm menu sub 0x1D), VU0 skinning path 0x00225110 (part type 1) with before/after states. Earlier runs: `pcsx2/sessions-01.md` … `sessions-04.md`.
+Answered checks, run by run: `pcsx2/sessions.md` ("Index of answered checks").
 
 Also before release: a folder memory card round trip with PCSX2 (needs the port's save layer, `formats/folder-memcard.md`).
 
 ## 3. Decisions
 
-### Decided by the owner (2026-10-11)
+### Decided by the User (2026-10-11)
 
 | Decision | Choice | Record |
 |---|---|---|
@@ -77,11 +77,11 @@ Also before release: a folder memory card round trip with PCSX2 (needs the port'
 | Threading and timing | A: fixed 59.94 Hz step, decoupled interpolated presentation | ADR-002 Accepted |
 | Rendering | C: own Vulkan renderer for the AC04 GS subset (Vulkan 1.2) | ADR-003 Accepted |
 | Audio | B: HLE at the RPC boundary with own mixer | ADR-004 Accepted |
-| User data | everything under `%LOCALAPPDATA%\AC04Port\` (`saves\` folder card, `settings.json`, `logs\` last session only, crash handler) | ADR-005 (revised) |
+| User data | everything under `%LOCALAPPDATA%\ProjectStonehenge\` (`saves\` folder card, `settings.json`, `logs\` last session only, crash handler) | ADR-005 (revised) |
 | Scaling filter | two filters, `sharp` and `smooth`, in `settings.json`; settings struct + JSON + change notification, no menu yet | ADR-006 §3 |
 | Baseline features | approved: output scaling with both filters, decoupled frame rate with interpolation, frame cap 60/120/144/240 (360 default upper limit), v-sync on/off, windowed and borderless, `settings.json`. Widescreen: modding layer. MSAA: later | `decisions/port-baseline.md` |
 
-### Decided by the owner (2026-10-11, phase 3 start)
+### Decided by the User (2026-10-11, phase 3 start)
 
 All previously open decisions approved as recommended:
 
@@ -99,10 +99,10 @@ All previously open decisions approved as recommended:
 | 14 | VU0 skinning | C++ rewrite (later phase) |
 | 15 | Debug overlay | requires `debug.overlay_enabled` (default off; on by default in development builds) |
 | 16 | Default scaling filter | sharp |
-| 17 | Higher internal resolution | later; renderer scale factor from day one, fixed at 1× |
+| 17 | Higher internal resolution | approved 2026-10-19, factor 1–8 (`decisions/port-baseline.md`) |
 | — | ISO SHA-1 mismatch | refuse in release builds; development builds may continue with `--allow-unverified-iso` (logged) |
 
-### Decided by the owner (2026-10-13)
+### Decided by the User (2026-10-13)
 
 | Decision | Choice | Record |
 |---|---|---|
@@ -114,9 +114,9 @@ All previously open decisions approved as recommended:
 | Slice order | approved as proposed, plus S9 LAN play | `port/slices.md` |
 | VS LAN play | option A: lockstep input sharing, optional layer (category 3), after S8 | ADR-008 Accepted |
 | Floating-point compiler flags | approved: explicit no-FMA-contraction flags (MSVC `/fp:precise`, GCC/Clang `-ffp-contract=off`), added when gameplay translation starts | `port/risks.md` |
-| README tagline ("static recompilation") | to be reworked later by the owner | — |
+| README tagline ("static recompilation") | to be reworked later by the User | — |
 
-### Open for the owner
+### Open for the User
 
 | Question | Blocks |
 |---|---|
@@ -140,37 +140,18 @@ All previously open decisions approved as recommended:
 
 All risks with mitigations: `port/risks.md`.
 
-## 5. Readiness for the skeleton
+## 5. Skeleton (phase 3)
 
-**Ready:**
-- Boot path closure: 199 game functions (about 168 understood, 31 partly, all read) and the 99 SDK entry points they call (`port/skeleton-readiness.md`).
-- Boot values measured in PCSX2: work heap base/size, SOUND/VAG first replies, USB joystick "no device" reply.
-- Main loop order, scene dispatch, file pipeline (TBL/CDP), ISO verification data, save image and folder-card layout.
-- Every game function classified; dead code catalogued; records validated (`port/validation.md`).
-- Architecture decisions ADR-001 to ADR-006 accepted (no open sub-decisions); ADR-007 (translation strategy) accepted 2026-10-13.
+Done 2026-10-11 to 2026-10-12 (milestones A-E). Readiness study and milestone results: `port/skeleton-readiness.md` ("Phase 3 outcome").
 
-**Started (phase 3):** milestones A (build, platform) → B (ISO, guest memory) → C (boot path, main loop) → D (debug overlay) → E (validation). Progress: section 6.
-
-## 6. Skeleton progress (phase 3)
-
-| Milestone | Status |
-|---|---|
-| A. Build system and platform | done (2026-10-11) |
-| B. ISO and guest memory | done (2026-10-11), awaiting owner review: ISO reader, verification with cache, guest memory/ps2ptr/stack/call table, ELF load checked against PCSX2 (`port/validation.md` B-1, B-2) |
-| C. Boot path and main loop | done (2026-10-12), reviewed; hardware register writes moved to explicit `src/sce/ee_hw.h` calls: 245 game functions translated (`port/translated-functions.csv`), SDK layer `src/sce/`, IOP stand-ins `src/platform/iop/`, game thread at 59.94 Hz; boot reaches the scene 6 stub after ~33 frames (`port/validation.md` C-1) |
-| D. Debug overlay (minimal) | done (2026-10-12), reviewed: Dear ImGui overlay with performance, scene (+ request log), memory viewer with symbols, session log (`port/debug-overlay.md` §7) |
-| E. Validation | done (2026-10-12), awaiting owner review: 46 doctest cases; RAM at the first `SceneStep` compared with PCSX2: every difference classified (`port/ramdiff-expected.csv`, 0 unexplained), three fixes (malloc chunk sizes, TOC, reverb address); EE FPU switched to round-to-nearest as PCSX2 runs AC04 (owner decision 2026-10-13; `port/validation.md` E-1, E-2) |
-
-Command-line parameters: `port/command-line.md`.
-
-## 7. Phase 4: translation slices (ADR-007)
+## 6. Phase 4: translation slices (ADR-007)
 
 Proposed order (`port/slices.md`, assignment by `tools/research/slices.py`, all 2,884 game functions assigned):
 
 | Slice | Content | Functions |
 |---|---|---|
 | S0 | skeleton (done) | 244 |
-| S1 | scene 6 startup (**done 2026-10-14**, accepted by the owner) | 87 |
+| S1 | scene 6 startup (**done 2026-10-14**, accepted by the User) | 87 |
 | S2a / S2b | front end: title and main menu (**validated 2026-10-14**) / options, records, save/load (**validated 2026-10-14**) | 86 / 151 |
 | S3 | movies (libmpeg2, SMV audio, FSR 1 stage) (**translated 2026-10-14, validated 2026-10-15**) | 86 |
 | S4 | front end: mission title, briefing, campaign menu, hangar, mission select (**translated 2026-10-16**, validation in progress: title card, briefing, campaign menu, hangar with the 3D aircraft and mission select run; PCSX2 runs A-C compared 2026-10-16: VU0 macro mode now rounds to nearest (the 1/16-pixel map sprite differences are gone), `CommitHangarSelection` byte-exact against the run B states, VS mission select 0 unexplained; hangar performance 5 fps -> 60 fps (validation layer now opt-in with `--vk-validation`; S4-6); with a frame-aligned pad script every S4 checkpoint has 0 unexplained ranges (S4-7); the effect drawers and glow pass of the menu object, not reached in S4, are left to S5f) | 253 |
@@ -180,67 +161,7 @@ Proposed order (`port/slices.md`, assignment by `tools/research/slices.py`, all 
 | S8 | remaining code (dead, HDD, scene 7) (**translated 2026-10-19**) | 328 |
 | S9 | VS LAN play (ADR-008 A) | no game code |
 
-Status: **order approved 2026-10-13. S1 done and accepted 2026-10-14 (report below). S2a translated and validated 2026-10-14; S2b translated and validated 2026-10-14; S3 translated 2026-10-14 and validated 2026-10-15 (reports below); S4 started 2026-10-15.**
 
-S1 result (plan approved 2026-10-14, reference data `pcsx2/sessions-06.md`):
-- 87/87 functions translated (`tools/research/slices.py --list S1` is empty; 331 game functions translated in total).
-- RAM: 6 checkpoints (card S sub 7, sub 9, exit; card E sub 7, exit; no card sub 7) with **0 unexplained ranges**; remaining differences are frame timing (CD latency model, `port/ramdiff-expected-s1.csv`) and the owner's controller stick. First SceneStep check still clean.
-- Screens: splash 1 (card S), splash 0 (card E) and the first no-card message match PCSX2 at offset 0 (mean difference 0.2-0.6 per channel; edge differences from PCSX2's field output). The second no-card message matches too (reached with `--pad-script`). Not compared: splash 0 of card S (PCSX2 screenshot taken during the fade-in).
-- New: first GS renderer path (2D: sprites, lines, CLUT textures, blending, fades), libmc on folder cards, SOUND stand-in matched to SOUND.IRX (reply area, transfer record, reverb address), SPU2-subset mixer clocked per game step, native screenshot (F8, `--screenshot-at`), `--memcard`/`--no-memcard`/`--dump-ram-at`/`--dump-audio`, `tools/research/imgdiff.py`. 56 unit tests pass.
-- Owner feedback 2026-10-14: audio OK; controller input missing with `--no-memcard` -> gamepads are now opened at start-up (recheck by the owner); the brightness option's effect is now presented (ADR-006 §4 note).
-- Open: PCSX2 I/O timing differs by a frame between cold boots, so exact frame-count matching needs an I/O latency model (`open-questions.md`).
+Status: order approved 2026-10-13. Done: S1-S5 and S7 translated (validation of S5 blocks B/C and S7 waits for the PCSX2 batches), S8 translated 2026-10-19. Skipped by the User for now: S6, S9.
 
-S2a result (2026-10-14, reference data `pcsx2/sessions-07.md`):
-- 86/86 functions translated (`slices.py --list S2a` is empty; 418 translated in total): scene 4 handler and navigation, menu framework (list widget, menu tree, connectors, message box, fade object, data load queue, filters, tabs), menu BGM, attract demo, title screen and main menu. Pages of later slices end in a logged stub (46 sub-state handlers).
-- Visible: title screen, PRESS START, main menu tree with help line, sub-columns. Music: title and menu tracks stream from `VAG/*.VPK` through the new VAG.IRX stand-in (channels driven by the mixer's SPU2 IRQ, as on the PS2).
-- Renderer: destination-alpha blend `(Cs−0)·Ad+Cd`, alpha-test fail modes, exact bilinear texel footprint (fixes an atlas overflow).
-- Fixes found on the way: SOUND voice record offsets (+0x0E voice, +0x10 flags; the S1 stand-in played every SE on voice 0) and SOUND voice status from `get_ch_stat` (ENDX/ENVX). S1 checkpoints still 0 unexplained (`port/validation.md` S2a-1).
-- 70 Ghidra renames (65 functions, 4 globals, 1 table), 2 plate comments.
-- Validation (`port/validation.md` S2a-3 to S2a-5): 4 RAM checkpoints with 0 unexplained ranges (`port/ramdiff-expected-s2a.csv`: CD latency, frame counter, music time, input timing); 3 screens without structural differences (PCSX2 field blend modelled by `imgdiff.py --blend-fields`). Open: a −1 to −2 level G/B bias of the menu frame filter (blend rounding, `pcsx2/procedures.md` S2a-R) and the music by ear.
-- Found by validation: PCSX2's `add.s`/`sub.s` mask the smaller operand (`FPU_ADD_SUB`); `fpu::Add`/`Sub` model it and, by the owner's decision, all 83 float add/sub-type instructions of the translated code (30 functions) use them. S1 bug from the owner: PSMCT24 image transfers lost the bytes of a pixel split across GIF packets (green band on the AC04 PROJECT splash); fixed. S1 checkpoints still 0 unexplained; 59 unit tests pass.
-
-S2b result (2026-10-14, reference data `pcsx2/sessions-08.md`):
-- 151/151 functions translated (`slices.py --list S2b` is empty; 569 translated in total, `port/translated-functions.csv`). New files: `campaign.cpp`, `results.cpp`, `save_mc.cpp`, `save_page.cpp`, `options_page.cpp`, `records_page.cpp`, `controller_page.cpp`, `sound_page.cpp`, additions to `menu_widgets.cpp`, `menu.cpp`, `options.cpp`; HDD branches in `hdd.cpp` (unreachable, `port/dead-code.md`).
-- sce/platform: libmc write path (`sceMcOpen/Close/Read/Write/Flush/Mkdir/Delete/Format`) on the folder card, `_pcsx2_index` written like PCSX2 (`formats/folder-memcard.md` §10.1); request delay 1 vblank (hypothesis until calibrated).
-- Visible in the port: SCREEN SETTINGS (list, screen position, brightness patterns), CONTROLLER SETUP, SOUND SETTINGS (changes applied at once), PERSONAL DATA, LOAD (load, then CONTINUE in the main menu). Not reachable with the available cards: the BGM player (needs a cleared campaign). Save mode starts only from later-slice pages, so the byte-identical save check moves to S4.
-- EE FPU: PCSX2's add/sub operand masking reproduced in `fpu::Add/Sub` and applied to all translated code (owner decision 2026-10-14; `port/validation.md` S2a-3); `tools/research/fpucheck.py` checks the count per function. 60 unit tests pass.
-- About 140 Ghidra renames logged (`rename-log.csv`, evidence "(S2b)").
-- Validation (`port/validation.md` S2b-1, S2b-2): 9 RAM checkpoints with 0 unexplained ranges (`port/ramdiff-expected-s2b.csv`: frame parity, CD latency, input timing, and extra LOAD visits in the owner's run, confirmed); 10 screens with the same content, including 16:9 and CONTINUE after LOAD. The reddish rectangle and the empty usage bars are in PCSX2 too (original). BGM player: PCSX2 reference captured 2026-10-17 (`pcsx2/sessions-11.md`), port comparison pending. Not checked: the libmc request delay (the `s2b_load_done` breakpoint was placed after the read it was meant to catch; procedure error).
-- S2a-R: PCSX2's software and hardware renderers agree; the port's menu frame filter differs in a radial pattern (centre G/B −1.5/−2.8, edges +1 to +3), not a uniform rounding bias. Open (`open-questions.md`).
-
-S3 result (translation 2026-10-14, validation 2026-10-15 against PCSX2 run 09, `pcsx2/sessions-09.md`):
-- 86/86 functions translated (`slices.py --list S3` is empty; 655 in total). New files: `movie.cpp` (SMV reader, picture upload, PCM feeder, arena), `movie_page.cpp` (in-menu movie pages, subtitles, display modes, frame sync), `interlude_page.cpp` (extras interlude viewer), `src/sce/libmpeg.cpp`.
-- New dependency in use: libmpeg2 0.5.1 (approved 2026-10-11, fetch confirmed by the owner 2026-10-14; FetchContent with SHA-256, built as portable C).
-- sce/platform: sceMpeg* on libmpeg2 with the IPU colour conversion; sceSifSetDma/sceSifDmaStat into IOP RAM; SOUND command 0xA with destination 0 plays a loop-mode PCM block input in the mixer, command 0xD sets its volume, the reply reports the half being played; timer 0 busy-wait model (`EeHwWaitTimer`); `--exit-at` (development builds).
-- Visible: New Game → SS01 with sound and subtitles at 30 pictures/s, Start skips; the next page (mission title) is slice S4.
-- Ghidra: 85 renames and 9 plate rewrites logged; `sceMpegAddBs`/`sceMpegGetPicture` were swapped in the earlier hypotheses (0x00270B58 adds the bitstream, 0x00270B90 decodes a picture).
-- Fixed after the owner's test: vertical seams in movies (GS texture coordinates rounded to the GS 1/16-texel grid; also slightly closer to PCSX2 on the S2a screens) and flickering corrupt pictures at SMV chunk changes (open GOPs; libmpeg2 partial reset keeps the references).
-- Movie upscaling stage (ADR-006 §5, option b decided 2026-10-14): the decoder hands each picture to the renderer through a side path, only when the factor is above 1. FSR 1 EASU runs at the internal-resolution factor (×2 per pass) and is a passthrough at 1×. Draws from the movie buffer are identified through DMA source marks. Dev option `--movie-upscale <2-4>`. Sampling the output in the draws comes with the scaled GS backend (internal resolution work).
-- Validation (`port/validation.md` S3-3 to S3-5): 3 RAM checkpoints (movie start, mid-movie at picture 662, movie end) 0 unexplained with the new `port/ramdiff-expected-s3.csv`; mid-movie to end 7028 frames on both sides; image buffer the same picture (IDCT rounding, max 10 levels); 2 screens matched (0.8 and 2.4 mean); sound correlates 0.97-0.995 per channel with the PCSX2 capture, no drift. Confirmed: IPU alpha 0x80, PCM 0x200-byte L/R blocks, the SOUND reply's audio half (`GetMovieAudioHalf` renamed in Ghidra). New research tool `tools/research/flac_mp4.py` (decodes PCSX2's FLAC/MP4 audio capture).
-- Open: the interlude viewer test (needs a cleared campaign); libmpeg frameCount/flags rule (no game effect).
-
-S5 block B translation (2026-10-18; validation against the S5-B captures still to do):
-- Every game function of S4 and S5a–S5h now has a translation (`tools/research/slices.py --list`, compared with the `// EE:` markers: 0 missing; the only S5a entry left is the CRT helper 0x001001C0). 2,323 translated functions in total (`port/translated-functions.csv`, regenerated; `translated.py` now finds names behind long comments).
-- Last pieces: the special-object drawers of `DrawSpecialObject` 0x001E0A98 (kinds 12/13 searchlight 0x001AD510, 20 fire 0x001AFDF8, 21 burning wreck 0x001B1BD8, 23–25 oil fire 0x001B3C58, 36 rocket launch 0x001B9C90, 37 smoke column 0x001B5AC8) and the S4-deferred half-resolution glow pass (`DrawGlowPass` 0x00142460 with `BuildScaledCameraMatrices` 0x001420F0 and its composite packet 0x00141EE0), wired into the aircraft drawer and the menu object (whose call now passes the 9th argument 0x20 as the original does).
-- VU1 program D (glow fins) implemented as CPU HLE in `vu1_programs.cpp` from its listing (`subsystems/vu-programs.md`). Not yet seen running: the glow pass needs the map flag +0xF4 bit 1 (external or demo views); its GS output is unchecked.
-- `fpucheck.py` clean for all translated code (the drawers carry `verified N` notes where the original repeats or unrolls adds).
-- Smoke runs: missions 1, 3, 4, 7, 9 with the standard pad script exit cleanly at vblank 2610.
-
-S5 block C translation (2026-10-18; validation against the S5-C captures still to do):
-- All 194 functions of S5i/S5j translated (`port/s5-blockC-inventory.csv`, every row `translated`): in-engine sequences and their draw passes (`sequence.cpp`), the sequence character engine (`sequence_model.cpp`), replay playback and cameras (`replay.cpp`, `replay_camera.cpp`), scene 2 sequence frames, carrier landing / takeoff, snapshots and the flight record (`flight_sequences.cpp`), projectile drawing and the sequence effects (`projectile_draw.cpp`), positional sound (`mission_sound.cpp`), the subtitle track selector (`radio.cpp`). 2,517 translated functions in total.
-- New platform / SDK pieces: VU0 micro mode for program S (`src/platform/vu0/vu0_hle.cpp`: register file, data memory, VIF0 chains with MPG / UNPACK, the nine entries), the VIF0 DMA registers with a start hook (`ee_hw.h`, `hw_registers.cpp`), `sceDmaSync`, `tanf` / `__kernel_tanf`, `sceVu0RotMatrix` / `CameraMatrix` / `NormalLightMatrix` / `LightColorMatrix`. Renderer: an empty or inverted texel range (seen once in the opening) now falls back to the whole texture instead of a huge allocation.
-- Wired: `DrawProjectiles` and the sequence draw passes in `BuildFlightDrawLists`, the follow cameras of `func_00175B08`.
-- Stubbed: only S6 (VS rules 0x00118CC0, 0x00119000). `fpucheck.py` clean (new `verified N` notes where the original inlines or duplicates adds).
-- Smoke runs: the opening of mission id 0x25 plays (carrier deck, F-4E, skinned deck crew) and Start skips it into mission 1; mission 12 plays its scripted sequence into gameplay. Not seen yet: replay, carrier landing, game over, title demo (S5-C recordings).
-
-S7 translation (2026-10-18; validation against the S7 batch in `pcsx2/procedures.md` still to do):
-- All 46 functions translated: scene 5 (`results_scene.cpp`: the 7 sub-states, `ResultsUpdate` with the kill tally and the replay of the recorded unit tracks on the results map, the map / unit / trail / marker / text draw passes, the debriefing voice, `EnterPostMissionMenu`) and the post-mission menu (`post_mission_page.cpp`, scene 4 subs 0x25-0x28). `SceneStub<5>` and the three menu stubs removed; 2,563 translated functions in total. Details: `subsystems/results-startup.md`.
-- `fpucheck.py` clean (`verified 13` on `ResultsUpdate`: the angle wraps share a helper).
-- Not seen running: the port cannot reach the results screen yet. Replaying `b3_m4_full.p2m2` over a `--mission 4` start (start press added before it) diverges and does not complete the mission (the `--mission` route's RNG and heap differ from PCSX2's). Validation needs the S7 test vectors and screenshots.
-
-S8 translation (2026-10-19):
-- All S8 functions translated (`slices.py --list S8` empty; 2,888 translated functions, 269 dead): scenes 1 and 3 (`movie.cpp`, the scene stubs are gone), the HDD layer, scene 7 and the HDD install page, the `C_PCCON` profiler (`perf_counter.cpp`), the host-file debug I/O, the unused save, core, render, effect, menu, text, radio and replay functions. Catalogue: `port/dead-code.md` "S8 translation".
-- New SDK stubs (reached only from dead code, log once, return an error): libpc (`scePcStart`, `scePcStop`, counter reads), `sceMcUnformat`, `sceMcChdir`, `sceIoctl`.
-- Live-code fix found on the way: the glow alpha of `func_001F3D38` divides by span x (span x 4) (the translation had span x 2 - n); the related open question is closed.
-- `fpucheck.py` clean for the new functions; ctest passes; mission 1 smoke run (`--mission 1`, card S) reaches gameplay as before.
-- Not done: the debug-layer entry to scenes 1 and 3 (port code, waits for the owner). S6 and S9 skipped as instructed.
+Per-slice reports (S1 to S8, the internal-resolution work of 2026-10-19 and the port features of 2026-10-20): `port/slices.md` "Results per slice". Port features as built: `port/port-features.md`.

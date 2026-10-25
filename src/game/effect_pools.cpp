@@ -1,5 +1,5 @@
 // Effect pools: the effect block (*0x004106B4, 0x625A0 bytes) and its reset at every mission start
-// and retry (InitEffects). docs/subsystems/mission-load.md "Effect-pool resets" and "Per-record init
+// and retry (InitEffects). docs/subsystems/mission-flow.md "Effect-pool resets" and "Per-record init
 // functions"; random reads: docs/game/random.md (table reads r, newlib rand R, the VU0 R seed).
 //
 // A pool is `count` records of `stride` bytes, then an occupancy mask of ceil(count / 32) words and

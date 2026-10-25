@@ -1,4 +1,4 @@
-// Model library (render module; docs/formats/SM-model.md, docs/port/s4-inventory.md §3): binding of
+// Model library (render module; docs/formats/MODEL.md, docs/port/slices.md §A.3): binding of
 // SM model data, model instances (hierarchy, part poses, morph meshes) and the VIF packets that
 // feed the VU1 model programs (EmitModelInstance). Also the VU0 matrix helpers these functions use.
 //
@@ -33,10 +33,6 @@ using guest::GRef;
 namespace {
 
 vu0::Vec4 LoadV(u32 a) { return {GRef<f32>(a), GRef<f32>(a + 4), GRef<f32>(a + 8), GRef<f32>(a + 12)}; }
-
-void CopyQword(u32 dst, u32 src) {
-    for (u32 o = 0; o < 16; o += 4) GRef<u32>(dst + o) = GRef<u32>(src + o);
-}
 
 void StoreV(u32 a, const vu0::Vec4& v) {
     GRef<f32>(a) = v.x;

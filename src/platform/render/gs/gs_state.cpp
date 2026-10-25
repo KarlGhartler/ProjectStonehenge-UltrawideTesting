@@ -10,6 +10,11 @@
 namespace ac04::render::gs {
 namespace {
 
+// CLUT entry size from TEX0.CPSM: bit 1 selects 16-bit entries (CT16 2, CT16S 0xA). CPSM 1 (CT24,
+// not a documented CLUT format) reads 32-bit entries like CT32, as in PCSX2's CLUT writers: the
+// no-save intro's cloud transition uses it (validation.md §2r).
+bool Clut16(std::uint32_t cpsm) { return (cpsm & 2) != 0; }
+
 enum Reg : std::uint32_t {
     kPrim = 0x00, kRgbaq = 0x01, kSt = 0x02, kUv = 0x03, kXyzf2 = 0x04, kXyz2 = 0x05,
     kTex0_1 = 0x06, kTex0_2 = 0x07, kClamp1 = 0x08, kClamp2 = 0x09, kFog = 0x0A,
@@ -40,12 +45,13 @@ std::uint64_t Fnv(const std::uint32_t* p, std::size_t n) {
 }
 
 bool SameState(const DrawCommand& a, const DrawCommand& b) {
-    return a.kind == b.kind && a.gouraud == b.gouraud && a.textured == b.textured && a.fog == b.fog &&
+    return !a.aa_point && !b.aa_point && a.kind == b.kind && a.gouraud == b.gouraud && a.textured == b.textured && a.fog == b.fog &&
            a.blend == b.blend && a.aa1 == b.aa1 && a.fst == b.fst && a.tex0 == b.tex0 && a.tex1 == b.tex1 &&
            a.clamp == b.clamp && a.alpha == b.alpha && a.test == b.test && a.frame == b.frame &&
            a.zbuf == b.zbuf && a.scissor == b.scissor && a.texa == b.texa && a.fba == b.fba &&
            a.fogcol == b.fogcol && a.miptbp1 == b.miptbp1 && a.miptbp2 == b.miptbp2 && a.colclamp == b.colclamp && a.pabe == b.pabe && a.dthe == b.dthe &&
            a.texture == b.texture && a.texture_from_frame == b.texture_from_frame && a.frame_clut == b.frame_clut &&
+           a.clut_from_frame == b.clut_from_frame &&
            a.texture_guest_source == b.texture_guest_source && a.texture_guest_width == b.texture_guest_width;
 }
 
@@ -69,6 +75,7 @@ std::vector<DrawCommand> GsState::TakeDraws() {
 void GsState::ProcessGif(const std::uint8_t* data, std::size_t bytes, const std::vector<SourceMark>* marks) {
     gif_base_ = data;
     marks_ = marks != nullptr && !marks->empty() ? marks : nullptr;
+    next_mark_ = 0;
     struct Reset {
         GsState* s;
         ~Reset() {
@@ -78,6 +85,7 @@ void GsState::ProcessGif(const std::uint8_t* data, std::size_t bytes, const std:
     } reset{this};
     std::size_t pos = 0;
     while (pos + 16 <= bytes) {
+        if (marks_ != nullptr) EmitAntiAliasPoints(pos);
         std::uint64_t lo, hi;
         std::memcpy(&lo, data + pos, 8);
         std::memcpy(&hi, data + pos + 8, 8);
@@ -170,6 +178,21 @@ void GsState::ProcessGif(const std::uint8_t* data, std::size_t bytes, const std:
             pos += n;
         }
     }
+    if (marks_ != nullptr) EmitAntiAliasPoints(bytes);
+}
+
+void GsState::EmitAntiAliasPoints(std::size_t pos) {
+    for (; next_mark_ < marks_->size() && (*marks_)[next_mark_].offset <= pos; ++next_mark_) {
+        const SourceMark& m = (*marks_)[next_mark_];
+        if (m.kind != SourceMark::kAntiAlias || !draws_enabled_) continue;
+        DrawCommand d;
+        d.aa_point = true;
+        d.frame = regs_[kFrame1];
+        d.scissor = static_cast<std::uint64_t>(m.rect[0] & 0x7FF) | static_cast<std::uint64_t>(m.rect[2] & 0x7FF) << 16 |
+                    static_cast<std::uint64_t>(m.rect[1] & 0x7FF) << 32 | static_cast<std::uint64_t>(m.rect[3] & 0x7FF) << 48;
+        draws_.push_back(std::move(d));
+        state_dirty_ = true;  // the next primitive starts a new draw after the point
+    }
 }
 
 void GsState::ImageData(const std::uint8_t* data, std::uint32_t bytes) {
@@ -251,17 +274,30 @@ void GsState::LoadClut(std::uint64_t tex) {
         LogOnce("clut-csm2", "CLUT storage mode CSM2 not implemented");
         return;
     }
-    const std::uint32_t mem_psm = cpsm == 0 ? kPsmCt32 : (cpsm == 0xA ? kPsmCt16S : kPsmCt16);
+    const std::uint32_t mem_psm = !Clut16(cpsm) ? kPsmCt32 : (cpsm == 0xA ? kPsmCt16S : kPsmCt16);
     // The model programs request the same palette with every strip: when the part of the CLUT
     // buffer that this load fills already holds that palette (same source, source pages unchanged
     // since), the load would write the same entries, so it is skipped.
     const bool eight = psm == kPsmT8 || psm == kPsmT8H;
     const bool four = psm == kPsmT4 || psm == kPsmT4HL || psm == kPsmT4HH;
     if (!eight && !four) return;
+    // A palette drawn on the GPU: the flight's sun flare counts the visible part of the sun into a
+    // pixel of FBP 0x190 and draws its palette there, scaled by it, each frame (validation.md §2z).
+    // Local memory does not hold what the GPU drew, so the CLUT gets the identity (entry i = i) and
+    // the draws carry the source (DrawCommand::clut_from_frame) for the backend to look up.
+    clut_frame_cbp_ = -1;
+    if (eight && !Clut16(cpsm) && (cbp & 3) == 0 && fb_pages_.count(cbp >> 5) != 0 &&
+        fb_overwritten_.count(cbp >> 5) == 0) {
+        clut_frame_cbp_ = static_cast<std::int32_t>(cbp);
+        ++clut_gen_;
+        for (ClutSource& c : clut_src_) c.valid = false;
+        for (std::uint32_t e = 0; e < 256; ++e) clut_[e] = e;
+        return;
+    }
     // The source is contiguous in local memory: a 16x16 CT32 image is blocks cbp..cbp+3 (1 KiB), a
     // 16x16 CT16 one blocks cbp..cbp+1, and the 8x2 image of a 4-bit palette lies in the first 64
     // bytes of block cbp.
-    const std::uint32_t slot = eight ? 32 : ((cpsm == 0 ? (csa & 15) : csa) & 31);
+    const std::uint32_t slot = eight ? 32 : ((!Clut16(cpsm) ? (csa & 15) : csa) & 31);
     const std::uint32_t addr = cbp * 256u;
     const std::uint32_t len = eight ? (mem_psm == kPsmCt32 ? 1024u : 512u) : 64u;
     const bool comparable = addr + len <= GsMemory::kSize;
@@ -315,7 +351,7 @@ void GsState::LoadClut(std::uint64_t tex) {
             clut_hash_args_ = args;
         }
     } else {
-        const std::uint32_t base = (cpsm == 0 ? (csa & 15) : csa) * 16;
+        const std::uint32_t base = (!Clut16(cpsm) ? (csa & 15) : csa) * 16;
         for (std::uint32_t e = 0; e < 16; ++e) clut_[(base + e) & 511] = mem_.ReadPixel(mem_psm, cbp, 1, e & 7, e >> 3);
     }
 }
@@ -426,6 +462,10 @@ void GsState::NoteFrameBuffer(const DrawCommand& d) {
     std::uint32_t& n = fb_pages_[fbp];
     n = std::max(n, pages);
     fb_overwritten_.erase(fbp);
+    std::uint32_t bits = ~d.Fbmsk();
+    if (d.Fpsm() == kPsmCt24) bits &= 0x00FFFFFFu;
+    else if (BitsPerPixel(d.Fpsm()) != 32) bits = 0xFFFFFFFFu;  // 16-bit pixels: two per word
+    fb_written_bits_[fbp] |= bits;
 }
 
 void GsState::NoteTransferDestination() {
@@ -566,6 +606,7 @@ void GsState::EmitPrimitive(const GsVertex* v, int count) {
     d.texture.reset();
     d.texture_from_frame = -1;
     d.frame_clut.reset();
+    d.clut_from_frame = -1;
     d.texture_guest_source = 0;
     d.texture_guest_width = 0;
     NoteFrameBuffer(d);
@@ -576,13 +617,20 @@ void GsState::EmitPrimitive(const GsVertex* v, int count) {
         // at the start of the frame and sampled by the terrain's second pass in the same frame).
         const bool page = (tbp & 31) == 0;
         const bool drawn = page && fb_pages_.count(tbp >> 5) != 0;
-        if (!(page && fb_overwritten_.count(tbp >> 5) != 0) && (drawn || (frame_query_ && frame_query_(tbp)))) {
+        const std::uint32_t tpsm = static_cast<std::uint32_t>(Bits(d.tex0, 20, 6));
+        const std::uint32_t read_bits = tpsm == kPsmT8H ? 0xFF000000u : tpsm == kPsmT4HL ? 0x0F000000u
+                                      : tpsm == kPsmT4HH ? 0xF0000000u : 0xFFFFFFFFu;
+        const auto written = page ? fb_written_bits_.find(tbp >> 5) : fb_written_bits_.end();
+        const bool untouched = written != fb_written_bits_.end() && (written->second & read_bits) == 0;
+        if (!untouched && !(page && fb_overwritten_.count(tbp >> 5) != 0) &&
+            (drawn || (frame_query_ && frame_query_(tbp)))) {
             d.texture_from_frame = static_cast<std::int32_t>(tbp);
             const std::uint32_t psm = static_cast<std::uint32_t>(Bits(d.tex0, 20, 6));
             if (psm == kPsmT8 || psm == kPsmT8H || psm == kPsmT4 || psm == kPsmT4HL || psm == kPsmT4HH) d.frame_clut = ClutRgba(d);
         } else {
             d.texture = DecodeTexture(d, v, count);
         }
+        if (clut_frame_cbp_ >= 0 && (tpsm == kPsmT8 || tpsm == kPsmT8H)) d.clut_from_frame = clut_frame_cbp_;
         if (!upload_source_.empty()) {
             const auto src = upload_source_.find(tbp);
             if (src != upload_source_.end()) {
@@ -613,7 +661,7 @@ std::shared_ptr<const std::array<std::uint32_t, 256>> GsState::ClutRgba(const Dr
     const std::uint32_t ta1 = static_cast<std::uint32_t>(Bits(d.texa, 32, 8));
     const bool aem = Bits(d.texa, 15, 1) != 0;
     auto conv = [&](std::uint32_t e) {
-        if (cpsm == 0) return e;
+        if (!Clut16(cpsm)) return e;
         const std::uint32_t r = (e & 0x1F) << 3, g = ((e >> 5) & 0x1F) << 3, b = ((e >> 10) & 0x1F) << 3;
         std::uint32_t a = (e & 0x8000) ? ta1 : ta0;
         if (aem && (e & 0x7FFF) == 0) a = 0;
@@ -624,7 +672,7 @@ std::shared_ptr<const std::array<std::uint32_t, 256>> GsState::ClutRgba(const Dr
     if (psm == kPsmT8 || psm == kPsmT8H) {
         for (std::uint32_t i = 0; i < 256; ++i) (*out)[i] = conv(clut_[i]);
     } else {
-        const std::uint32_t base = (cpsm == 0 ? (csa & 15) : csa) * 16;
+        const std::uint32_t base = (!Clut16(cpsm) ? (csa & 15) : csa) * 16;
         for (std::uint32_t i = 0; i < 16; ++i) (*out)[i] = conv(clut_[(base + i) & 511]);
     }
     if (last_frame_clut_ && *last_frame_clut_ == *out) return last_frame_clut_;
@@ -638,12 +686,29 @@ void GsState::TexelRange(const DrawCommand& d, const GsVertex* v, int count, std
     const std::uint32_t th = std::min<std::uint32_t>(static_cast<std::uint32_t>(Bits(t, 30, 4)), 10);
     const std::uint32_t size_u = 1u << tw, size_v = 1u << th;
     // Triangles (3D models) take the whole texture: one decode per texture instead of one per
-    // triangle, so a model's triangles share a texture and merge into one draw.
+    // triangle, so a model's triangles share a texture and merge into one draw. An axis in
+    // REGION_CLAMP only ever addresses [MIN, MAX] (the no-save intro's seagulls declare 1024 x 1024
+    // T4 textures clamped to 16 x 16), so only that range is decoded, unless mip levels are used.
     if (d.kind == PrimKind::kTriangle) {
         r[0] = 0;
         r[1] = 0;
         r[2] = size_u;
         r[3] = size_v;
+        const std::uint32_t mmin = static_cast<std::uint32_t>(Bits(d.tex1, 6, 3));
+        const bool mipmapped = mmin >= 2 && mmin <= 5 && Bits(d.tex1, 2, 3) != 0;
+        if (!mipmapped) {
+            auto region = [](std::uint64_t clamp, int mode_bit, int min_bit, std::uint32_t size, std::uint32_t& a,
+                             std::uint32_t& b) {
+                if (Bits(clamp, mode_bit, 2) != 2) return;
+                const std::uint32_t mn = static_cast<std::uint32_t>(Bits(clamp, min_bit, 10));
+                const std::uint32_t mx = static_cast<std::uint32_t>(Bits(clamp, min_bit + 10, 10));
+                if (mn > mx || mn >= size) return;
+                a = mn;
+                b = std::min(mx + 1, size);
+            };
+            region(d.clamp, 0, 4, size_u, r[0], r[2]);
+            region(d.clamp, 2, 24, size_v, r[1], r[3]);
+        }
         return;
     }
     // Texel rectangle the primitive can reach (+1 for bilinear neighbours).
@@ -695,6 +760,65 @@ void GsState::TexelRange(const DrawCommand& d, const GsVertex* v, int count, std
     }
 }
 
+namespace {
+
+// Decodes the w x h texels at (su, sv) of rectangle `r` of `tex` (inside it) from `mem` into
+// tex.rgba: the raw values of a row (GsMemory::ReadRect), then their colours, the format chosen once
+// (gs_decode.comp does the same per texel).
+void DecodeTexels(const GsMemory& mem, DecodedTexture& tex, const DecodeRect& r, std::uint32_t su, std::uint32_t sv,
+                  std::uint32_t w, std::uint32_t h) {
+    const std::uint32_t ta0 = tex.texa & 0xFF, ta1 = (tex.texa >> 16) & 0xFF;
+    const bool aem = (tex.texa & 0x8000) != 0;
+    const std::uint32_t* pal = tex.palette ? tex.palette->data() : nullptr;
+    auto from16 = [&](std::uint32_t p) {
+        const std::uint32_t rr = (p & 0x1F) << 3, g = ((p >> 5) & 0x1F) << 3, b = ((p >> 10) & 0x1F) << 3;
+        std::uint32_t a = (p & 0x8000) ? ta1 : ta0;
+        if (aem && (p & 0x7FFF) == 0) a = 0;
+        return rr | g << 8 | b << 16 | a << 24;
+    };
+    std::vector<std::uint32_t> raw(w);
+    const std::uint32_t dx = r.dx + su - r.su, dy = r.dy + sv - r.sv;
+    for (std::uint32_t y = 0; y < h; ++y) {
+        mem.ReadRect(tex.psm, r.bp, r.bw, su, sv + y, w, 1, raw.data());
+        std::uint32_t* row = reinterpret_cast<std::uint32_t*>(&tex.rgba[(static_cast<std::size_t>(dy + y) * tex.width + dx) * 4]);
+        auto convert = [&](auto colour) {
+            for (std::uint32_t x = 0; x < w; ++x) {
+                const std::uint32_t c = colour(raw[x]);
+                std::memcpy(row + x, &c, 4);
+            }
+        };
+        switch (tex.psm) {
+            case kPsmCt32: convert([](std::uint32_t v) { return v; }); break;
+            case kPsmCt24:
+                convert([&](std::uint32_t v) {
+                    const std::uint32_t a = (aem && (v & 0xFFFFFF) == 0) ? 0 : ta0;
+                    return (v & 0xFFFFFF) | a << 24;
+                });
+                break;
+            case kPsmCt16: case kPsmCt16S: convert(from16); break;
+            case kPsmT8: case kPsmT8H: convert([&](std::uint32_t v) { return pal ? pal[v & 255] : 0u; }); break;
+            case kPsmT4: case kPsmT4HL: case kPsmT4HH: convert([&](std::uint32_t v) { return pal ? pal[v & 15] : 0u; }); break;
+            // Z buffer sampled as a texture (the no-save intro reads its Z24 buffer at FBP 0xA8): the
+            // port keeps depth in the GPU's depth images, not in local memory, so these texels are
+            // 0 (gs_decode.comp the same). Not implemented yet.
+            default: convert([](std::uint32_t) { return 0u; }); break;
+        }
+    }
+}
+
+}  // namespace
+
+void DecodeOnCpu(const GsMemory& mem, DecodedTexture& tex) {
+    tex.rgba.assign(static_cast<std::size_t>(tex.width) * tex.height * 4, 0);
+    for (const DecodeRect& r : tex.rects) DecodeTexels(mem, tex, r, r.su, r.sv, r.w, r.h);
+}
+
+std::vector<TextureOp> GsState::TakeTextureOps() {
+    std::vector<TextureOp> out;
+    out.swap(texture_ops_);
+    return out;
+}
+
 std::shared_ptr<const DecodedTexture> GsState::DecodeTexture(const DrawCommand& d, const GsVertex* v, int count) {
     const std::uint64_t t = d.tex0;
     const std::uint32_t tbp = static_cast<std::uint32_t>(Bits(t, 0, 14));
@@ -717,7 +841,7 @@ std::shared_ptr<const DecodedTexture> GsState::DecodeTexture(const DrawCommand& 
     std::uint64_t clut_hash = 0;
     if (paletted) {
         const bool eight = psm == kPsmT8 || psm == kPsmT8H;
-        const std::uint32_t base = eight ? 0 : (cpsm == 0 ? (csa & 15) : csa) * 16;
+        const std::uint32_t base = eight ? 0 : (!Clut16(cpsm) ? (csa & 15) : csa) * 16;
         const std::uint32_t args = base | (eight ? 0x1000u : 0u) | cpsm << 16;
         if (clut_hash_gen_ != clut_gen_ || clut_hash_args_ != args) {
             clut_hash_ = Fnv(clut_.data() + base, eight ? 256 : 16) ^ cpsm;
@@ -756,20 +880,31 @@ std::shared_ptr<const DecodedTexture> GsState::DecodeTexture(const DrawCommand& 
             mips.push_back({bp, bw, w, h});
         }
     }
-    std::uint64_t gen = mem_.RegionHash(psm, tbp, tbw, size_u, size_v);
-    for (const Level& m : mips) gen = gen * 1099511628211ull ^ mem_.RegionHash(psm, m.tbp, m.tbw, m.w, m.h);
     const std::uint64_t mipkey = mips.empty() ? 0 : (d.tex1 & 0x3FC) ^ d.miptbp1 * 31 ^ d.miptbp2 * 131;
-    const auto key = std::make_tuple(t & 0x1FFFFFFFFFFFFFFFull, clut_hash ^ (d.texa * 31) ^ mipkey, gen, u0, v0, u1, v1);
-    if (last_key_valid_ && key == last_key_) return last_texture_;
+    const TextureKey key = std::make_tuple(t & 0x1FFFFFFFFFFFFFFFull, clut_hash ^ (d.texa * 31) ^ mipkey, u0, v0, u1, v1);
+    const std::uint64_t writes = mem_.WriteCount();
+    if (last_key_valid_ && last_valid_at_ == writes && key == last_key_) return last_texture_;
+    // A decode of the same texture is valid while every block it read keeps its generation.
+    CacheEntry* entry = nullptr;
     if (auto it = texture_cache_.find(key); it != texture_cache_.end()) {
-        last_key_valid_ = true;
-        last_key_ = key;
-        last_texture_ = it->second;
-        return it->second;
+        entry = &it->second;
+        if (entry->valid_at != writes) {
+            const std::size_t n = entry->block_addrs.size();
+            std::size_t k = 0;
+            while (k < n && mem_.BlockGeneration(entry->block_addrs[k]) == entry->block_gens[k]) ++k;
+            if (k == n) entry->valid_at = writes;
+        }
+        if (entry->valid_at == writes) {
+            last_key_valid_ = true;
+            last_key_ = key;
+            last_valid_at_ = writes;
+            last_texture_ = entry->texture;
+            return entry->texture;
+        }
     }
-    if (texture_cache_.size() > 4096) texture_cache_.clear();
-
     auto tex = std::make_shared<DecodedTexture>();
+    static std::uint64_t next_serial = 0;  // renderer thread only
+    tex->serial = ++next_serial;
     tex->origin_u = u0;
     tex->origin_v = v0;
     tex->base_width = u1 - u0;
@@ -781,53 +916,98 @@ std::shared_ptr<const DecodedTexture> GsState::DecodeTexture(const DrawCommand& 
     tex->height = std::max(tex->base_height, mips_h);
     tex->tex_width = size_u;
     tex->tex_height = size_v;
-    tex->rgba.assign(static_cast<std::size_t>(tex->width) * tex->height * 4, 0);
-    const std::uint32_t ta0 = static_cast<std::uint32_t>(Bits(d.texa, 0, 8));
-    const std::uint32_t ta1 = static_cast<std::uint32_t>(Bits(d.texa, 32, 8));
-    const bool aem = Bits(d.texa, 15, 1) != 0;
-    auto from16 = [&](std::uint32_t p) {
-        const std::uint32_t r = (p & 0x1F) << 3, g = ((p >> 5) & 0x1F) << 3, b = ((p >> 10) & 0x1F) << 3;
-        std::uint32_t a = (p & 0x8000) ? ta1 : ta0;
-        if (aem && (p & 0x7FFF) == 0) a = 0;
-        return r | g << 8 | b << 16 | a << 24;
-    };
-    // Decodes `w` x `h` texels at (su, sv) of the texture at (bp, bw) into the packed image at (dx, dy).
-    auto decode = [&](std::uint32_t bp, std::uint32_t bw, std::uint32_t su, std::uint32_t sv, std::uint32_t w,
-                      std::uint32_t h, std::uint32_t dx, std::uint32_t dy) {
-        for (std::uint32_t y = 0; y < h; ++y) {
-            for (std::uint32_t x = 0; x < w; ++x) {
-                const std::uint32_t raw = mem_.ReadPixel(psm, bp, bw, su + x, sv + y);
-                std::uint32_t c;
-                switch (psm) {
-                    case kPsmCt32: c = raw; break;
-                    case kPsmCt24: {
-                        std::uint32_t a = ta0;
-                        if (aem && (raw & 0xFFFFFF) == 0) a = 0;
-                        c = (raw & 0xFFFFFF) | a << 24;
-                        break;
-                    }
-                    case kPsmCt16: case kPsmCt16S: c = from16(raw); break;
-                    case kPsmT8: case kPsmT8H: c = cpsm == 0 ? clut_[raw & 255] : from16(clut_[raw & 255]); break;
-                    default: {  // 4-bit
-                        const std::uint32_t base = (cpsm == 0 ? (csa & 15) : csa) * 16;
-                        const std::uint32_t e = clut_[(base + (raw & 15)) & 511];
-                        c = cpsm == 0 ? e : from16(e);
-                        break;
-                    }
+    tex->psm = psm;
+    tex->texa = static_cast<std::uint32_t>(Bits(d.texa, 0, 8) | Bits(d.texa, 15, 1) << 15 | Bits(d.texa, 32, 8) << 16);
+    if (paletted) tex->palette = ClutRgba(d);
+    tex->rects.push_back({tbp, tbw, u0, v0, tex->base_width, tex->base_height, 0, 0});
+    std::uint32_t my = 0;
+    for (const Level& m : mips) {
+        tex->rects.push_back({m.tbp, m.tbw, 0, 0, m.w, m.h, tex->base_width, my});
+        my += m.h;
+    }
+    // The decoded rectangles cut into texel blocks, each of which is one 256-byte GS block:
+    // `fn(rect, su, sv, w, h, addr)` per block, in a fixed order.
+    auto for_each_block = [&](auto&& fn) {
+        const std::uint32_t bw_px = BlockWidth(psm), bh_px = BlockHeight(psm);
+        for (const DecodeRect& rect : tex->rects) {
+            for (std::uint32_t by = rect.sv / bh_px * bh_px; by < rect.sv + rect.h; by += bh_px) {
+                const std::uint32_t y0 = std::max(by, rect.sv), y1 = std::min(by + bh_px, rect.sv + rect.h);
+                for (std::uint32_t bx = rect.su / bw_px * bw_px; bx < rect.su + rect.w; bx += bw_px) {
+                    const std::uint32_t x0 = std::max(bx, rect.su), x1 = std::min(bx + bw_px, rect.su + rect.w);
+                    fn(rect, x0, y0, x1 - x0, y1 - y0, GsMemory::PixelAddress(psm, rect.bp, rect.bw, bx, by));
                 }
-                std::memcpy(&tex->rgba[(static_cast<std::size_t>(dy + y) * tex->width + dx + x) * 4], &c, 4);
             }
         }
     };
-    decode(tbp, tbw, u0, v0, tex->base_width, tex->base_height, 0, 0);
-    std::uint32_t my = 0;
-    for (const Level& m : mips) {
-        decode(m.tbp, m.tbw, 0, 0, m.w, m.h, tex->base_width, my);
-        my += m.h;
+    std::vector<std::uint32_t> addrs, gens;
+    for_each_block([&](const DecodeRect&, std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t addr) {
+        addrs.push_back(addr);
+        gens.push_back(mem_.BlockGeneration(addr));
+    });
+    if (decode_mode_ != TextureDecode::kGpu) {
+        // CPU decode. The same texture decoded before with other memory contents (same key: same
+        // rectangles and blocks): only the blocks written since then are decoded again, the result
+        // being the same as a full decode.
+        tex->rgba.assign(static_cast<std::size_t>(tex->width) * tex->height * 4, 0);
+        const DecodedTexture* prev = entry ? entry->texture.get() : nullptr;
+        std::size_t changed = gens.size();
+        if (prev && prev->rgba.size() == tex->rgba.size() && entry->block_gens.size() == gens.size()) {
+            changed = 0;
+            for (std::size_t k = 0; k < gens.size(); ++k) changed += gens[k] != entry->block_gens[k];
+        }
+        if (prev && changed * 2 <= gens.size()) {
+            tex->rgba = prev->rgba;
+            std::size_t k = 0;
+            for_each_block([&](const DecodeRect& rect, std::uint32_t x, std::uint32_t y, std::uint32_t w, std::uint32_t h,
+                               std::uint32_t) {
+                if (gens[k] != entry->block_gens[k]) DecodeTexels(mem_, *tex, rect, x, y, w, h);
+                ++k;
+            });
+        } else {
+            DecodeOnCpu(mem_, *tex);
+        }
     }
-    texture_cache_[key] = tex;
+    if (decode_mode_ != TextureDecode::kCpu) {
+        // GPU decode: the GPU's copy of local memory must hold what this decode reads. When it reads
+        // a block written since the last update, every block written since then goes first (their
+        // content now), in one op; blocks it does not read can wait for a later decode.
+        bool reads_dirty = false;
+        if (mem_.AnyDirty()) {
+            for (std::uint32_t addr : addrs) {
+                if (mem_.IsDirty(addr)) {
+                    reads_dirty = true;
+                    break;
+                }
+            }
+        }
+        if (reads_dirty) {
+            TextureOp up;
+            up.blocks = mem_.TakeDirtyBlocks();
+            up.bytes.resize(up.blocks.size() * 256);
+            for (std::size_t i = 0; i < up.blocks.size(); ++i)
+                std::memcpy(&up.bytes[i * 256], mem_.Data() + static_cast<std::size_t>(up.blocks[i]) * 256, 256);
+            texture_ops_.push_back(std::move(up));
+        }
+        texture_ops_.push_back(TextureOp{{}, {}, tex});
+    }
+    // One entry per key. Bounded by bytes as well as entries (the textures' images and, decoded on
+    // the CPU, their rgba).
+    auto image_bytes = [](const DecodedTexture& x) { return static_cast<std::size_t>(x.width) * x.height * 4; };
+    if (entry) texture_cache_bytes_ -= image_bytes(*entry->texture);
+    if (texture_cache_.size() > 4096 || texture_cache_bytes_ > kTextureCacheBytes) {
+        texture_cache_.clear();
+        texture_cache_bytes_ = 0;
+        entry = nullptr;
+    }
+    CacheEntry& e = entry ? *entry : texture_cache_[key];
+    e.texture = tex;
+    e.block_addrs = std::move(addrs);
+    e.block_gens = std::move(gens);
+    e.valid_at = writes;
+    texture_cache_bytes_ += image_bytes(*tex);
     last_key_valid_ = true;
     last_key_ = key;
+    last_valid_at_ = writes;
     last_texture_ = tex;
     return tex;
 }

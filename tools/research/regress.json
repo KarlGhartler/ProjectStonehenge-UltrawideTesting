@@ -1,7 +1,7 @@
 {
- "_comment": "Regression suite for tools/research/runmany.py (docs/port/s5-plan.md, test tooling). Set AC04_ISO to the disc image. Cards: out/cards/S = a copy of the owner's card S. All runs use --freeze-sim until block B; screenshots are compared with --baseline.",
+ "_comment": "Regression suite for tools/research/runmany.py (docs/port/slices.md §B, test tooling). Set AC04_ISO to the disc image. Cards: out/cards/S = a copy of the User's card S. All runs use --freeze-sim until block B; screenshots are compared with --baseline.",
  "suite": "regress",
- "exe": "build/windows/src/RelWithDebInfo/ac04port.exe",
+ "exe": "build/windows/src/RelWithDebInfo/ProjectStonehenge.exe",
  "iso": "",
  "memcard": "out/cards/S",
  "args": [

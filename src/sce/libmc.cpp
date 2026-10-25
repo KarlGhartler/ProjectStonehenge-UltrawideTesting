@@ -4,7 +4,7 @@
 // Asynchronous model: each request is accepted at once and finishes a fixed number of vblanks
 // later; sceMcSync(1, ...) reports it finished (writing the command number, the result and the
 // request's output) on the first call at or after that vblank. The delays are calibrated against
-// PCSX2 2.8.2 with folder cards (docs/pcsx2/sessions-06.md: scene 6 reaches sub 7 at the same frame
+// PCSX2 2.8.2 with folder cards (docs/pcsx2/sessions.md run 06: scene 6 reaches sub 7 at the same frame
 // as on PCSX2 with a save card, an unformatted card and no card, and the game's poll counters
 // 0x004118A8 / 0x004118CC match): GetInfo 1 vblank, GetDir 1 vblank (two polls, the first in the
 // issue frame). The file requests of slice S2b (open, read, write, flush, close, mkdir, delete,

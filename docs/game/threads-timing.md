@@ -1,6 +1,6 @@
 # Threads, interrupts and timing
 
-Sources: xrefs to every kernel stub (`CreateThread`, `StartThread`, `AddIntcHandler(2)`, `AddDmacHandler(2)`, `SetAlarm`, semaphores; `../platform/sdk-functions.md`), the main loop (`boot.md`), offline scans (`tools/research/hwregs.py`), and PCSX2 sessions 5 and 6 (`../pcsx2/sessions-02.md`).
+Sources: xrefs to every kernel stub (`CreateThread`, `StartThread`, `AddIntcHandler(2)`, `AddDmacHandler(2)`, `SetAlarm`, semaphores; `../platform/sdk-functions.md`), the main loop (`boot.md`), offline scans (`tools/research/hwregs.py`), and PCSX2 sessions 5 and 6 (`../pcsx2/sessions.md` run 02).
 
 ## Summary
 
@@ -27,7 +27,7 @@ Memory-card operations are asynchronous step machines polled once per frame (`sc
 
 ## Interrupt and DMA handlers
 
-| Registration | Handler | Owner | Purpose |
+| Registration | Handler | User | Purpose |
 |---|---|---|---|
 | `AddDmacHandler(5, 0x0026BDA8)` in 0x0026B8B0 (`sceSifInitRpc`) | 0x0026BDA8 | libkernl (SIF) | SIF0 receive: SIF command / RPC completion, wakes RPC waiters (standard SDK) |
 | `AddDmacHandler(3, 0x00276E80)` in 0x00276FC8; `AddDmacHandler(4, 0x00277188)` in 0x00277260 | 0x00276E80, 0x00277188 | libmpeg/libipu | IPU DMA, installed only around a decode call and removed again (`RemoveDmacHandler`); the decode caller busy-waits for them |
@@ -67,4 +67,4 @@ The game is designed for **60 updates per second** (one per NTSC field), and gam
 
 ## Timing requirement for movies
 
-Movies are 29.97 fps MPEG-2 shown on a 59.94 Hz loop: one decoded picture per 2 vblanks. Scene 3 paces decoding with `T0` (H-blank counter, reset every frame): sub 2 waits until `T0 ≥ 300`. The in-menu player waits in `MovieFrameSync` 0x00238870 until `T0` reaches 0x118, which makes each iteration two fields; `frame_count` advances by 2 per iteration (measured, `../pcsx2/sessions-04.md`; `../subsystems/frontend.md`). A port must present each movie picture for exactly 2 game ticks and keep the PCM audio (48 kHz) in sync with that, not use wall-clock video timing.
+Movies are 29.97 fps MPEG-2 shown on a 59.94 Hz loop: one decoded picture per 2 vblanks. Scene 3 paces decoding with `T0` (H-blank counter, reset every frame): sub 2 waits until `T0 ≥ 300`. The in-menu player waits in `MovieFrameSync` 0x00238870 until `T0` reaches 0x118, which makes each iteration two fields; `frame_count` advances by 2 per iteration (measured, `../pcsx2/sessions.md` run 04; `../subsystems/frontend.md`). A port must present each movie picture for exactly 2 game ticks and keep the PCM audio (48 kHz) in sync with that, not use wall-clock video timing.

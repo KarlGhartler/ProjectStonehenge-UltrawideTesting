@@ -1,4 +1,4 @@
-// The user's disc image: opening, the supported-version check (docs/platform/supported-version.md)
+// The user's disc image: opening, the supported-version check (docs/platform/executable.md)
 // and the verification cache.
 //
 // Check order (platform rules: before any other access to the image):
@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 
+#include "platform/message_text.h"
 #include "platform/file_reader.h"
 #include "platform/iso9660.h"
 
@@ -78,8 +79,8 @@ private:
     Iso9660 iso_;
 };
 
-// Text for message boxes and the log.
-std::string DescribeIsoProblem(const IsoCheck& check, const std::filesystem::path& image,
+// Message box text for a failed check (headline, explanation, steps, the image and settings paths).
+MessageText DescribeIsoProblem(const IsoCheck& check, const std::filesystem::path& image,
                                const std::filesystem::path& settings_file);
 
 }  // namespace ac04::platform

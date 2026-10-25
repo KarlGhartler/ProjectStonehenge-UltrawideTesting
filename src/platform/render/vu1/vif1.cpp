@@ -1,5 +1,6 @@
 #include "platform/render/vu1/vif1.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include "platform/log.h"
@@ -122,6 +123,9 @@ void Vif1::Unpack(const std::uint32_t* data) {
         log::WriteOnce("vif1:fill", log::Level::Warning, "renderer", "VIF1 UNPACK fill mode (WL > CL) approximated");
     }
     const std::uint32_t cl = cl_ == 0 ? 1 : cl_, wl = wl_ == 0 ? 1 : wl_;
+    // The run log keys a program run by where its vertex data (VU qword 32 on) came from.
+    const std::uint32_t last = addr + ((num - 1) / wl) * cl + (num - 1) % wl;
+    if (flg && addr <= tops_ + 32 && tops_ + 32 <= last) vertex_source_ = data_addr_;
     auto element = [&](std::uint32_t i, std::uint32_t c) -> std::uint32_t {
         // Component c of element i, sign/zero extended to 32 bits.
         const std::uint64_t bit = static_cast<std::uint64_t>(i) * bits;
@@ -202,11 +206,33 @@ void Vif1::RunProgram(std::uint32_t start, bool continue_) {
     SwapTops();
     const std::uint32_t pc = continue_ ? vu_.next_pc : start;
     std::uint32_t next = pc;
+    RunRecord* rec = nullptr;
+    if (log_ != nullptr && vu_.top + 32 < kVuMemQwords) {
+        // VU memory the run reads (RunRecord): absolute 0..63, and from TOP the fixed block
+        // (0-31) and the vertex records from 32 (count at TOP + 23: a byte for the terrain program).
+        const std::uint32_t q23 = vu_.Qword(vu_.top + 23)[0];
+        const std::uint32_t count = vu_.micro_source[0] == kProgramT ? (q23 & 0xFF) : (q23 & 0x3FF);
+        const std::uint32_t rel = std::min<std::uint32_t>(kVuMemQwords - vu_.top, 32 + 4 * count + 8);
+        RunRecord r;
+        r.gif_offset = static_cast<std::uint32_t>(gif_->size());
+        r.source = vu_.micro_source[0];
+        r.pc = pc;
+        r.top = vu_.top;
+        r.itop = vu_.itop;
+        r.vertex_source = vertex_source_;
+        r.mem_offset = static_cast<std::uint32_t>(log_->mem.size());
+        r.rel_qwords = rel;
+        log_->mem.insert(log_->mem.end(), vu_.mem.begin(), vu_.mem.begin() + RunRecord::kAbsQwords * 4);
+        log_->mem.insert(log_->mem.end(), vu_.mem.begin() + vu_.top * 4, vu_.mem.begin() + (vu_.top + rel) * 4);
+        log_->runs.push_back(r);
+        rec = &log_->runs.back();
+    }
     if (!RunVu1Program(vu_, vu_.micro_source[0], pc, *gif_, next)) {
         log::WriteOnce("vu1:unknown", log::Level::Warning, "renderer",
                        "VU1 program with microcode from 0x%08X (start %u) not reimplemented; skipped",
                        vu_.micro_source[0], pc);
     }
+    if (rec != nullptr) rec->gif_size = static_cast<std::uint32_t>(gif_->size()) - rec->gif_offset;
     vu_.next_pc = next;
     ++runs_;
 }

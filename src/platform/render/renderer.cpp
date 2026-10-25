@@ -4,6 +4,7 @@
 #include <vk_mem_alloc.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -34,6 +35,14 @@ VkShaderModule MakeShader(VkDevice device, const uint32_t* code, size_t bytes) {
     return m;
 }
 
+gs::GsBackend::AntiAlias ToBackend(platform::AntiAliasing a) {
+    switch (a) {
+        case platform::AntiAliasing::Fxaa: return gs::GsBackend::AntiAlias::kFxaa;
+        case platform::AntiAliasing::Smaa: return gs::GsBackend::AntiAlias::kSmaa;
+        default: return gs::GsBackend::AntiAlias::kOff;
+    }
+}
+
 }  // namespace
 
 Renderer::~Renderer() { Shutdown(); }
@@ -42,7 +51,7 @@ bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& pr
                     std::string& error) {
     window_ = window;
     presentation_ = presentation;
-    internal_scale_ = 1;  // fixed at 1x until higher scales are validated (port-baseline "Later")
+    internal_scale_ = std::clamp(presentation.internal_scale, 1, platform::kMaxInternalScale);
     movie_factor_ = internal_scale_;  // movie upscaling stage (ADR-006 §5): passthrough at 1x
     if (!ctx_.Init(window, AC04_DEV_BUILD != 0 && validation, error)) return false;
     AC04_LOG_INFO("renderer", "GPU: %s, Vulkan %s, driver %s", ctx_.gpu.name.c_str(),
@@ -73,7 +82,10 @@ bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& pr
     std::string gs_error;
     gs_ready_ = gs_backend_.Init(ctx_, gs_error);
     if (!gs_ready_) AC04_LOG_ERROR("renderer", "GS renderer unavailable: %s", gs_error.c_str());
+    gs_backend_.SetScale(internal_scale_);
+    gs_backend_.SetAntiAlias(ToBackend(presentation.antialiasing));
     gs_state_.SetFrameQuery([this](uint32_t tbp) { return gs_backend_.IsFrameBuffer(tbp); });
+    gs_state_.SetTextureDecode(gs::TextureDecode::kGpu);  // docs/port/renderer.md §2; SetTextureDecode changes it
     // Movie upscaling stage (ADR-006 §5); without it movies are drawn from the GS upload only.
     std::string movie_error;
     movie_upscaler_ = CreateFsr1MovieUpscaler();
@@ -85,11 +97,14 @@ bool Renderer::Init(SDL_Window* window, const platform::PresentationSettings& pr
 void Renderer::SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps,
                              std::vector<std::vector<gs::SourceMark>>& marks,
                              std::vector<std::vector<uint8_t>>& pool) {
+    const auto start = std::chrono::steady_clock::now();
     for (size_t i = 0; i < steps.size(); ++i) {
         const std::vector<uint8_t>& s = steps[i];
         gs_state_.ProcessGif(s.data(), s.size(), i < marks.size() ? &marks[i] : nullptr);
         auto draws = gs_state_.TakeDraws();
         gs_pending_.insert(gs_pending_.end(), std::make_move_iterator(draws.begin()), std::make_move_iterator(draws.end()));
+        auto ops = gs_state_.TakeTextureOps();
+        if (gs_ready_) gs_ops_.insert(gs_ops_.end(), std::make_move_iterator(ops.begin()), std::make_move_iterator(ops.end()));
     }
     for (std::vector<uint8_t>& s : steps) {
         if (pool.size() >= 4) break;
@@ -98,11 +113,15 @@ void Renderer::SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps,
     }
     steps.clear();
     marks.clear();
+    pending_gs_ms_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 }
 
-void Renderer::SubmitMoviePicture(uint64_t serial, int width, int height, std::vector<uint8_t>& rgba) {
+void Renderer::SubmitMoviePicture(uint64_t serial, uint32_t guest_addr, uint32_t guest_bytes, int width, int height,
+                                  std::vector<uint8_t>& rgba) {
     if (serial == movie_serial_ || rgba.empty()) return;
     movie_serial_ = serial;
+    movie_guest_addr_ = guest_addr;
+    movie_guest_bytes_ = guest_bytes;
     movie_width_ = width;
     movie_height_ = height;
     movie_rgba_.swap(rgba);
@@ -204,6 +223,7 @@ bool Renderer::ResizeNativeTarget(int width, int height) {
 }
 
 bool Renderer::CreateNativeTarget(std::string& error, int width, int height) {
+    native_scale_ = internal_scale_;
     native_width_ = (width > 0 ? width : kNativeWidth) * internal_scale_;
     native_height_ = (height > 0 ? height : kNativeHeight) * internal_scale_;
     VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -242,7 +262,14 @@ bool Renderer::CreateNativeTarget(std::string& error, int width, int height) {
 }
 
 bool Renderer::UploadTestPattern(std::string& error) {
+    // What the window shows until the GS renderer has an image: the test pattern in development
+    // builds, black in release builds.
+#if AC04_DEV_BUILD
     const std::vector<uint8_t> pixels = MakeTestPattern(native_width_, native_height_);
+#else
+    std::vector<uint8_t> pixels(static_cast<size_t>(native_width_) * native_height_ * 4, 0);
+    for (size_t i = 3; i < pixels.size(); i += 4) pixels[i] = 0xFF;
+#endif
     VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bci.size = pixels.size();
     bci.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -459,10 +486,25 @@ void Renderer::DestroySwapchainResources() {
     render_finished_.clear();
 }
 
+void Renderer::SetDisplayAspect(int w, int h) {
+    if (w == aspect_w_ && h == aspect_h_) return;
+    aspect_w_ = w;
+    aspect_h_ = h;
+    AC04_LOG_INFO("renderer", "display aspect %d:%d", w, h);
+}
+
 void Renderer::ApplySettings(const platform::PresentationSettings& presentation) {
     const bool vsync_changed = presentation.vsync != presentation_.vsync;
+    gs_backend_.SetAntiAlias(ToBackend(presentation.antialiasing));
     presentation_ = presentation;
     if (vsync_changed) swapchain_dirty_ = true;
+    const int scale = std::clamp(presentation.internal_scale, 1, platform::kMaxInternalScale);
+    if (scale != internal_scale_) {
+        // Takes effect with the next frame: the GS targets are rebuilt and the native image resized.
+        internal_scale_ = scale;
+        if (!movie_factor_forced_) movie_factor_ = scale;
+        if (gs_ready_) gs_backend_.SetScale(scale);
+    }
 }
 
 bool Renderer::DrawFrame() {
@@ -475,10 +517,17 @@ bool Renderer::DrawFrame() {
         }
     }
 
-    if (native_request_w_ > 0 && (native_request_w_ != native_width_ || native_request_h_ != native_height_)) {
+    if (native_request_w_ > 0 && (native_request_w_ * internal_scale_ != native_width_ ||
+                                  native_request_h_ * internal_scale_ != native_height_ || native_scale_ != internal_scale_)) {
         ResizeNativeTarget(native_request_w_, native_request_h_);
     }
-    vkWaitForFences(ctx_.device, 1, &in_flight_[frame_], VK_TRUE, UINT64_MAX);
+    {
+        const auto wait_start = std::chrono::steady_clock::now();
+        vkWaitForFences(ctx_.device, 1, &in_flight_[frame_], VK_TRUE, UINT64_MAX);
+        last_stats_.wait_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - wait_start).count();
+        stat_wait_ms_ += last_stats_.wait_ms;
+        ++stat_presented_;
+    }
     uint32_t image = 0;
     VkResult r = vkAcquireNextImageKHR(ctx_.device, ctx_.swapchain, UINT64_MAX, image_available_[frame_],
                                        VK_NULL_HANDLE, &image);
@@ -499,17 +548,43 @@ bool Renderer::DrawFrame() {
     vkBeginCommandBuffer(cmd, &bi);
 
     // Movie upscaling stage (ADR-006 §5): once per new picture, only above 1x. At internal scale
-    // N > 1 the scaled GS backend samples its output for draws whose texture came from the movie
-    // image buffer (DrawCommand::texture_guest_source, MovieTexelOrigin); the scaled GS backend is
-    // part of the internal-resolution work (docs/port/internal-resolution.md), not built yet.
+    // N > 1 the GS backend samples its output for draws whose texture came from the movie image
+    // buffer (DrawCommand::texture_guest_source, MovieTexelOrigin).
     if (movie_upscaler_ready_ && movie_factor_ > 1 && movie_serial_ != movie_done_serial_ && !movie_rgba_.empty()) {
         if (movie_upscaler_->Upscale(cmd, frame_, movie_rgba_, movie_width_, movie_height_, movie_factor_))
             movie_done_serial_ = movie_serial_;
     }
+    {
+        // At internal scale > 1 the GS draws from the movie image buffer sample the upscaled picture.
+        gs::GsBackend::MovieSource ms;
+        if (internal_scale_ > 1 && movie_factor_ > 1 && movie_upscaler_ready_ && movie_done_serial_ != 0 &&
+            movie_upscaler_->OutputView()) {
+            ms.guest_addr = movie_guest_addr_;
+            ms.guest_bytes = movie_guest_bytes_;
+            ms.width = movie_width_;
+            ms.height = movie_height_;
+            ms.view = movie_upscaler_->OutputView();
+        }
+        gs_backend_.SetMovieSource(ms);
+    }
 
-    if (gs_ready_ && !gs_pending_.empty()) {
-        gs_backend_.Record(cmd, frame_, gs_pending_);
+    if (gs_ready_ && (!gs_pending_.empty() || !gs_ops_.empty())) {
+        const auto start = std::chrono::steady_clock::now();
+        gs_backend_.Record(cmd, frame_, gs_pending_, gs_ops_);
         gs_pending_.clear();
+        gs_ops_.clear();
+        last_stats_.gs_ms = pending_gs_ms_;
+        last_stats_.record_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        last_stats_.textures = gs_backend_.LastTextureStats();
+        pending_gs_ms_ = 0.0;
+        ++stat_frames_;
+        stat_gs_ms_ += last_stats_.gs_ms;
+        stat_record_ms_ += last_stats_.record_ms;
+        stat_upload_bytes_ += last_stats_.textures.upload_bytes;
+        stat_uploads_ += last_stats_.textures.uploads;
+        stat_decodes_ += last_stats_.textures.decodes;
+        stat_memory_updates_ += last_stats_.textures.memory_updates;
+        stat_textures_ += last_stats_.textures.textures;
         int w = 0, h = 0;
         gs_backend_.PresentSize(w, h);
         if (w > 0 && h >= 16) {  // ignore the first frames before the draw buffer is cleared
@@ -592,6 +667,26 @@ bool Renderer::DrawFrame() {
 
 void Renderer::Shutdown() {
     if (!ctx_.device) return;
+    if (stat_frames_ > 0) {
+        const double n = static_cast<double>(stat_frames_);
+        AC04_LOG_INFO("renderer",
+                      "%llu frames drawn; per frame on average: GS processing %.2f ms, recording %.2f ms, %.1f textures "
+                      "drawn, %.2f decoded on the GPU, %.2f uploaded from the CPU, %.2f GPU memory updates, %.0f KiB "
+                      "uploaded",
+                      static_cast<unsigned long long>(stat_frames_), stat_gs_ms_ / n, stat_record_ms_ / n,
+                      static_cast<double>(stat_textures_) / n, static_cast<double>(stat_decodes_) / n,
+                      static_cast<double>(stat_uploads_) / n, static_cast<double>(stat_memory_updates_) / n,
+                      static_cast<double>(stat_upload_bytes_) / n / 1024.0);
+        AC04_LOG_INFO("renderer", "%llu frames presented; waiting for the GPU %.2f ms per frame on average",
+                      static_cast<unsigned long long>(stat_presented_),
+                      stat_wait_ms_ / static_cast<double>(stat_presented_));
+    }
+    if (gs_backend_.VerifiedDecodes() > 0) {
+        const auto bad = static_cast<unsigned long long>(gs_backend_.VerifyMismatches());
+        const auto all = static_cast<unsigned long long>(gs_backend_.VerifiedDecodes());
+        if (bad == 0) AC04_LOG_INFO("renderer", "texture decode check: %llu GPU decodes equal to the CPU decode", all);
+        else AC04_LOG_WARN("renderer", "texture decode check: %llu of %llu GPU decodes differ from the CPU decode", bad, all);
+    }
     vkDeviceWaitIdle(ctx_.device);
     DestroySwapchainResources();
     if (movie_upscaler_) movie_upscaler_->Shutdown();

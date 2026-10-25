@@ -16,6 +16,14 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
             }
             out = argv[++i];
         };
+#if !AC04_DEV_BUILD
+        // A development-only parameter in a release build: one error, and its value (when it takes
+        // one) is skipped so that it is not reported as an unknown parameter as well.
+        auto dev_only = [&](bool takes_value) {
+            result.errors.push_back(arg + " is only available in development builds");
+            if (takes_value && i + 1 < argc) ++i;
+        };
+#endif
         if (arg == "--help" || arg == "-h" || arg == "/?") {
             o.show_help = true;
         } else if (arg == "--version") {
@@ -24,29 +32,47 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
             value(o.iso_path);
         } else if (arg == "--user-data") {
             value(o.user_data_dir);
+        } else if (arg == "--internal-scale") {
+            std::string spec;
+            value(spec);
+            char* end = nullptr;
+            const unsigned long v = std::strtoul(spec.c_str(), &end, 10);
+            if (end == spec.c_str() || *end != 0 || v < 1 || v > 8) {
+                result.errors.push_back("--internal-scale expects a factor from 1 to 8: " + spec);
+            } else {
+                o.internal_scale = static_cast<unsigned>(v);
+            }
+        } else if (arg == "--antialiasing") {
+            value(o.antialiasing);
+            if (o.antialiasing != "off" && o.antialiasing != "fxaa" && o.antialiasing != "smaa")
+                result.errors.push_back("--antialiasing expects off, fxaa or smaa: " + o.antialiasing);
         } else if (arg == "--debug-overlay") {
             o.debug_overlay = true;
         } else if (arg == "--no-debug-overlay") {
             o.debug_overlay = false;
+        } else if (arg == "--fps-overlay") {
+            o.fps_overlay = true;
+        } else if (arg == "--no-fps-overlay") {
+            o.fps_overlay = false;
         } else if (arg == "--verify-iso") {
             o.verify_iso = true;
         } else if (arg == "--dump-ram-after-load") {
 #if AC04_DEV_BUILD
             o.dump_ram_after_load = true;
 #else
-            result.errors.push_back("--dump-ram-after-load is only available in development builds");
+            dev_only(false);
 #endif
         } else if (arg == "--dump-ram-at-first-scenestep") {
 #if AC04_DEV_BUILD
             o.dump_ram_at_first_scenestep = true;
 #else
-            result.errors.push_back("--dump-ram-at-first-scenestep is only available in development builds");
+            dev_only(false);
 #endif
         } else if (arg == "--pad-script") {
 #if AC04_DEV_BUILD
             value(o.pad_script);
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(true);
 #endif
         } else if (arg == "--record-input" || arg == "--hash-log" || arg == "--stress-host") {
 #if AC04_DEV_BUILD
@@ -54,7 +80,7 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
             if (arg == "--hash-log") o.hash_log = true;
             if (arg == "--stress-host") o.stress_host = true;
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(false);
 #endif
         } else if (arg == "--replay-p2m2" || arg == "--p2m2-offset") {
 #if AC04_DEV_BUILD
@@ -69,25 +95,47 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
                 o.p2m2_offset = static_cast<int>(n);
             }
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(true);
 #endif
         } else if (arg == "--replay-input") {
 #if AC04_DEV_BUILD
             value(o.replay_input);
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(true);
 #endif
         } else if (arg == "--vk-validation") {
 #if AC04_DEV_BUILD
             o.vk_validation = true;
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(false);
+#endif
+        } else if (arg == "--cpu-texture-decode") {
+#if AC04_DEV_BUILD
+            o.cpu_texture_decode = true;
+#else
+            dev_only(false);
+#endif
+        } else if (arg == "--verify-texture-decode") {
+#if AC04_DEV_BUILD
+            o.verify_texture_decode = true;
+#else
+            dev_only(false);
+#endif
+        } else if (arg == "--frame-interpolation") {
+#if AC04_DEV_BUILD
+            std::string v;
+            value(v);
+            if (v == "on") o.frame_interpolation = true;
+            else if (v == "off") o.frame_interpolation = false;
+            else result.errors.push_back("--frame-interpolation expects on or off: " + v);
+#else
+            dev_only(true);
 #endif
         } else if (arg == "--freeze-sim") {
 #if AC04_DEV_BUILD
             o.freeze_sim = true;
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(false);
 #endif
         } else if (arg == "--mission" || arg == "--mission-id" || arg == "--mission-mode") {
 #if AC04_DEV_BUILD
@@ -113,7 +161,7 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
                 }
             }
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(true);
 #endif
         } else if (arg == "--heap-fill") {
 #if AC04_DEV_BUILD
@@ -127,31 +175,31 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
                 o.heap_fill = static_cast<int>(v);
             }
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(true);
 #endif
         } else if (arg == "--play-gsdump") {
 #if AC04_DEV_BUILD
             value(o.play_gsdump);
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(true);
 #endif
         } else if (arg == "--dump-vram") {
 #if AC04_DEV_BUILD
             o.dump_vram = true;
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(false);
 #endif
         } else if (arg == "--log-allocs") {
 #if AC04_DEV_BUILD
             o.log_allocs = true;
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(false);
 #endif
         } else if (arg == "--dump-audio") {
 #if AC04_DEV_BUILD
             o.dump_audio = true;
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(false);
 #endif
         } else if (arg == "--dump-dma-at") {
 #if AC04_DEV_BUILD
@@ -165,7 +213,7 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
                 o.dump_dma_at = static_cast<unsigned>(v);
             }
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(true);
 #endif
         } else if (arg == "--fast-until") {
 #if AC04_DEV_BUILD
@@ -179,7 +227,7 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
                 o.fast_until = static_cast<unsigned>(v);
             }
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(true);
 #endif
         } else if (arg == "--exit-at") {
 #if AC04_DEV_BUILD
@@ -193,7 +241,7 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
                 o.exit_at = static_cast<unsigned>(v);
             }
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(true);
 #endif
         } else if (arg == "--movie-upscale") {
 #if AC04_DEV_BUILD
@@ -207,7 +255,7 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
                 o.movie_upscale = static_cast<unsigned>(v);
             }
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(true);
 #endif
         } else if (arg == "--screenshot-at") {
 #if AC04_DEV_BUILD
@@ -224,7 +272,7 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
                 s = *end == ',' ? end + 1 : end;
             }
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(true);
 #endif
         } else if (arg == "--dump-ram-at" || arg == "--memcard" || arg == "--no-memcard") {
 #if AC04_DEV_BUILD
@@ -249,13 +297,13 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
                 }
             }
 #else
-            result.errors.push_back(arg + " is only available in development builds");
+            dev_only(arg != "--no-memcard");
 #endif
         } else if (arg == "--allow-unverified-iso") {
 #if AC04_DEV_BUILD
             o.allow_unverified_iso = true;
 #else
-            result.errors.push_back("--allow-unverified-iso is only available in development builds");
+            dev_only(false);
 #endif
         } else {
             result.errors.push_back("unknown parameter: " + arg);
@@ -265,13 +313,19 @@ CommandLineResult ParseCommandLine(int argc, const char* const* argv) {
 }
 
 std::string CommandLineHelp() {
-    return "Usage: ac04port [options]\n"
+    return "Usage: ProjectStonehenge [options]\n"
            "\n"
            "  --iso <path>          Disc image to use (overrides paths.iso in settings.json)\n"
            "  --user-data <dir>     Folder for settings, saves and logs\n"
-           "                        (default: %LOCALAPPDATA%\\AC04Port)\n"
-           "  --debug-overlay       Enable the debug overlay for this session\n"
+           "                        (default: %LOCALAPPDATA%\\ProjectStonehenge)\n"
+           "  --internal-scale <n>  Internal rendering resolution factor 1-8 for this session\n"
+           "                        (overrides presentation.internal_scale)\n"
+           "  --antialiasing <m>    Anti-aliasing for this session: off, fxaa or smaa\n"
+           "                        (overrides presentation.antialiasing)\n"
+           "  --debug-overlay      Enable the debug overlay for this session\n"
            "  --no-debug-overlay    Disable the debug overlay for this session\n"
+           "  --fps-overlay         Show the frame rate and frame time (top right) this session\n"
+           "  --no-fps-overlay      Hide the frame rate overlay this session\n"
            "  --verify-iso          Check the disc image checksum again (ignore the cache)\n"
 #if AC04_DEV_BUILD
            "  --allow-unverified-iso  Development builds: continue with an image whose\n"
@@ -302,6 +356,12 @@ std::string CommandLineHelp() {
            "                        --hash-log: determinism check against a calm run)\n"
            "  --vk-validation       Development builds: enable the Vulkan validation layer (when installed;\n"
            "                        it makes draw-heavy screens such as the hangar slow)\n"
+           "  --cpu-texture-decode  Development builds: decode GS textures on the CPU (the reference decoder)\n"
+           "                        instead of the GPU\n"
+           "  --verify-texture-decode  Development builds: decode GS textures on both the GPU and the CPU and\n"
+           "                        log every difference (slow)\n"
+           "  --frame-interpolation <on|off>  Development builds: force frame interpolation for this\n"
+           "                        session, also in validation runs (still only above 60 frames per second)\n"
            "  --dump-audio          Development builds: write the mixed sound to\n"
            "                        <user data>\\dumps\\audio.wav at exit (research only)\n"
            "  --exit-at <n>         Development builds: exit normally after vblank n\n"

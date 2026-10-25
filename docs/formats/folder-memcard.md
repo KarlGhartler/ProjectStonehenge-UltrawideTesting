@@ -1,6 +1,6 @@
 # PCSX2 Folder Memory Card layout
 
-Purpose: the port stores saves so that a save folder can be copied between the port's `saves\` folder (`%LOCALAPPDATA%\AC04Port\saves\`, ADR-005) and a PCSX2 Folder Memory Card, in both directions (ADR-005).
+Purpose: the port stores saves so that a save folder can be copied between the port's `saves\` folder (`%LOCALAPPDATA%\ProjectStonehenge\saves\`, ADR-005) and a PCSX2 Folder Memory Card, in both directions (ADR-005).
 
 Source: PCSX2 source code, `pcsx2/SIO/Memcard/MemoryCardFolder.h` and `.cpp` (GPL-3.0+, PCSX2 Dev Team), `master` branch, read on 2026-10-10.
 - Read for compatibility only. **No code is copied.** The port writes its own implementation from this description.
@@ -121,12 +121,12 @@ When "filter by game" is enabled, PCSX2 loads only top-level directories whose n
 
 ## 8. What the port does (design notes for the save layer, not decided code)
 
-- `saves\` (under `%LOCALAPPDATA%\AC04Port\`, ADR-005) = the port's folder card root. It holds one host folder per PS2 directory and a `_pcsx2_superblock`, so the whole `saves` folder can also be used directly as a PCSX2 folder card. Copying single save folders works in both directions.
+- `saves\` (under `%LOCALAPPDATA%\ProjectStonehenge\`, ADR-005) = the port's folder card root. It holds one host folder per PS2 directory and a `_pcsx2_superblock`, so the whole `saves` folder can also be used directly as a PCSX2 folder card. Copying single save folders works in both directions.
 - `sceMc*` (written in `src/sce/`) map onto host file operations. The raw save files are written byte for byte as the game passes them to `sceMcWrite`. The port writes `_pcsx2_index` with `order` and times so PCSX2 shows the same order. It writes `_pcsx2_meta*` only in the cases PCSX2 would.
 - `sceMcGetDir` results (sizes, times, attributes) are synthesised from the host files plus the metadata, exactly as PCSX2 would present them.
-- Memory card port 1 vs. 2: H. The port could use `saves` as port 1 only and report port 2 as empty. Owner decision when the save layer is designed.
+- Memory card port 1 vs. 2: H. The port could use `saves` as port 1 only and report port 2 as empty. User decision when the save layer is designed.
 
-## 9. Observed in a real folder card (owner's example, 2026-10-11)
+## 9. Observed in a real folder card (User's example, 2026-10-11)
 
 Card `AceCombat4Saves_converted.ps2` (path in `CLAUDE.local.md`), converted by PCSX2 from a file card and holding one AC04 save. Only structure and field values are recorded here; no bytes are copied into the repo.
 
@@ -163,11 +163,13 @@ Superblock field values (§4 layout):
 | bad_block_list | all 0xFFFFFFFF |
 | card_type / card_flags | 2 / 0x2B |
 
-Bytes 0x154–0x1FFF are not zero (rest of the original card's first block). Whether PCSX2 accepts a superblock file that holds only the 0x154-byte header plus zero padding is untested (H); until then the port writes a full 0x2000-byte file with the field values above and zeros elsewhere, and the round-trip test (open point 2) confirms it.
+Bytes 0x154–0x1FFF are not zero (rest of the original card's first block). The port writes a full 0x2000-byte file with the field values above and zeros elsewhere. PCSX2's folder card code (`pcsx2/SIO/Memcard/MemoryCardFolder.cpp`, read 2026-10-20) uses only the named fields of the superblock (page and cluster sizes, `clusters_per_card`, `alloc_offset` / `alloc_end`, the backup blocks, `ifc_list`, `rootdir_cluster`); it decides "formatted" from byte 0x16 alone (`'o'` of the magic); the bytes after 0x154 are reachable only as raw block 0 data, which libmc does not read. The port's fields match two PCSX2-formatted cards exactly (0x000–0x153, unit test `a new card made from scratch has PCSX2's format fields`), so the zero padding is accepted (confirmed by reading the code; a PCSX2 run of a port-made card is still worth doing, open point 2).
+
+**New card at first start (2026-10-20, User request).** PCSX2 treats a folder without `_pcsx2_superblock` as an **unformatted** card. So the port, when its own saves folder holds no card, formats one at once (`FolderCard::Format`, from `src/main.cpp`), not only at the game's first save as before: the folder is a valid formatted 8 MB PCSX2 folder card from the start. The game then shows its own "No AC04 files found on memory card. Create save file?" on the first SAVE and writes the save as on the PS2 (`../port/validation.md` §2o).
 
 ## 10. As libmc sees it through PCSX2 2.8.2 (run 06, slice S1)
 
-Measured with the owner's cards (`../pcsx2/sessions-06.md`) and implemented read-only in `src/platform/memcard/folder_card.cpp` + `src/sce/libmc.cpp`:
+Measured with the User's cards (`../pcsx2/sessions.md` run 06) and implemented read-only in `src/platform/memcard/folder_card.cpp` + `src/sce/libmc.cpp`:
 - **Card present** = the folder has `_pcsx2_superblock`. An **empty** superblock file is an unformatted card: `sceMcGetInfo` gives type 2, free 0, format 0, result -2. No card: type 0, result below -10 (the game clamps it to -11).
 - **Free space** (`sceMcGetInfo`, KB = clusters): 8001 minus the clusters of every file (`ceil(size / 1024)`) and of every directory's entries (`ceil(entries / 2)`, "." and ".." included; the root too). An empty formatted card gives 8000; the AC04 save (0x3C4 + 0xCB98 + 0x4B10 bytes) gives 7925, as on PCSX2.
 - **Times** in `sceMcGetDir` entries are the `_pcsx2_index` Unix times converted as **UTC** (no JST shift): `timeModified` 1791961353 reads as 2026-10-14 07:02:33.
@@ -179,12 +181,12 @@ Measured with the owner's cards (`../pcsx2/sessions-06.md`) and implemented read
 
 Implemented in `src/platform/memcard/folder_card.cpp` (`MakeDir`, `WriteFile`, `Delete`, `Format`) and `src/sce/libmc.cpp` (`sceMcOpen/Close/Read/Write/Flush/Mkdir/Delete/Format`); test "folder card: writing a save as CreateMcSave does (S2b)".
 - `sceMcMkdir` creates the host folder and its `_pcsx2_index` with the `$ROOT` entry (created = modified = now). In the port's own `saves\` folder the first `MakeDir` also writes `_pcsx2_superblock` when it is missing (the folder is then a formatted card).
-- `sceMcOpen` with the create flag + `sceMcWrite` + `sceMcClose` write the file byte for byte at close. A new file gets the next `order` in `_pcsx2_index`; a replaced file keeps its order and gets new created and modified times (as in the owner's card, §9); `$ROOT`'s modified time becomes now. Times are Unix seconds, UTC.
+- `sceMcOpen` with the create flag + `sceMcWrite` + `sceMcClose` write the file byte for byte at close. A new file gets the next `order` in `_pcsx2_index`; a replaced file keeps its order and gets new created and modified times (as in the User's card, §9); `$ROOT`'s modified time becomes now. Times are Unix seconds, UTC.
 - `_pcsx2_index` is written as PCSX2 writes it: YAML flow style on one line, no trailing newline.
 - `sceMcDelete` removes a file and its index entry, or an empty directory (else −6).
 - Request timing: every file request (open, read, write, flush, close, mkdir, delete, format) finishes **1 vblank** after it is issued (HYPOTHESIS, to calibrate from the S2b PCSX2 batch: poll counters at 0x004118D0 ff. in `s2b_load_done`). The effects happen when the request finishes, not when it is issued.
 ## Open points
 
-1. Verify against tag `v2.8.2`: file names and YAML format are confirmed by the example card (§9); whether a zero-padded superblock is accepted is still open.
+1. Verify against tag `v2.8.2`: file names and YAML format are confirmed by the example card (§9); the zero-padded superblock is accepted by PCSX2's code (§9, read 2026-10-20).
 2. Round trip test: create a save in PCSX2 on a folder card, copy the folder into the port, load it; and the reverse.
 3. Which times the game itself sets (`sceMcSetFileInfo`?) and whether the port must reproduce JST/UTC handling.

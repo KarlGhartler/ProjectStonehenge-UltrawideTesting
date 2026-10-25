@@ -9,13 +9,24 @@
 // state, +0x31C/+0x31E MenuGoTo target, +0x320 row (0 player, 1-4 settings), +0x324 value of the
 // row, +0x328 s32 values[5] (player, then the settings of that player: bits 1, 2, 8, 4),
 // +0x33C row animation mask, +0x340 f32 row animation timers[6].
+//
+// Port baseline (User approval 2026-10-20, docs/decisions/port-baseline.md): CONTROL TYPE has four
+// choices, NORMAL (MODERN), EASY (MODERN), NORMAL (CLASSIC), EASY (CLASSIC). The Classic ones are
+// the game's two types on their original squares; the Modern ones (two squares to their left) are
+// the same types with L1/L2 and R1/R2 swapped by the port's input layer. Moving through the four
+// squares changes the game's type bit exactly as the original two squares do, so guest RAM and the
+// save data hold only the Classic type; the per-player Modern flag is kept by the port
+// (common/port_hooks.h, settings input.modern_controls) and handed over on ACCEPT.
 #include "game/game.h"
 
+#include <array>
 #include <cstddef>
 
 #include "common/debug_hooks.h"
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "common/port_hooks.h"
+#include "game/port_menu.h"
 #include "sce/sce.h"
 
 namespace ac04::game {
@@ -29,15 +40,32 @@ AC04_GUEST_VAR(u16, g_MissionNo, 0x002A15B8)
 
 constexpr u32 kSettingBits = 0x00411328;  // u16[4]: 1, 2, 8, 4
 
-f32 K(u32 address) { return GRef<f32>(address); }
-u64& Q(u32 p, u32 i) { return GRef<u64>(p + 8 * i); }
-u64 Sx(s32 v) { return static_cast<u64>(static_cast<s64>(v)); }
 s32& State(u32 obj) { return GRef<s32>(obj + 0x318); }
 s32& Value(u32 obj, u32 i) { return GRef<s32>(obj + 0x328 + i * 4); }
 
 void ClearRowTimers(u32 obj) {
     for (u32 off = 0x354; off >= 0x340; off -= 4) GRef<u32>(obj + off) = 0;
 }
+
+// Port: the Modern flags while the page is open (port_hooks.h), per player.
+std::array<bool, 2> g_Modern{};
+
+bool Modern(u32 obj) { return g_Modern[Value(obj, 0) == 0 ? 0 : 1]; }
+
+// Square of the CONTROL TYPE row: 0 NORMAL (MODERN), 1 EASY (MODERN), 2 NORMAL (CLASSIC), 3 EASY
+// (CLASSIC). The game's value (row 1) is 0 NORMAL, 1 EASY.
+s32 TypeChoice(u32 obj) { return (Modern(obj) ? 0 : 2) + Value(obj, 1); }
+
+// Square column of a row relative to the original first square (CONTROL TYPE: -2..1).
+s32 Column(u32 obj, s32 row) { return row == 1 ? TypeChoice(obj) - 2 : Value(obj, static_cast<u32>(row)); }
+
+u32 TypeText(s32 choice) {
+    static const char* const kNames[4] = {"NORMAL (MODERN)", "EASY (MODERN)", "NORMAL (CLASSIC)", "EASY (CLASSIC)"};
+    return port_menu::String(static_cast<u32>(choice), kNames[choice & 3]);
+}
+
+// Mapping-table row whose action a row shows: Modern swaps L1 / L2 (rows 4 / 5) and R1 / R2 (6 / 7).
+s32 ActionRow(u32 obj, s32 row) { return Modern(obj) && 4 <= row && row <= 7 ? (row ^ 1) : row; }
 
 }  // namespace
 
@@ -121,6 +149,7 @@ void ControllerInput(u32 obj) {
         GRef<u32>(0x002A15D0) = GRef<u32>(obj + 0x314);
         State(obj) = 2;
         ApplyVibrationOptions(0x002A15D0);
+        port::Menu().set_modern_controls = g_Modern;  // port: Modern control types
         PlayMenuSe(0, 2);
         return;
     }
@@ -131,15 +160,26 @@ void ControllerInput(u32 obj) {
         GRef<s32>(obj + 0x320) = row;
         const s32 v = Value(obj, static_cast<u32>(row));
         GRef<s32>(obj + 0x324) = v;
-        SetControllerCursor(obj, row, v);
+        SetControllerCursor(obj, row, Column(obj, row));
         PlayMenuSe(0, 4);
         return;
     }
     if ((repeat & 0xC) == 0) return;
     s32 v = GRef<s32>(obj + 0x324);
-    if ((repeat & 8) != 0) v += 1;
-    if ((repeat & 4) != 0) v -= 1;
-    v = (v + 2) % 2;
+    const bool modern_before = Modern(obj);
+    if (GRef<s32>(obj + 0x320) == 1) {
+        // Port: four CONTROL TYPE squares; the type bit steps as over the original two.
+        s32 c = TypeChoice(obj);
+        if ((repeat & 8) != 0) c += 1;
+        if ((repeat & 4) != 0) c -= 1;
+        c = (c + 4) % 4;
+        g_Modern[Value(obj, 0) == 0 ? 0 : 1] = c < 2;
+        v = c & 1;
+    } else {
+        if ((repeat & 8) != 0) v += 1;
+        if ((repeat & 4) != 0) v -= 1;
+        v = (v + 2) % 2;
+    }
     auto mask = [obj]() {
         u32 m = 0;
         for (u32 i = 1; i < 5; ++i) {
@@ -151,8 +191,13 @@ void ControllerInput(u32 obj) {
     GRef<s32>(obj + 0x324) = v;
     Value(obj, GRef<u32>(obj + 0x320)) = v;
     if (0 < GRef<s32>(obj + 0x320)) StoreControllerSettings(obj, obj + 0x314);
-    SetControllerCursor(obj, GRef<s32>(obj + 0x320), GRef<s32>(obj + 0x324));
+    SetControllerCursor(obj, GRef<s32>(obj + 0x320), Column(obj, GRef<s32>(obj + 0x320)));
     u32 changed = before ^ mask();
+    if (Modern(obj) != modern_before && (changed & 1) == 0) {
+        // Port: only the Modern flag changed: the CONTROL TYPE text is typed out again.
+        GRef<u32>(obj + 0x340) = 0;
+        GRef<u32>(obj + 0x33C) |= 1;
+    }
     for (s32 k = 0; k < 4; ++k, changed >>= 1) {
         if ((changed & 1) == 0) continue;
         if (k == 0) {
@@ -208,6 +253,7 @@ u32 CreateControllerPage() {
     GRef<s32>(obj + 0x324) = 0;
     Value(obj, 0) = 0;
     GRef<u32>(obj + 0x314) = settings;
+    g_Modern = port::Menu().modern_controls;  // port: Modern control types
     SetControllerCursor(obj, 0, 0);
     GRef<u32>(obj + 0x33C) = 0x3F;
     GRef<f32>(obj + 0x348) = K(0x00410398);
@@ -281,10 +327,11 @@ void DrawControllerTexts(u32 list, s32 index, u32 obj) {
             } else {
                 DrawMenuText(r, 0x1500, y, 3, label);
             }
-            const u32 action = GRef<u32>(0x003AF5F0 + static_cast<u32>(i) * 4);
-            if (i == 5 || i == 7) {
+            const s32 shown = ActionRow(obj, i);  // port: Modern swaps the shoulder rows
+            const u32 action = GRef<u32>(0x003AF5F0 + static_cast<u32>(shown) * 4);
+            if (shown == 5 || shown == 7) {
                 const f32 back = fpu::Sub(r, 6.0f);
-                f32 v = fpu::Sub(fpu::Sub(GRef<f32>(obj + 0x354), K(0x004103A4)) * 90.0f, static_cast<f32>(i - 5) * 4.0f);
+                f32 v = fpu::Sub(fpu::Sub(GRef<f32>(obj + 0x354), K(0x004103A4)) * 90.0f, static_cast<f32>(shown - 5) * 4.0f);
                 if (back < v) v = back;
                 if (Value(obj, 1) == 0) {
                     const u64 aargs[1] = {action};
@@ -311,11 +358,17 @@ void DrawControllerTexts(u32 list, s32 index, u32 obj) {
             const f32 v = fpu::Sub(GRef<f32>(obj + 0x340 + i * 4), k);
             if (!(0.0f < v)) continue;
             f32 s = v * 60.0f;
-            DrawMenuText(s, 0x280, y, 3, GRef<u32>(0x003AF568 + (i * 2 + static_cast<u32>(Value(obj, i + 1))) * 4));
+            const u32 text = i == 0 ? TypeText(TypeChoice(obj))  // port: the four CONTROL TYPE names
+                                    : GRef<u32>(0x003AF568 + (i * 2 + static_cast<u32>(Value(obj, i + 1))) * 4);
+            DrawMenuText(s, 0x280, y, 3, text);
             s = fpu::Sub(s, 6.0f);
+            // The animation ends after 12 characters, past the glow of the last typed ones (the
+            // original names have at most 7); the port's CONTROL TYPE names get the same margin.
+            const u32 len = i == 0 ? ee::strlen(text) : 0;
+            const f32 end = len > 7 ? static_cast<f32>(len - 1) : 6.0f;
             if (s < 0.0f) {
                 GRef<u16>(obj + 0x28C) |= 0x8000;
-            } else if (6.0f < s) {
+            } else if (end < s) {
                 const u32 m = GRef<u32>(obj + 0x33C);
                 if (((static_cast<s32>(m) >> i) & 1) != 0) GRef<u32>(obj + 0x33C) = m & ~(1u << i);
             }
@@ -348,8 +401,9 @@ void DrawControllerTexts(u32 list, s32 index, u32 obj) {
         s32 y = 0x530;
         for (s32 row = 0; row < 5; ++row, y += 0x1C0, r = fpu::Sub(r, 8.0f)) {
             f32 m = r;
-            s32 x = 0x1080;
-            for (s32 k = 1; k >= 0; --k, x += 0x140) {
+            // Port: CONTROL TYPE has two more squares, left of the original two.
+            s32 x = row == 1 ? 0x1080 - 2 * 0x140 : 0x1080;
+            for (s32 k = row == 1 ? 3 : 1; k >= 0; --k, x += 0x140) {
                 DrawMenuText(m, x, y, 8, 0x00411410);
                 m = fpu::Sub(m, 2.0f);
             }
@@ -366,7 +420,7 @@ void DrawControllerTexts(u32 list, s32 index, u32 obj) {
     s32 y = 0x530;
     for (u32 row = 0; row < 5; ++row, y += 0x1C0) {
         const s32 frame_no = static_cast<s32>(row) == GRef<s32>(obj + 0x320) ? static_cast<s32>(Ctx()->frame_count) : 0;
-        DrawPulseBox(list, index, 0x1067, Value(obj, row) * 0x140 + 0x1080, y, 0x100, frame_no);
+        DrawPulseBox(list, index, 0x1067, Column(obj, static_cast<s32>(row)) * 0x140 + 0x1080, y, 0x100, frame_no);
     }
 }
 

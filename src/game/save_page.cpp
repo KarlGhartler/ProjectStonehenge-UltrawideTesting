@@ -32,9 +32,6 @@ AC04_GUEST_VAR(u16, g_MissionNo, 0x002A15B8)
 constexpr u32 kCampaignBlock = 0x002A0318;
 constexpr u32 kCampaignBlockSize = 0x12C0;
 
-f32 K(u32 address) { return GRef<f32>(address); }
-u64& Q(u32 p, u32 i) { return GRef<u64>(p + 8 * i); }
-u64 Sx(s32 v) { return static_cast<u64>(static_cast<s64>(v)); }
 s32& State(u32 obj) { return GRef<s32>(obj + 0x6128); }
 s8& Owner(u32 obj) { return GRef<s8>(obj + 0x6144); }
 

@@ -29,7 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 RAM_SIZE = 32 * 1024 * 1024
 SPR_SIZE = 16 * 1024
 
-# docs/platform/elf-sections.md
+# docs/platform/executable.md
 SECTIONS = [
     (0x00100000, 0x00297B34, ".text"),
     (0x00297C00, 0x0029C900, ".vutext"),

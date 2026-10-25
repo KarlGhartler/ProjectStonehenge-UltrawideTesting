@@ -21,7 +21,7 @@ void LogUnhandled(const char* service, std::uint32_t fno) {
     log::WriteOnce(key.c_str(), log::Level::Warning, "iop", "%s: fno %u not implemented (accepted)", service, fno);
 }
 
-// SOUND.IRX fno 1 (docs/subsystems/iop-sound.md "Command records" / "Reply"; sifrpc_server
+// SOUND.IRX fno 1 (docs/subsystems/sound.md "Command records" / "Reply"; sifrpc_server
 // 0x0B90 in SOUND.IRX): the batch is {count, records...} with a fixed size per id; the reply is
 // {count = records + 2, one 12-byte record per command with ids 1-4/6-9, the transfer record
 // {10, last finished ticket, status}, the voice-status record {0xF, output mode, 48 bytes}}.
@@ -179,8 +179,31 @@ public:
                         mixer_->SetMasterVolume(rec[4], l, r);
                     }
                     break;
-                case 6: case 7: case 8: case 9:
-                    log::WriteOnce("iop:sound:reverb", log::Level::Info, "iop", "SOUND: reverb is not mixed yet (slice S2a)");
+                case 6:
+                    // set_reverb_mode(core, mode): sceSdSetEffectAttr {mode | clear work area,
+                    // depth 0} (SOUND.IRX 0x5E0); the work area ends at the core's EEA.
+                    if (mixer_ && rec[4] < 2 && Word(rec, size, 8) < 10) {
+                        const std::uint32_t core = rec[4], mode = Word(rec, size, 8);
+                        if (mode == 7 || mode == 8)
+                            log::WriteOnce("iop:sound:reverb-delay", log::Level::Warning, "iop",
+                                           "SOUND: reverb mode %u: echo delay and feedback not modelled", mode);
+                        mixer_->SetReverbMode(static_cast<int>(core), static_cast<int>(mode), EffectStart(core, mode),
+                                              kEffectEnd[core]);
+                    }
+                    break;
+                case 7:
+                    // set_reverb_depth(core, l, r): EFFECT_ENABLE on, EVOL L/R (SOUND.IRX 0x628).
+                    if (mixer_ && rec[4] < 2) {
+                        std::int16_t l, r;
+                        std::memcpy(&l, rec + 0xC, 2);
+                        std::memcpy(&r, rec + 0xE, 2);
+                        mixer_->SetReverbDepth(rec[4], l, r);
+                    }
+                    break;
+                case 8: case 9:
+                    // set_reverb_on / set_reverb_off(voice): the voice's VMIXEL and VMIXER bits
+                    // (SOUND.IRX 0x6A4 / 0x75C; the voice is the signed byte at +5).
+                    if (mixer_) mixer_->SetVoiceReverb(static_cast<std::int8_t>(rec[5]), id == 8);
                     break;
                 case 0xD:
                     // set_datainput_volume: core 0 sound-data input (movie PCM).
@@ -256,7 +279,7 @@ private:
         if (offset + 4 <= size) std::memcpy(&v, p + offset, 4);
         return v;
     }
-    // Voice request fields (docs/subsystems/iop-sound.md "The 72-byte voice request").
+    // Voice request fields (docs/subsystems/sound.md "The 72-byte voice request").
     audio::SpuMixer::KeyOnParams VoiceParams(const std::uint8_t* rec) const {
         audio::SpuMixer::KeyOnParams p;
         std::memcpy(&p.start, rec + 0x40, 4);
@@ -286,7 +309,7 @@ private:
     std::uint32_t effect_start_[2] = {EffectStart(0, 0), EffectStart(1, 0)};
 };
 
-// VAG.IRX (docs/subsystems/iop-sound.md "VAG.IRX"; functions named by the module's own symbol
+// VAG.IRX (docs/subsystems/sound.md "VAG.IRX"; functions named by the module's own symbol
 // table): 4 stream channels (0-1 stereo at pitch 0xEB4, 2-3 mono at 0x75A) on core-1 voices that
 // loop forever over two half-buffers in SPU RAM. The SPU2 IRQ on channel 1's right voice (one
 // half-buffer period, 448 samples at 44.1 kHz) runs VagMain, which copies the next half of each

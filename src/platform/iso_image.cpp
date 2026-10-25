@@ -119,34 +119,60 @@ IsoCheck IsoImage::FullCheck(const std::filesystem::path& cache_file, bool force
     return c;
 }
 
-std::string DescribeIsoProblem(const IsoCheck& check, const std::filesystem::path& image,
+MessageText DescribeIsoProblem(const IsoCheck& check, const std::filesystem::path& image,
                                const std::filesystem::path& settings_file) {
-    const std::string where = "Set \"paths\": { \"iso\": \"...\" } in\n" + PathToUtf8(settings_file) +
-                              "\nor start the port with --iso <path>.";
-    const std::string expected =
-        "The port supports one disc image: Ace Combat 04: Shattered Skies, NTSC-U (SLUS-20152), "
-        "as a 2048-byte-sector ISO image of " + std::to_string(SupportedImage::kSizeBytes) + " bytes.";
+    const std::string game = "Ace Combat 04: Shattered Skies, North America (NTSC-U, SLUS-20152)";
+    // Size with thousands separators (3,554,705,408 bytes).
+    std::string bytes = std::to_string(SupportedImage::kSizeBytes);
+    for (int i = static_cast<int>(bytes.size()) - 3; i > 0; i -= 3) bytes.insert(static_cast<std::size_t>(i), ",");
+    const std::string expected = game + ", ISO image of " + bytes + " bytes";
+    const std::string choose = "Click \"Select ISO...\" and pick the .iso file of your disc. The choice is saved.";
+    const std::string command_line = "Or start the port with  --iso \"<path of the .iso file>\"";
+    MessageText m;
     switch (check.result) {
         case IsoCheckResult::Ok:
-            return "";
+            return m;
         case IsoCheckResult::NoPathConfigured:
-            return "No disc image is configured.\n\n" + where + "\n\n" + expected;
+            m.headline = "No disc image selected";
+            m.explanation = "The port runs the game from an ISO image of your own copy of " + game + ".";
+            m.steps = {choose, command_line};
+            m.details = {{"Supported disc", expected}, {"Settings file", PathToUtf8(settings_file)}};
+            return m;
         case IsoCheckResult::CannotOpen:
-            return "The disc image cannot be read:\n" + PathToUtf8(image) + "\n(" + check.detail + ")\n\n" + where;
+            m.headline = "The disc image cannot be opened";
+            m.explanation = "The file set as the disc image could not be read (" + check.detail + ").";
+            m.steps = {"Check that the file still exists and that no other program has it open.",
+                       "Or choose the disc image again: click \"Select ISO...\"."};
+            m.details = {{"Disc image", PathToUtf8(image)}, {"Settings file", PathToUtf8(settings_file)}};
+            return m;
         case IsoCheckResult::NotAnIso:
-            return "The file is not a supported disc image:\n" + PathToUtf8(image) + "\n(" + check.detail +
-                   ")\n\n" + expected + " Raw .bin dumps must be converted to ISO first.";
+            m.headline = "This file is not an ISO disc image";
+            m.explanation = "It does not hold the file system of a PlayStation 2 disc (" + check.detail + ").";
+            m.steps = {"Choose the .iso image of the disc: click \"Select ISO...\".",
+                       "Images in other formats (.bin/.cue, .img, .chd, .cso) must be converted to .iso first."};
+            m.details = {{"Selected file", PathToUtf8(image)}, {"Supported disc", expected}};
+            return m;
         case IsoCheckResult::WrongImage:
-            return "This is not the supported disc image:\n" + PathToUtf8(image) + "\nFound: " + check.detail +
-                   "\n\n" + expected;
+            m.headline = "This is not the supported version of the game";
+            m.explanation = "The port supports one disc only: " + game + ".";
+            m.steps = {"Choose an ISO image of that disc: click \"Select ISO...\"."};
+            m.details = {{"Selected file", PathToUtf8(image)}, {"Found", check.detail}, {"Supported disc", expected}};
+            return m;
         case IsoCheckResult::HashMismatch:
-            return "The disc image does not match the supported version (checksum differs):\n" +
-                   PathToUtf8(image) + "\n" + check.detail + "\n\n" + expected +
-                   " Make a fresh, unmodified dump of your disc.";
+            m.headline = "The disc image is damaged or modified";
+            m.explanation = "Its checksum differs from the original disc: the image may be incomplete, damaged, "
+                            "patched, or from another release.";
+            m.steps = {"Make a new, unmodified 1:1 dump of your disc as an ISO image.",
+                       "Choose it: click \"Select ISO...\"."};
+            m.details = {{"Selected file", PathToUtf8(image)}, {"Checksum", check.detail}, {"Supported disc", expected}};
+            return m;
         case IsoCheckResult::Cancelled:
-            return "Verification of the disc image was cancelled.";
+            m.headline = "Disc image check cancelled";
+            m.explanation = "The port was closed while it was checking the disc image.";
+            return m;
     }
-    return "Unknown disc image problem.";
+    m.headline = "Unknown disc image problem";
+    return m;
 }
 
 }  // namespace ac04::platform

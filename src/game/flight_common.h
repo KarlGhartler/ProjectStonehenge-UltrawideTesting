@@ -8,6 +8,7 @@
 #include "common/guest_ref.h"
 #include "common/guest_stack.h"
 #include "common/types.h"
+#include "game/guest_helpers.h"
 #include "game/main_context.h"
 
 namespace ac04::game::fl {
@@ -53,13 +54,6 @@ inline void CopyQ(u32 dst, u32 src) {
 }
 inline void ZeroQ(u32 dst) {
     for (u32 o = 0; o < 16; o += 4) GRef<u32>(dst + o) = 0;
-}
-// sqc2 vf0: (0, 0, 0, 1).
-inline void StoreVf0(u32 dst) {
-    GRef<u32>(dst) = 0;
-    GRef<u32>(dst + 4) = 0;
-    GRef<u32>(dst + 8) = 0;
-    GRef<f32>(dst + 12) = 1.0f;
 }
 
 // The rate response shared by the flight-model channels: `rate` moves towards `target` with the

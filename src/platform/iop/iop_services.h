@@ -2,9 +2,9 @@
 // The SDK layer (src/sce/libsif.cpp) copies the EE send buffer in and the reply out; services never
 // see guest memory.
 //
-// Milestone C stand-ins return the replies measured in PCSX2 (docs/pcsx2/sessions-03.md):
+// Milestone C stand-ins return the replies measured in PCSX2 (docs/pcsx2/sessions.md run 03):
 // - SOUND (0x81000101) fno 0: count 2, then zeros. fno 1 (command batch): the documented reply
-//   records (docs/subsystems/iop-sound.md), with transfers finishing at once and no mixing yet.
+//   records (docs/subsystems/sound.md), with transfers finishing at once and no mixing yet.
 // - VAG (0x81000102): VAG.IRX's VagAllInit / VagCtrl / VagMain (stream channels driven by the SPU2 IRQ).
 // - USBJOY (0x80000210) fno 2: "no device" block.
 // Commands the stand-ins do not implement are accepted and logged once per (rpc, fno).

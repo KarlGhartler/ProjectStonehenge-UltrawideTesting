@@ -1,4 +1,4 @@
-// Movie upscaling stage (ADR-006 §5, owner decisions 2026-10-13 and 2026-10-14): a replaceable
+// Movie upscaling stage (ADR-006 §5, User decisions 2026-10-13 and 2026-10-14): a replaceable
 // component that scales a decoded movie picture by the renderer's internal-resolution factor N.
 // - Input: the decoder's host copy of the picture (side path from sceMpegGetPicture, option b):
 //   row-major RGBA8, 640x448 or 640x336. Guest RAM and game code are not involved.

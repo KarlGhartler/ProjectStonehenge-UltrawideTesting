@@ -2,11 +2,12 @@
 
 Usage: python -I tools/research/runmany.py JOBS.json [--only NAME[,NAME...]] [--jobs N]
                                            [--save-baseline DIR] [--baseline DIR] [--keep]
+                                           [--suite NAME] [--extra-args "ARGS"] [--shots-only]
 
 JOBS.json:
   {
     "suite": "regress",                       # output folder out/runs/<suite>/
-    "exe": "build/windows/src/RelWithDebInfo/ac04port.exe",
+    "exe": "build/windows/src/RelWithDebInfo/ProjectStonehenge.exe",
     "iso": "D:/.../ACE COMBAT 04 SHATTERED SKIES.ISO",   # or set AC04_ISO in the environment
     "memcard": "out/s5/cardS_fast5",          # default card folder, copied per job ("" = none)
     "args": ["--freeze-sim"],                  # arguments for every job
@@ -23,8 +24,14 @@ Each job gets its own user-data folder out/runs/<suite>/<name>/ (old contents re
 and its own copy of the card folder, so jobs never share state. The summary lists per job: exit
 code, wall time, warnings and errors in the session log (distinct texts), RAM checkpoints written,
 screenshots, and with --baseline the screenshots that differ from the baseline (exact pixel
-comparison; PNG decoding of tools/research/imgdiff.py). --save-baseline copies every job's
-screenshots into DIR/<name>/ for later runs. "same_hashes_as" compares the two jobs' RAM hash
+comparison; PNG decoding of tools/research/imgdiff.py), the RAM checkpoints that differ (byte
+comparison of the ram_*.bin dumps) and whether the --hash-log output equals the baseline's at every
+common vblank (hashdiff.py). --save-baseline copies every job's screenshots, RAM checkpoints and hash
+log into DIR/<name>/ for later runs. --extra-args appends arguments to every job (e.g.
+"--internal-scale 4"), --suite overrides the output folder name, and --shots-only skips the
+screenshot comparison (screenshots at another internal scale differ in size by design; RAM and
+hashes must still be identical). --tolerance N accepts screenshots whose channels differ by at
+most N (the loading-screen fade depends on host presentation timing by a few levels). "same_hashes_as" compares the two jobs' RAM hash
 logs (--hash-log) at every vblank both have, with hashdiff.py.
 
 Output goes to out/ only. Runs contain game data (dumps, screenshots): never commit them.
@@ -67,7 +74,7 @@ def run_job(cfg, job, out_root, keep):
             shutil.rmtree(dst)
         shutil.copytree(resolve(card), dst)
         args += ["--memcard", dst]
-    args += list(cfg.get("args", [])) + list(job.get("args", []))
+    args += list(cfg.get("args", [])) + list(job.get("args", [])) + list(cfg.get("extra_args", []))
     t0 = time.time()
     try:
         with open(os.path.join(out_root, name + ".stdout.txt"), "w", encoding="utf-8", errors="replace") as f:
@@ -91,10 +98,33 @@ def log_problems(ud):
     return probs
 
 
-def pixels_equal(a, b):
+def pixels_equal(a, b, tolerance=0):
     wa, ha, pa = read_png(a)
     wb, hb, pb = read_png(b)
-    return (wa, ha) == (wb, hb) and pa == pb
+    if (wa, ha) != (wb, hb):
+        return False
+    if pa == pb:
+        return True
+    return tolerance > 0 and len(pa) == len(pb) and max(abs(x - y) for x, y in zip(pa, pb)) <= tolerance
+
+
+def files_equal(a, b):
+    if os.path.getsize(a) != os.path.getsize(b):
+        return False
+    with open(a, "rb") as fa, open(b, "rb") as fb:
+        while True:
+            x, y = fa.read(1 << 20), fb.read(1 << 20)
+            if x != y:
+                return False
+            if not x:
+                return True
+
+
+def hashes_equal(a, b):
+    # hashdiff.py compares the vblanks both logs have (a run can end one vblank later).
+    hd = subprocess.run([sys.executable, "-I", os.path.join(os.path.dirname(os.path.abspath(__file__)), "hashdiff.py"),
+                         a, b], capture_output=True, text=True)
+    return "identical at every common vblank" in hd.stdout
 
 
 def main():
@@ -105,8 +135,16 @@ def main():
     ap.add_argument("--save-baseline")
     ap.add_argument("--baseline")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--suite")
+    ap.add_argument("--extra-args", default="")
+    ap.add_argument("--shots-only", action="store_true", help="do not compare screenshots with the baseline")
+    ap.add_argument("--tolerance", type=int, default=0,
+                    help="screenshots equal when no channel differs by more than this (presentation timing)")
     a = ap.parse_args()
     cfg = json.load(open(a.jobs, encoding="utf-8"))
+    if a.suite:
+        cfg["suite"] = a.suite
+    cfg["extra_args"] = a.extra_args.split()
     jobs = cfg["jobs"]
     if a.only:
         wanted = set(a.only.split(","))
@@ -135,23 +173,30 @@ def main():
         bad = r["exit"] != 0 or any(k.startswith("ERROR") for k in probs)
         if a.baseline:
             diff = []
-            for s in shots:
+            for s in ([] if a.shots_only else shots):
                 b = os.path.join(a.baseline, name, s)
-                if not os.path.isfile(b) or not pixels_equal(os.path.join(shots_dir, s), b):
+                if not os.path.isfile(b) or not pixels_equal(os.path.join(shots_dir, s), b, a.tolerance):
                     diff.append(s)
-            missing = [s for s in (os.listdir(os.path.join(a.baseline, name)) if os.path.isdir(os.path.join(a.baseline, name)) else []) if s not in shots]
+            base_dir = os.path.join(a.baseline, name)
+            base_files = os.listdir(base_dir) if os.path.isdir(base_dir) else []
+            missing = [] if a.shots_only else [s for s in base_files if s.endswith(".png") and s not in shots]
+            for d in dumps:
+                b = os.path.join(base_dir, d)
+                if not os.path.isfile(b) or not files_equal(os.path.join(dumps_dir, d), b):
+                    diff.append(d)
+            missing += [d for d in base_files if d.startswith("ram_") and d not in dumps]
+            base_hash = os.path.join(base_dir, "hashes.ac4h")
+            mine_hash = os.path.join(dumps_dir, "hashes.ac4h")
+            if os.path.isfile(base_hash):
+                if not os.path.isfile(mine_hash) or not hashes_equal(base_hash, mine_hash):
+                    diff.append("hashes.ac4h")
             r["baseline_diff"] = diff + [m + " (missing)" for m in missing]
             line += f"  baseline: {len(r['baseline_diff'])} differ"
             bad = bad or bool(r["baseline_diff"])
         if "same_hashes_as" in j:
             other = os.path.join(out_root, j["same_hashes_as"], "dumps", "hashes.ac4h")
             mine = os.path.join(dumps_dir, "hashes.ac4h")
-            # hashdiff.py compares the vblanks both logs have (a run can end one vblank later).
-            same = False
-            if os.path.isfile(mine) and os.path.isfile(other):
-                hd = subprocess.run([sys.executable, "-I", os.path.join(os.path.dirname(os.path.abspath(__file__)), "hashdiff.py"),
-                                     other, mine], capture_output=True, text=True)
-                same = "identical at every common vblank" in hd.stdout
+            same = os.path.isfile(mine) and os.path.isfile(other) and hashes_equal(other, mine)
             r["hashes_equal"] = same
             line += f"  hashes {'equal' if same else 'DIFFER'} to {j['same_hashes_as']}"
             bad = bad or not same
@@ -169,6 +214,8 @@ def main():
             os.makedirs(dst, exist_ok=True)
             for s in shots:
                 shutil.copy2(os.path.join(shots_dir, s), os.path.join(dst, s))
+            for d in dumps + (["hashes.ac4h"] if os.path.isfile(os.path.join(dumps_dir, "hashes.ac4h")) else []):
+                shutil.copy2(os.path.join(dumps_dir, d), os.path.join(dst, d))
     json.dump(results, open(os.path.join(out_root, "summary.json"), "w"), indent=1)
     print(f"\n{failed} of {len(jobs)} jobs need attention; summary in {os.path.relpath(out_root, REPO)}/summary.json")
     sys.exit(1 if failed else 0)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sampling CPU profiler for ac04port.exe (Windows, research only; no dependencies).
+"""Sampling CPU profiler for ProjectStonehenge.exe (Windows, research only; no dependencies).
 
 Starts the executable with the given arguments, waits, then samples every thread of the process
 (suspend, read the context, walk the stack with dbghelp, resume) for a while and prints the

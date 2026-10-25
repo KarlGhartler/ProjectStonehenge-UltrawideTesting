@@ -4,19 +4,21 @@
 # ac04_platform: SDL3 window, input, audio and the Vulkan renderer.
 # ac04_game: translated game code (src/game), the SDK layer (src/sce) and the IOP stand-ins. An
 #            OBJECT library so the static AC04_GUEST_FUNCTION registrations are always linked.
-# ac04port: the executable.
+# ProjectStonehenge: the executable.
 
 add_library(ac04_core STATIC
     common/debug_hooks.cpp
     common/guest_call.cpp
     common/guest_memory.cpp
     common/guest_stack.cpp
+    common/port_hooks.cpp
     platform/audio/spu_mixer.cpp
     platform/command_line.cpp
     platform/elf_loader.cpp
     platform/frame_pacer.cpp
     platform/iso9660.cpp
     platform/iso_image.cpp
+    platform/message_text.cpp
     platform/log.cpp
     platform/paths.cpp
     platform/png_writer.cpp
@@ -46,19 +48,29 @@ add_library(ac04_platform STATIC
     platform/input.cpp
     platform/window.cpp
     platform/render/gs/gs_vulkan.cpp
+    platform/render/gs/gs_antialias.cpp
     platform/render/movie_upscaler.cpp
     platform/render/renderer.cpp
+    platform/render/frame_interpolator.cpp
     platform/render/gs_dump.cpp
     platform/render/vk_context.cpp
     platform/render/vma_impl.cpp)
 target_link_libraries(ac04_platform PUBLIC ac04_core SDL3::SDL3-static ac04_volk ac04_vma ac04_imgui)
+target_link_libraries(ac04_platform PRIVATE ac04_smaa_textures)
 ac04_add_shaders(ac04_platform
     "${CMAKE_SOURCE_DIR}/shaders/output.vert"
     "${CMAKE_SOURCE_DIR}/shaders/output.frag"
     "${CMAKE_SOURCE_DIR}/shaders/gs.vert"
     "${CMAKE_SOURCE_DIR}/shaders/gs.frag"
+    "${CMAKE_SOURCE_DIR}/shaders/gs_depth_copy.frag"
     "${CMAKE_SOURCE_DIR}/shaders/gs_conv.comp"
-    "${CMAKE_SOURCE_DIR}/shaders/fsr1_easu.comp")
+    "${CMAKE_SOURCE_DIR}/shaders/gs_decode.comp"
+    "${CMAKE_SOURCE_DIR}/shaders/fsr1_easu.comp"
+    "${CMAKE_SOURCE_DIR}/shaders/aa.vert"
+    "${CMAKE_SOURCE_DIR}/shaders/smaa_edges.frag"
+    "${CMAKE_SOURCE_DIR}/shaders/smaa_weights.frag"
+    "${CMAKE_SOURCE_DIR}/shaders/smaa_blend.frag"
+    "${CMAKE_SOURCE_DIR}/shaders/fxaa.frag")
 
 add_library(ac04_game OBJECT
     game/ai_aircraft.cpp
@@ -74,6 +86,10 @@ add_library(ac04_game OBJECT
     game/cd_file.cpp
     game/collision.cpp
     game/controller_page.cpp
+    game/port_menu.cpp
+    game/graphics_page.cpp
+    game/quit_item.cpp
+    game/pc_texts.cpp
     game/sky.cpp
     game/sound_page.cpp
     game/display.cpp
@@ -161,10 +177,10 @@ add_library(ac04_game OBJECT
     sce/sce_host.cpp)
 target_link_libraries(ac04_game PUBLIC ac04_core PRIVATE ac04_mpeg2)
 
-add_executable(ac04port main.cpp)
-target_link_libraries(ac04port PRIVATE ac04_game ac04_platform)
+add_executable(ProjectStonehenge main.cpp "${CMAKE_BINARY_DIR}/generated/version.rc")
+target_link_libraries(ProjectStonehenge PRIVATE ac04_game ac04_platform)
 # Release builds are a GUI program (no console window); development builds keep the console so
 # the log is also visible there.
-target_link_options(ac04port PRIVATE $<IF:$<CONFIG:Release>,/SUBSYSTEM:WINDOWS,/SUBSYSTEM:CONSOLE>)
-set_target_properties(ac04port PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
-set_property(DIRECTORY "${CMAKE_SOURCE_DIR}" PROPERTY VS_STARTUP_PROJECT ac04port)
+target_link_options(ProjectStonehenge PRIVATE $<IF:$<CONFIG:Release>,/SUBSYSTEM:WINDOWS,/SUBSYSTEM:CONSOLE>)
+set_target_properties(ProjectStonehenge PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+set_property(DIRECTORY "${CMAKE_SOURCE_DIR}" PROPERTY VS_STARTUP_PROJECT ProjectStonehenge)

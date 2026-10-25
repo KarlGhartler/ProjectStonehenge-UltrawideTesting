@@ -7,7 +7,7 @@ description: Translate one function from SLUS_201.52 (PS2 EE MIPS R5900) into C+
 
 Functions are translated slice by slice (ADR-007, `docs/port/slices.md`); the function should belong to the current slice (`python tools/research/slices.py --list <slice>`). Validation method: `docs/port/validation-strategy.md`.
 
-Before the first function of a slice is written, everything the slice uses from the game files must already be decompiled and documented (owner rule 2026-10-15, CLAUDE.md Workflow step 1): all reached game functions, the VU microcode programs it runs, and the data formats it reads.
+Before the first function of a slice is written, everything the slice uses from the game files must already be decompiled and documented (User rule 2026-10-15, CLAUDE.md Workflow step 1): all reached game functions, the VU microcode programs it runs, and the data formats it reads.
 
 1. Get the function from Ghidra via MCP: disassembly, decompiler output, callers and callees.
 2. Check it is not inside `.vutext`, `.vudata` or a `.DVP.overlay.*` section. If it is, stop and follow `.claude/rules/vu-microcode.md`.

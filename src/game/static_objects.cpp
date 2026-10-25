@@ -1,7 +1,7 @@
 // Static map objects (block A of S5): the object store *0x0041069C (+0x7000.. lists of the current
 // map entry, +0x7020/+0x7034/+0x703C/+0x7044/+0x7054 per-entry tables) and the collision
 // triangles baked from the model packets. docs/subsystems/rendering.md "Static map objects",
-// docs/subsystems/mission-load.md (func_00144728 allocations).
+// docs/subsystems/mission-flow.md (func_00144728 allocations).
 #include "game/game.h"
 
 #include "common/ee_math.h"
@@ -12,14 +12,6 @@
 namespace ac04::game {
 
 using guest::GRef;
-
-namespace {
-
-void CopyQword(u32 dst, u32 src) {
-    for (u32 o = 0; o < 16; o += 4) GRef<u32>(dst + o) = GRef<u32>(src + o);
-}
-
-}  // namespace
 
 // EE: 0x00143C10
 // Triangles of model instance `inst` in world space: per node, its packet chunks (up to the DMA ret

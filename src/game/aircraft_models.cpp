@@ -1041,7 +1041,7 @@ void func_001483A0(u32 a, u32 v, u32 ot, s32 k, u32 ot2) {
     sceVu0ApplyMatrix(vec, ma, vec);
     auto light2 = [&]() {
         if (m == 3) {
-            SetLight(sset, a + 0x50 + 0x10 * pl, GRef<u32>(GRef<u32>(a + 0x70) + p4), 2);
+            SetLight(sset, a + 0x50 + 0x10 * pl, GRef<u32>(a + 0x70 + p4), 2);
         } else {
             func_00136B68(0.0f, 0.0f, sset, 0, 2);
         }
@@ -1056,7 +1056,7 @@ void func_001483A0(u32 a, u32 v, u32 ot, s32 k, u32 ot2) {
     p = EmitModelInstance(inst, p, c, mw, m0, f0 | 8);
     auto jlight = [&]() {
         if ((GRef<u32>(GRef<u32>(0x00410694) + 0xF4) & 0x20) != 0) {
-            SetLight(sset, vec, GRef<u32>(GRef<u32>(a + 0x78) + p4), 2);
+            SetLight(sset, vec, GRef<u32>(a + 0x78 + p4), 2);
             p = func_00137318(sset, p);
         }
     };

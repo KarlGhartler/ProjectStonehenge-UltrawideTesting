@@ -21,7 +21,8 @@ constexpr const std::uint8_t (&kBlock4)[8][4] = kBlock16;
 // Element order inside a 256-byte block (GS User's Manual "column" layout; checked block for block
 // against PCSX2 VRAM images with tools/research/gsvram.py): [y][x] -> word (32-bit), halfword
 // (16-bit), byte (8-bit) or nibble (4-bit) number. Rows 4-7 (32/16-bit) and 8-15 (8/4-bit) repeat
-// rows 0-3 / 0-7 one half-block further.
+// rows 0-3 / 0-7 one half-block further. 8-bit rows 2-3 were wrong until 2026-10-22 (pixels 2-5 and
+// 10-13 in the wrong order): found by the menu glow texture at TBP 0x3E90 (validation.md S2a-6).
 constexpr std::uint8_t kCol32[4][8] = {{0, 1, 4, 5, 8, 9, 12, 13},
                                        {2, 3, 6, 7, 10, 11, 14, 15},
                                        {16, 17, 20, 21, 24, 25, 28, 29},
@@ -33,8 +34,8 @@ constexpr std::uint8_t kCol16[4][16] = {{0, 2, 8, 10, 16, 18, 24, 26, 1, 3, 9, 1
 constexpr std::uint8_t kCol8[8][16] = {
     {0, 4, 16, 20, 32, 36, 48, 52, 2, 6, 18, 22, 34, 38, 50, 54},
     {8, 12, 24, 28, 40, 44, 56, 60, 10, 14, 26, 30, 42, 46, 58, 62},
-    {33, 37, 1, 5, 49, 53, 17, 21, 35, 39, 3, 7, 51, 55, 19, 23},
-    {41, 45, 9, 13, 57, 61, 25, 29, 43, 47, 11, 15, 59, 63, 27, 31},
+    {33, 37, 49, 53, 1, 5, 17, 21, 35, 39, 51, 55, 3, 7, 19, 23},
+    {41, 45, 57, 61, 9, 13, 25, 29, 43, 47, 59, 63, 11, 15, 27, 31},
     {96, 100, 112, 116, 64, 68, 80, 84, 98, 102, 114, 118, 66, 70, 82, 86},
     {104, 108, 120, 124, 72, 76, 88, 92, 106, 110, 122, 126, 74, 78, 90, 94},
     {65, 69, 81, 85, 97, 101, 113, 117, 67, 71, 83, 87, 99, 103, 115, 119},
@@ -70,33 +71,53 @@ int BitsPerPixel(std::uint32_t psm) {
     }
 }
 
+namespace {
+
+// Byte address of pixel (x, y) per layout (the cases of GsMemory::PixelAddress); inline so that
+// ReadRect's loops compute it without a call.
+inline std::uint32_t Addr32(std::uint32_t bp, std::uint32_t bw, std::uint32_t x, std::uint32_t y) {
+    const std::uint32_t page = (x >> 6) + (y >> 5) * bw;
+    const std::uint32_t block = bp + page * 32 + kBlock32[(y >> 3) & 3][(x >> 3) & 7];
+    return (block * 256 + Off32(x, y)) & kMask;
+}
+inline std::uint32_t Addr16(const std::uint8_t (&table)[8][4], std::uint32_t bp, std::uint32_t bw, std::uint32_t x,
+                            std::uint32_t y) {
+    const std::uint32_t page = (x >> 6) + (y >> 6) * bw;
+    const std::uint32_t block = bp + page * 32 + table[(y >> 3) & 7][(x >> 4) & 3];
+    return (block * 256 + Off16(x, y)) & kMask;
+}
+inline std::uint32_t Addr8(std::uint32_t bp, std::uint32_t bw, std::uint32_t x, std::uint32_t y) {
+    const std::uint32_t page = (x >> 7) + (y >> 6) * (bw >> 1);
+    const std::uint32_t block = bp + page * 32 + kBlock8[(y >> 4) & 3][(x >> 4) & 7];
+    return (block * 256 + Off8(x, y)) & kMask;
+}
+// 4-bit: byte address, nibble (0 low, 1 high) in `nibble`.
+inline std::uint32_t Addr4(std::uint32_t bp, std::uint32_t bw, std::uint32_t x, std::uint32_t y, std::uint32_t& nibble) {
+    const std::uint32_t page = (x >> 7) + (y >> 7) * (bw >> 1);
+    const std::uint32_t block = bp + page * 32 + kBlock4[(y >> 4) & 7][(x >> 5) & 3];
+    const std::uint32_t index = Nib4(x, y);
+    nibble = index & 1;
+    return (block * 256 + (index >> 1)) & kMask;
+}
+
+}  // namespace
+
 std::uint32_t GsMemory::PixelAddress(std::uint32_t psm, std::uint32_t bp, std::uint32_t bw, std::uint32_t x,
                                      std::uint32_t y, std::uint32_t* nibble) {
     if (nibble) *nibble = 0;
     switch (psm) {
         case kPsmCt32: case kPsmCt24: case kPsmZ32: case kPsmZ24:
-        case kPsmT8H: case kPsmT4HL: case kPsmT4HH: {
-            const std::uint32_t page = (x >> 6) + (y >> 5) * bw;
-            const std::uint32_t block = bp + page * 32 + kBlock32[(y >> 3) & 3][(x >> 3) & 7];
-            return (block * 256 + Off32(x, y)) & kMask;
-        }
-        case kPsmCt16: case kPsmCt16S: case kPsmZ16: case kPsmZ16S: {
-            const std::uint32_t page = (x >> 6) + (y >> 6) * bw;
-            const auto& table = (psm == kPsmCt16S || psm == kPsmZ16S) ? kBlock16S : kBlock16;
-            const std::uint32_t block = bp + page * 32 + table[(y >> 3) & 7][(x >> 4) & 3];
-            return (block * 256 + Off16(x, y)) & kMask;
-        }
-        case kPsmT8: {
-            const std::uint32_t page = (x >> 7) + (y >> 6) * (bw >> 1);
-            const std::uint32_t block = bp + page * 32 + kBlock8[(y >> 4) & 3][(x >> 4) & 7];
-            return (block * 256 + Off8(x, y)) & kMask;
-        }
+        case kPsmT8H: case kPsmT4HL: case kPsmT4HH:
+            return Addr32(bp, bw, x, y);
+        case kPsmCt16: case kPsmCt16S: case kPsmZ16: case kPsmZ16S:
+            return Addr16((psm == kPsmCt16S || psm == kPsmZ16S) ? kBlock16S : kBlock16, bp, bw, x, y);
+        case kPsmT8:
+            return Addr8(bp, bw, x, y);
         case kPsmT4: {
-            const std::uint32_t page = (x >> 7) + (y >> 7) * (bw >> 1);
-            const std::uint32_t block = bp + page * 32 + kBlock4[(y >> 4) & 7][(x >> 5) & 3];
-            const std::uint32_t index = Nib4(x, y);
-            if (nibble) *nibble = index & 1;
-            return (block * 256 + (index >> 1)) & kMask;
+            std::uint32_t nib = 0;
+            const std::uint32_t a = Addr4(bp, bw, x, y, nib);
+            if (nibble) *nibble = nib;
+            return a;
         }
         default:
             return 0;
@@ -121,6 +142,59 @@ std::uint32_t GsMemory::ReadPixel(std::uint32_t psm, std::uint32_t bp, std::uint
         case kPsmT4HL: return p[3] & 0xF;
         case kPsmT4HH: return p[3] >> 4;
         default: return 0;
+    }
+}
+
+void GsMemory::ReadRect(std::uint32_t psm, std::uint32_t bp, std::uint32_t bw, std::uint32_t x0, std::uint32_t y0,
+                        std::uint32_t w, std::uint32_t h, std::uint32_t* out) const {
+    const std::uint8_t* m = mem_.data();
+    // One loop per layout, the format choice outside it; each value as ReadPixel gives it.
+    auto rows = [&](auto read) {
+        for (std::uint32_t y = y0; y < y0 + h; ++y)
+            for (std::uint32_t x = x0; x < x0 + w; ++x) *out++ = read(x, y);
+    };
+    auto u32_at = [m](std::uint32_t a) {
+        std::uint32_t v;
+        std::memcpy(&v, m + a, 4);
+        return v;
+    };
+    switch (psm) {
+        case kPsmCt32: case kPsmZ32:
+            rows([&](std::uint32_t x, std::uint32_t y) { return u32_at(Addr32(bp, bw, x, y)); });
+            break;
+        case kPsmCt24: case kPsmZ24:
+            rows([&](std::uint32_t x, std::uint32_t y) { return u32_at(Addr32(bp, bw, x, y)) & 0xFFFFFFu; });
+            break;
+        case kPsmT8H:
+            rows([&](std::uint32_t x, std::uint32_t y) { return static_cast<std::uint32_t>(m[Addr32(bp, bw, x, y) + 3]); });
+            break;
+        case kPsmT4HL:
+            rows([&](std::uint32_t x, std::uint32_t y) { return static_cast<std::uint32_t>(m[Addr32(bp, bw, x, y) + 3] & 0xF); });
+            break;
+        case kPsmT4HH:
+            rows([&](std::uint32_t x, std::uint32_t y) { return static_cast<std::uint32_t>(m[Addr32(bp, bw, x, y) + 3] >> 4); });
+            break;
+        case kPsmCt16: case kPsmCt16S: case kPsmZ16: case kPsmZ16S: {
+            const auto& table = (psm == kPsmCt16S || psm == kPsmZ16S) ? kBlock16S : kBlock16;
+            rows([&](std::uint32_t x, std::uint32_t y) {
+                const std::uint32_t a = Addr16(table, bp, bw, x, y);
+                return static_cast<std::uint32_t>(m[a]) | static_cast<std::uint32_t>(m[a + 1]) << 8;
+            });
+            break;
+        }
+        case kPsmT8:
+            rows([&](std::uint32_t x, std::uint32_t y) { return static_cast<std::uint32_t>(m[Addr8(bp, bw, x, y)]); });
+            break;
+        case kPsmT4:
+            rows([&](std::uint32_t x, std::uint32_t y) {
+                std::uint32_t nib = 0;
+                const std::uint8_t b = m[Addr4(bp, bw, x, y, nib)];
+                return static_cast<std::uint32_t>(nib ? b >> 4 : b & 0xF);
+            });
+            break;
+        default:
+            std::fill(out, out + static_cast<std::size_t>(w) * h, 0u);
+            break;
     }
 }
 
@@ -184,6 +258,84 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
         case kPsmT4: run_len = 32; break;
         default: break;
     }
+    // A packet that repeats the last packet written at the same place of the same transfer (same
+    // BITBLTBUF base/width/format, TRXPOS, TRXREG, start pixel and size, same bytes), with every
+    // block it wrote still as it left them (no write has changed one since: each block's generation
+    // is the one recorded then), would store the bytes the blocks already hold: nothing to do. The
+    // game repeats most texture uploads every step (about 1 MB a flight step), and a blended copy
+    // for frame interpolation repeats a step's uploads once more per presented frame.
+    LastUpload* last = nullptr;
+    if (run_len != 0) {
+        const UploadKey key{dbp, dbw, dpsm, dsax, dsay, rrw, rrh, pos, bytes};
+        if (uploads_.size() > 4096) uploads_.clear();
+        last = &uploads_[key];
+        if (last->data.size() == bytes && std::memcmp(last->data.data(), data, bytes) == 0) {
+            bool same = true;
+            for (const auto& [blk, gen] : last->blocks) {
+                if (block_gen_[blk] != gen) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same) return pos >= total ? pos : static_cast<std::uint32_t>(std::min<std::uint64_t>(total, pos + pixels));
+        }
+        last->blocks.clear();
+    }
+    // Records what `last` needs after a write: the generations of the blocks written, the data.
+    const auto remember = [&] {
+        for (auto& [blk, gen] : last->blocks) gen = block_gen_[blk];
+        last->data.assign(data, data + bytes);
+    };
+    // Whole blocks: a transfer whose data arrives in one piece and whose rectangle lies on block
+    // boundaries (texture tiles: the no-save intro streams its terrain this way every frame) is
+    // written block by block: the 256 bytes of a block assembled in the GS layout, then compared
+    // and stored at once. Same bytes and the same block changes as the run loop below.
+    const std::uint32_t bw_px = BlockWidth(dpsm), bh_px = BlockHeight(dpsm);
+    if (run_len != 0 && pos == 0 && pixels >= total && dsax % bw_px == 0 && dsay % bh_px == 0 && rrw % bw_px == 0 &&
+        rrh % bh_px == 0 && dsax + rrw <= 2048 && dsay + rrh <= 2048) {
+        std::uint8_t* const m = mem_.data();
+        std::uint8_t block[256];
+        for (std::uint32_t by = 0; by < rrh; by += bh_px) {
+            for (std::uint32_t bx = 0; bx < rrw; bx += bw_px) {
+                const std::size_t first = static_cast<std::size_t>(by) * rrw + bx;  // pixel index of the block's corner
+                switch (bpp) {
+                    case 32:
+                        for (std::uint32_t y = 0; y < 8; ++y)
+                            for (std::uint32_t x = 0; x < 8; ++x)
+                                std::memcpy(block + Off32(x, y), data + (first + static_cast<std::size_t>(y) * rrw + x) * 4, 4);
+                        break;
+                    case 16:
+                        for (std::uint32_t y = 0; y < 8; ++y)
+                            for (std::uint32_t x = 0; x < 16; ++x)
+                                std::memcpy(block + Off16(x, y), data + (first + static_cast<std::size_t>(y) * rrw + x) * 2, 2);
+                        break;
+                    case 8:
+                        for (std::uint32_t y = 0; y < 16; ++y)
+                            for (std::uint32_t x = 0; x < 16; ++x) block[Off8(x, y)] = data[first + static_cast<std::size_t>(y) * rrw + x];
+                        break;
+                    default:  // 4-bit: every nibble of the block is written
+                        for (std::uint32_t y = 0; y < 16; ++y) {
+                            for (std::uint32_t x = 0; x < 32; ++x) {
+                                const std::size_t i = first + static_cast<std::size_t>(y) * rrw + x;
+                                const std::uint8_t v = static_cast<std::uint8_t>((data[i >> 1] >> ((i & 1) * 4)) & 0xF);
+                                const std::uint32_t nib = Nib4(x, y);
+                                std::uint8_t& b = block[nib >> 1];
+                                b = (nib & 1) ? static_cast<std::uint8_t>((b & 0x0F) | v << 4) : static_cast<std::uint8_t>((b & 0xF0) | v);
+                            }
+                        }
+                        break;
+                }
+                const std::uint32_t base = PixelAddress(dpsm, dbp, dbw, dsax + bx, dsay + by) & ~0xFFu;
+                if (std::memcmp(m + base, block, 256) != 0) {
+                    std::memcpy(m + base, block, 256);
+                    Touch(base);
+                }
+                last->blocks.emplace_back(base >> 8, 0u);
+            }
+        }
+        remember();
+        return total;
+    }
     if (run_len != 0) {
         std::uint64_t i = 0;
         std::uint8_t* const m = mem_.data();
@@ -196,6 +348,7 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
             n = std::min<std::uint64_t>(n, pixels - i);
             n = std::min<std::uint64_t>(n, total - pos);
             const std::uint32_t base = PixelAddress(dpsm, dbp, dbw, x, y) & ~0xFFu;
+            if (last->blocks.empty() || last->blocks.back().first != base >> 8) last->blocks.emplace_back(base >> 8, 0u);
             bool changed = false;
             std::uint32_t k = 0;
             if (bpp == 32 && (x & 1) == 0) {
@@ -262,6 +415,7 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
                 ++row;
             }
         }
+        remember();
         return pos;
     }
     for (std::uint64_t i = 0; i < pixels && pos < total; ++i, ++pos) {
@@ -297,41 +451,12 @@ std::uint32_t GsMemory::WriteImage(std::uint32_t dbp, std::uint32_t dbw, std::ui
     return pos;
 }
 
-std::uint64_t GsMemory::RegionGeneration(std::uint32_t psm, std::uint32_t bp, std::uint32_t bw, std::uint32_t w,
-                                         std::uint32_t h) const {
-    if (w == 0 || h == 0) return 0;
-    const std::uint32_t first = PixelAddress(psm, bp, bw, 0, 0) >> 13;
-    std::uint32_t last = PixelAddress(psm, bp, bw, w - 1, h - 1) >> 13;
-    if (last < first) last += 512;  // wrapped around the end of memory
-    std::uint64_t gen = 0;
-    for (std::uint32_t p = first; p <= last && p < first + 512; ++p) gen += page_gen_[p & 511];
-    return gen;
-}
-
-std::uint64_t GsMemory::RegionHash(std::uint32_t psm, std::uint32_t bp, std::uint32_t bw, std::uint32_t w,
-                                   std::uint32_t h) const {
-    if (w == 0 || h == 0) return 0;
-    const std::uint32_t first = PixelAddress(psm, bp, bw, 0, 0) >> 13;
-    std::uint32_t last = PixelAddress(psm, bp, bw, w - 1, h - 1) >> 13;
-    if (last < first) last += 512;  // wrapped around the end of memory
-    std::uint64_t hash = 0xCBF29CE484222325ull;
-    for (std::uint32_t p = first; p <= last && p < first + 512; ++p) {
-        const std::uint32_t page = p & 511;
-        if (page_hash_gen_[page] != page_gen_[page]) {
-            const std::uint8_t* src = mem_.data() + static_cast<std::size_t>(page) * 8192;
-            std::uint64_t ph = 0x9E3779B97F4A7C15ull ^ page;
-            for (std::size_t i = 0; i < 8192; i += 8) {
-                std::uint64_t word;
-                std::memcpy(&word, src + i, 8);
-                ph = (ph ^ word) * 0x100000001B3ull;
-                ph ^= ph >> 29;
-            }
-            page_hash_[page] = ph;
-            page_hash_gen_[page] = page_gen_[page];
-        }
-        hash = (hash ^ page_hash_[page]) * 0x100000001B3ull;
-    }
-    return hash;
+std::vector<std::uint32_t> GsMemory::TakeDirtyBlocks() {
+    std::vector<std::uint32_t> out;
+    out.swap(dirty_list_);
+    for (std::uint32_t b : out) dirty_[b] = 0;
+    std::sort(out.begin(), out.end());
+    return out;
 }
 
 }  // namespace ac04::render::gs

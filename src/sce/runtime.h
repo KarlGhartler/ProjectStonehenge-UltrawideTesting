@@ -86,4 +86,21 @@ private:
     u64 dropped_ = 0;
 };
 
+// Host time per presented frame with v-sync on (ADR-002). The presentation engine shows one frame
+// per display refresh, but the time the host measures between frames jitters with where the CPU
+// blocks (a free swapchain image, the frames in flight): at 60 Hz the ticks released per frame came
+// out 1, 0, 1, 2 instead of 1, 1, 1, 1 (in-engine cutscenes stuttered; validation.md §2aa). Each
+// frame counts as one refresh; the difference from the measured time is carried and paid out in
+// whole refreshes once it exceeds one refresh (a refresh really missed), so the total follows the
+// host clock and the game speed is unchanged.
+class RefreshSnap {
+public:
+    // Returns the time to give TickClock for a frame that took `elapsed_seconds`. With
+    // `refresh_seconds` 0 (v-sync off, refresh rate unknown) the measured time passes unchanged.
+    double Step(double elapsed_seconds, double refresh_seconds);
+
+private:
+    double debt_ = 0.0;  // measured minus counted time
+};
+
 }  // namespace ac04::sce

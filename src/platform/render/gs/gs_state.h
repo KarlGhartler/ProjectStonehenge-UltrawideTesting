@@ -3,9 +3,11 @@
 // loads to the local-memory model, and turns vertex kicks into draw commands for the Vulkan backend.
 // No Vulkan here: the class is testable on its own.
 //
-// Draws carry their state by value. Textures are decoded at kick time from local memory (so later
-// uploads to the same address do not affect earlier draws) into RGBA8 rectangles that the backend
-// packs into a per-frame atlas; only the texel rectangle the primitive can reach is decoded.
+// Draws carry their state by value. Textures are decoded as of kick time (later uploads to the same
+// address do not affect earlier draws) into RGBA8 images, one per decoded texture; only the texel
+// rectangle the primitive can reach is decoded. The decode runs on the GPU (gs_decode.comp, from the
+// GPU's copy of local memory, which TextureOp keeps in step with the stream) or, as the reference,
+// on the CPU (docs/port/renderer.md §2).
 #pragma once
 
 #include <array>
@@ -32,20 +34,54 @@ struct GsVertex {
     std::uint8_t fog = 0;
 };
 
+// One rectangle of local memory decoded into a texture image: `w` x `h` texels at (su, sv) of the
+// buffer (bp, bw) in the texture's format, written at (dx, dy) of the packed image.
+struct DecodeRect {
+    std::uint32_t bp = 0, bw = 0, su = 0, sv = 0, w = 0, h = 0, dx = 0, dy = 0;
+};
+
 // Decoded texels for one draw: level 0 is `base_width` x `base_height` RGBA8 texels covering texture
 // coordinates [origin_u, origin_u + base_width) x [origin_v, ...). Mipmap levels 1..`levels` (TEX1.MMIN
 // 2-5 with MXL > 0) follow in full, to the right of level 0 and stacked top to bottom: level l is
 // max(tex_width >> l, 1) x max(tex_height >> l, 1) at x = base_width, y = sum of the heights of levels
-// 1..l-1 (gs.frag computes the same layout). `width` x `height` is the whole packed image.
-// Shared between draws with the same source.
+// 1..l-1 (gs.frag computes the same layout). `width` x `height` is the whole packed image; texels
+// outside the rectangles are never read. Shared between draws with the same source.
 struct DecodedTexture {
     std::uint32_t origin_u = 0, origin_v = 0;
     std::uint32_t width = 0, height = 0;
     std::uint32_t base_width = 0, base_height = 0;
     std::uint32_t levels = 0;
     std::uint32_t tex_width = 0, tex_height = 0;  // 2^TW, 2^TH
-    std::vector<std::uint8_t> rgba;               // GS alpha in A (0x80 = 1.0)
+    // How the texels come from local memory (DecodeOnCpu and gs_decode.comp do the same): the
+    // texture format, TEXA (TA0 bits 0-7, AEM bit 15, TA1 bits 16-23) for CT24/CT16, the palette as
+    // RGBA8 for the paletted formats (16-bit CLUT entries expanded with TEXA; 4-bit formats: the 16
+    // entries from CSA in 0-15), and the rectangles (level 0, then the mip levels).
+    std::uint32_t psm = 0;
+    std::uint32_t texa = 0;
+    std::shared_ptr<const std::array<std::uint32_t, 256>> palette;
+    std::vector<DecodeRect> rects;
+    std::vector<std::uint8_t> rgba;  // CPU decode only (empty when only the GPU decodes); GS alpha in A
+    std::uint64_t serial = 0;        // unique per decode: the backend's image for it
 };
+
+// The texels of every rectangle of `tex` decoded from `mem` into tex.rgba (sized width x height x 4).
+// The CPU reference of gs_decode.comp.
+void DecodeOnCpu(const GsMemory& mem, DecodedTexture& tex);
+
+// GPU texture work in stream order (docs/port/renderer.md §2.3). Either a memory update (`blocks`:
+// local-memory blocks, addr >> 8, ascending, with their 256 bytes each as they were at that point
+// in `bytes`) for the GPU's copy of local memory, or a texture to decode (`decode`): from that copy
+// on the GPU, or, when it carries rgba, uploaded as decoded on the CPU. The backend must apply every
+// op, in order: the GPU copy is only right that way.
+struct TextureOp {
+    std::vector<std::uint32_t> blocks;
+    std::vector<std::uint8_t> bytes;
+    std::shared_ptr<const DecodedTexture> decode;
+};
+
+// Where textures are decoded: on the CPU (the reference; what the tests use by default), on the GPU,
+// or both (--verify-texture-decode: the backend compares them).
+enum class TextureDecode { kCpu, kGpu, kBoth };
 
 enum class PrimKind : std::uint8_t { kPoint, kLine, kTriangle, kSprite };
 
@@ -65,10 +101,18 @@ struct DrawCommand {
     // For a paletted texture read from a frame buffer: the palette as RGBA8 (TEXA applied for 16-bit
     // CLUTs; 4-bit formats: the 16 entries from CSA in 0-15), for the backend's format conversion.
     std::shared_ptr<const std::array<std::uint32_t, 256>> frame_clut;
+    // 8-bit palette drawn on the GPU (the CLUT was loaded from a frame buffer drawn earlier): its CBP,
+    // else -1. The texture then holds palette indices (identity palette, entry i = i in red) and
+    // the backend looks them up in that frame buffer at draw time (gs.frag flag 29).
+    std::int32_t clut_from_frame = -1;
     // Movie upscaling side path (ADR-006 §5): when the texture's last IMAGE upload came from a marked
     // guest block, the guest address of the upload's first texel and the upload width (texels).
     std::uint32_t texture_guest_source = 0;
     std::uint32_t texture_guest_width = 0;
+    // Not a primitive: the anti-aliasing point of a flight view (SourceMark::kAntiAlias), with no
+    // vertices. `frame` = FRAME_1 then (the buffer the view's 3D was drawn into), `scissor` = the
+    // view's rectangle in SCISSOR layout.
+    bool aa_point = false;
 
     std::uint32_t Fbp() const { return static_cast<std::uint32_t>(frame & 0x1FF); }
     std::uint32_t Fbw() const { return static_cast<std::uint32_t>((frame >> 16) & 0x3F); }
@@ -90,6 +134,14 @@ public:
     void ProcessGif(const std::uint8_t* data, std::size_t bytes, const std::vector<SourceMark>* marks = nullptr);
     // Takes the draws produced since the last call.
     std::vector<DrawCommand> TakeDraws();
+    // Takes the texture work produced since the last call (TextureOp).
+    std::vector<TextureOp> TakeTextureOps();
+    void SetTextureDecode(TextureDecode mode) { decode_mode_ = mode; }
+    TextureDecode Decode() const { return decode_mode_; }
+    // RGBA bytes of the textures held by the decoded-texture cache (their images on the GPU, and
+    // their rgba with CPU decoding), bounded by kTextureCacheBytes.
+    std::size_t TextureCacheBytes() const { return texture_cache_bytes_; }
+    static constexpr std::size_t kTextureCacheBytes = std::size_t{256} << 20;
     // Off: primitives update no draw list (registers, local memory and CLUTs still do). For steps that
     // are never shown (--fast-until).
     void SetDrawsEnabled(bool on) { draws_enabled_ = on; }
@@ -111,6 +163,9 @@ private:
     void TexelRange(const DrawCommand& d, const GsVertex* v, int count, std::uint32_t r[4]) const;
     void AppendVertices(std::vector<GsVertex>& out, const DrawCommand& d, const GsVertex* v, int count);
     void ImageData(const std::uint8_t* data, std::uint32_t bytes);
+    // Emits the anti-aliasing points of marks_ at or before byte `pos` of the step's GIF data.
+    void EmitAntiAliasPoints(std::size_t pos);
+    std::size_t next_mark_ = 0;
     void LogOnce(const char* key, const char* fmt, std::uint64_t a = 0, std::uint64_t b = 0);
 
     GsMemory mem_;
@@ -162,11 +217,33 @@ private:
     // read from local memory until the buffer is drawn again.
     std::unordered_map<std::uint32_t, std::uint32_t> fb_pages_;
     std::unordered_set<std::uint32_t> fb_overwritten_;
+    // CBP of the last CLUT load when it read a drawn frame buffer (LoadClut), else -1.
+    std::int32_t clut_frame_cbp_ = -1;
+    // Bits of the 32-bit pixel any draw has written per FBP (FBMSK and the frame format): a T8H /
+    // T4HL / T4HH texture over a frame buffer whose draws all kept its bits (the mission 1 opening
+    // draws RGB into FBP 0x70 with FBMSK 0xFF000000 over the aircraft's T8H texture) is what local
+    // memory holds, not the buffer's picture.
+    std::unordered_map<std::uint32_t, std::uint32_t> fb_written_bits_;
     void NoteFrameBuffer(const DrawCommand& d);
     void NoteTransferDestination();
-    using TextureKey = std::tuple<std::uint64_t, std::uint64_t, std::uint64_t, std::uint32_t, std::uint32_t,
-                                  std::uint32_t, std::uint32_t>;
-    std::map<TextureKey, std::shared_ptr<const DecodedTexture>> texture_cache_;
+    // Decoded textures by what they decode (TEX0, palette hash with TEXA and the mip registers, the
+    // texel rectangle), one per key, with the address and generation of every GS block they read:
+    // an entry is valid while those blocks keep their generations (checked again only after a
+    // write to local memory, at WriteCount). A texture whose memory changed is decoded again and
+    // replaces the entry; the CPU decoder redoes only the changed blocks (the terrain atlas gets
+    // tiles uploaded every frame).
+    using TextureKey = std::tuple<std::uint64_t, std::uint64_t, std::uint32_t, std::uint32_t, std::uint32_t,
+                                  std::uint32_t>;
+    struct CacheEntry {
+        std::shared_ptr<const DecodedTexture> texture;
+        std::vector<std::uint32_t> block_addrs;
+        std::vector<std::uint32_t> block_gens;
+        std::uint64_t valid_at = 0;  // WriteCount when last checked
+    };
+    std::map<TextureKey, CacheEntry> texture_cache_;
+    std::size_t texture_cache_bytes_ = 0;
+    TextureDecode decode_mode_ = TextureDecode::kCpu;
+    std::vector<TextureOp> texture_ops_;
     // Speed-ups for long runs of primitives with the same state (e.g. the briefing map's ~10,000
     // sprites): the draw being built (reused, so no allocation per primitive), the palette hash
     // per palette load, and the last texture lookup.
@@ -182,6 +259,7 @@ private:
     std::uint64_t clut_hash_ = 0;
     bool last_key_valid_ = false;
     TextureKey last_key_{};
+    std::uint64_t last_valid_at_ = 0;
     std::shared_ptr<const DecodedTexture> last_texture_;
 };
 

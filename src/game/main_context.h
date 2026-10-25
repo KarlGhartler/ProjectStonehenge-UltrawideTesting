@@ -1,5 +1,5 @@
 // MainContext (0x0029F380, 0xA20 bytes) and the game-state block (0x0029F350).
-// Layout: docs/game/main-context.md (derived from every access in the code). Field names follow the
+// Layout: docs/game/boot.md (derived from every access in the code). Field names follow the
 // naming convention (lower snake_case); unk_XX for fields not understood.
 #pragma once
 

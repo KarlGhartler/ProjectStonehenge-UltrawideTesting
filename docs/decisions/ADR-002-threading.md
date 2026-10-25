@@ -1,10 +1,10 @@
 # ADR-002: Threading and timing model
 
-Status: **Accepted** (owner decision, 2026-10-11): **Option A, one game thread with a fixed 59.94 Hz step and decoupled, interpolated presentation.**
+Status: **Accepted** (User decision, 2026-10-11): **Option A, one game thread with a fixed 59.94 Hz step and decoupled, interpolated presentation.**
 
 ## Context (confirmed facts)
 
-From `../game/threads-timing.md`, `../pcsx2/sessions-02.md` (sessions 5 and 6) and `../game/boot.md`:
+From `../game/threads-timing.md`, `../pcsx2/sessions.md` run 02 (sessions 5 and 6) and `../game/boot.md`:
 - **Single game thread.** All game logic runs on the EE main thread in one main loop, in this order:
   1. DMA kick;
   2. pad;
@@ -105,6 +105,10 @@ A draw in step N is matched with a draw in step N−1 by a **stable key**:
 - With interpolation off, or at exactly 59.94 Hz, the output is the step-N frame, the same as the original.
 - Thresholds and keys are tuned against PCSX2 captures and replays. A debug overlay showing matched/unmatched/snapped draws is a modding-layer tool.
 
+## Implementation (2026-10-22)
+
+Built as designed at the level where the game's 3D is transformed: the VU1 programs (CPU HLE). Matrices are blended element by element (no decomposition): the steps are 16.7 ms apart, so the error is small, and parts that turn fast (more than 25° per step) blend only their position. The one-step latency of the design applies to the 3D; HUD and 2D show the newest step. Matching keys, guards, cost and checks: `../port/validation.md` §2ac. Not done: a matched-draw debug view; effects the EE projects itself are drawn from the newest step.
+
 ## Consequences
 
 - `src/platform/` owns: the frame clock (accumulator), presentation and interpolation, file/audio/save worker threads.
@@ -117,7 +121,7 @@ A draw in step N is matched with a draw in step N−1 by a **stable key**:
 ### In-menu movies are paced by timer 0 (front end)
 
 - The in-menu movie player (briefing movies, story interludes) does not wait in `sceGsSyncV`. `StartMenuMovie` sets `RCNT0_MODE = 0x83` (timer 0 counts H-blanks). Each movie frame resets `RCNT0_COUNT` at the start, and `MovieFrameSync` busy-waits until the counter reaches **0x118 (280 H-blanks, about 17.8 ms)**, then increments `ctx->frame_count` itself.
-- Measured in PCSX2 (`../pcsx2/sessions-04.md`): each iteration takes **two fields**; `frame_count` +2 (main loop and `MovieFrameSync`), `scene_frame` +1. So the wait maps to "one extra tick": a movie iteration is two steps of the 59.94 Hz clock, and timer 0 does not need line-accurate emulation.
+- Measured in PCSX2 (`../pcsx2/sessions.md` run 04): each iteration takes **two fields**; `frame_count` +2 (main loop and `MovieFrameSync`), `scene_frame` +1. So the wait maps to "one extra tick": a movie iteration is two steps of the 59.94 Hz clock, and timer 0 does not need line-accurate emulation.
 - Still compatible with decision 5 (a picture held for 2 ticks), but the tick here is produced by the T0 wait, not by the main loop's vsync.
 
 ### Game state changed in the draw phase (HUD)

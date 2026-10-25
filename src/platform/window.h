@@ -2,7 +2,10 @@
 #pragma once
 
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "platform/message_text.h"
 #include "platform/settings.h"
 
 struct SDL_Window;
@@ -35,6 +38,14 @@ private:
 
 // Modal message box with an OK button. `window` may be null. Used for startup errors.
 void ShowErrorBox(const std::string& title, const std::string& text, const Window* window = nullptr);
+void ShowErrorBox(const std::string& title, const MessageText& text, const Window* window = nullptr);
 void ShowInfoBox(const std::string& title, const std::string& text, const Window* window = nullptr);
+// Modal message box with the given buttons, left to right (the first one is the Enter default, the
+// last one the Escape default). Returns the index of the button pressed, or -1.
+int ShowChoiceBox(const std::string& title, const MessageText& text, const std::vector<std::string>& buttons,
+                  bool error, const Window* window = nullptr);
+// The system's file picker for one existing file whose extension is `extension` (e.g. "iso").
+// Returns the UTF-8 path, or an empty string when cancelled. Blocks while the dialog is open.
+std::string ChooseFile(const Window* window, const std::string& filter_name, const std::string& extension);
 
 }  // namespace ac04::platform

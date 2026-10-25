@@ -1,4 +1,4 @@
-// VAG streaming client for VAG.IRX (RPC 0x81000102; docs/subsystems/iop-sound.md): 6 stream slots
+// VAG streaming client for VAG.IRX (RPC 0x81000102; docs/subsystems/sound.md): 6 stream slots
 // fed from the VAG/*.VPK packs through the CD queue 0, the 32-entry play/stop request queue and the
 // per-slot volume fades. The IOP side is the port's VAG service (ADR-004).
 //

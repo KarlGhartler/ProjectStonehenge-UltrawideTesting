@@ -2,7 +2,7 @@
 // - Rounding: round to nearest (ties to even), as PCSX2 runs AC04. Its GameDB sets
 //   `eeRoundMode: 0` for SLUS-20152 ("fixes autopilot crashing the plane"), and the RAM check at
 //   the first SceneStep matches nearest for cvt.s.w (512/512 random-table entries) and div.s
-//   (docs/port/validation.md E-2). Decided by the owner 2026-10-13.
+//   (docs/port/validation.md E-2). Decided by the User 2026-10-13.
 // - No denormals (results and operands below FLT_MIN become zero), no infinities/NaN (overflow
 //   clamps to the largest magnitude).
 // - add/sub mask the smaller operand first (PCSX2's EE adder model, see Add below): host `+`/`-`

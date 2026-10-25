@@ -15,6 +15,7 @@
 #include "platform/iso9660.h"
 #include "platform/memcard/folder_card.h"
 #include "platform/render/gs/gs_source_mark.h"
+#include "platform/render/vu1/vif1.h"
 
 namespace ac04::sce {
 
@@ -36,6 +37,9 @@ struct SceHost {
     // (internal scale > 1). sceMpegGetPicture then also hands each decoded picture to
     // DmaStats::movie_picture, and GIF transfers from its image buffer get source marks.
     bool movie_pictures = false;
+    // Vibration (scePadSetActDirect): per port the small motor (0 off, 1 on) and the large motor
+    // (0-255) as the game last set them. The host passes them to the gamepad between steps.
+    std::array<std::array<u8, 2>, 2> pad_motors{};
 };
 
 // A decoded movie picture handed to the renderer (presentation only; never read back by the game).
@@ -73,6 +77,14 @@ struct DmaStats {
     std::vector<GsSourceMark> gs_step_marks;
     std::vector<std::vector<GsSourceMark>> gs_steps_marks;
     MoviePicture movie_picture;
+    // Frame interpolation (platform/render/frame_interpolator.h): while the host sets record_runs,
+    // the VU1 program runs of the current step and of the completed steps (same order as gs_steps).
+    bool record_runs = false;
+    render::vu1::RunLog gs_step_runs;
+    std::vector<render::vu1::RunLog> gs_steps_runs;
+    // Run logs the host has finished with, kept with their capacity (a flight step records about
+    // 4 MB; a fresh log every step cost more than the VU1 programs it records).
+    std::vector<render::vu1::RunLog> gs_runs_pool;
     // --dump-dma-at: capture of the current step (pairs guest address, word).
     bool capture_active = false;
     std::vector<u32> capture_vif1;

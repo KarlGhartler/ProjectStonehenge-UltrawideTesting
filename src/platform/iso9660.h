@@ -1,4 +1,4 @@
-// ISO 9660 reader for the user's disc image (2048-byte sectors, docs/platform/supported-version.md).
+// ISO 9660 reader for the user's disc image (2048-byte sectors, docs/platform/executable.md).
 // File names are matched exactly as stored on the disc (ADR-005: no case folding, e.g. "DATA.CDP");
 // the ";1" version suffix is optional in lookups.
 #pragma once

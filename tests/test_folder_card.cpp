@@ -139,3 +139,41 @@ TEST_CASE("PNG writer: valid stream") {
     CHECK(raw[1 + 5] == rgba[5]);
     CHECK(raw[13 + 1 + 3] == rgba[12 + 3]);
 }
+
+TEST_CASE("folder card: a new card made from scratch has PCSX2's format fields") {
+    // At first start the port formats its empty saves folder (main.cpp). The superblock's defined
+    // fields (0x00-0x153) must be those of a card PCSX2 formatted (owner's cards, docs/formats/
+    // folder-memcard.md §9); PCSX2 reads only those (FolderMemoryCard: IsFormatted is byte 0x16).
+    const fs::path root = TempDir("fresh");
+    memcard::FolderCard card(root / "saves", true);
+    REQUIRE(card.Format() == 0);
+    std::string sb;
+    {
+        std::ifstream in(root / "saves" / "_pcsx2_superblock", std::ios::binary);
+        sb.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    REQUIRE(sb.size() == 0x2000);
+    CHECK(sb.compare(0, 28, "Sony PS2 Memory Card Format ") == 0);
+    CHECK(sb[0x16] == 0x6F);  // PCSX2's IsFormatted test
+    CHECK(sb.compare(0x1C, 7, "1.2.0.0") == 0);
+    auto u16 = [&](std::size_t o) { return static_cast<unsigned>(static_cast<unsigned char>(sb[o]) | static_cast<unsigned char>(sb[o + 1]) << 8); };
+    auto u32 = [&](std::size_t o) { return u16(o) | u16(o + 2) << 16; };
+    CHECK(u16(0x28) == 0x200);    // page length
+    CHECK(u16(0x2A) == 2);        // pages per cluster
+    CHECK(u16(0x2C) == 16);       // pages per block
+    CHECK(u32(0x30) == 0x2000);   // clusters per card (8 MB)
+    CHECK(u32(0x34) == 0x29);     // alloc offset
+    CHECK(u32(0x38) == 0x1FC7);   // alloc end
+    CHECK(u32(0x3C) == 0);        // root directory cluster
+    CHECK(u32(0x40) == 0x3FF);    // backup block 1
+    CHECK(u32(0x44) == 0x3FE);    // backup block 2
+    CHECK(u32(0x50) == 8);        // indirect FAT cluster list
+    CHECK(u32(0xD0) == 0xFFFFFFFFu);  // no bad blocks
+    CHECK(static_cast<unsigned char>(sb[0x150]) == 2);
+    CHECK(static_cast<unsigned char>(sb[0x151]) == 0x2B);
+    memcard::FolderCard reopened(root / "saves", false);  // as PCSX2 would see it: no assumption
+    CHECK(reopened.Present());
+    CHECK(reopened.Formatted());
+    CHECK(reopened.FreeClusters() == 8000);  // only the root directory's entries
+    fs::remove_all(root);
+}

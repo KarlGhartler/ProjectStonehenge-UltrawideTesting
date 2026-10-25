@@ -2,7 +2,7 @@
 // executable's initialised data is read from the user's disc at run time, never stored in the repo).
 // - Every PT_LOAD segment is copied to its original virtual address; the part beyond the file size
 //   and every SHT_NOBITS section (.sbss, .bss) is zeroed.
-// - The executable's SHA-1 is checked against docs/platform/supported-version.md.
+// - The executable's SHA-1 is checked against docs/platform/executable.md.
 // - gp is read from .reginfo and must be 0x004159F0.
 #pragma once
 

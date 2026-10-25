@@ -17,6 +17,9 @@ struct Port {
     bool open = false;
     bool analog = false;
     bool pressure = false;
+    // scePadSetActAlign: for each of the 6 bytes of scePadSetActDirect, the actuator it drives
+    // (0 small motor, 1 large motor, 0xFF none).
+    std::array<u8, 6> align{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 };
 std::array<Port, 2> g_ports;
 
@@ -32,12 +35,14 @@ ac04::platform::PadState Sample(s32 port) {
 // PS2: initialises libpad; returns 1.
 s32 scePadInit(s32) {
     g_ports = {};
+    ac04::sce::Host().pad_motors = {};
     return 1;
 }
 
 // PS2: closes libpad; returns 1.
 s32 scePadEnd() {
     g_ports = {};
+    ac04::sce::Host().pad_motors = {};
     return 1;
 }
 
@@ -115,15 +120,30 @@ s32 scePadSetMainMode(s32 port, s32 slot, s32 offs, s32) {
     return 1;
 }
 
-// PS2: sets the vibration motor values (6 bytes at `data`); returns 1. Port: vibration output is
-// not implemented yet (input backend), the call succeeds so the game's state is unchanged.
-s32 scePadSetActDirect(s32 port, s32 slot, u32) {
-    ac04::log::WriteOnce("pad:vibration", ac04::log::Level::Info, "pad", "vibration output not implemented yet");
-    return Valid(port, slot) ? 1 : 0;
+// PS2: sets the vibration motor values (6 bytes at `data`, each driving the actuator the
+// scePadSetActAlign table gives it: the small motor is on when its byte is non-zero, the large
+// motor runs at the byte's strength 0-255); returns 1. Port: the values go to SceHost::pad_motors,
+// which the host plays on the gamepad of that port (AC04 aligns byte 0 to the small motor and
+// byte 1 to the large one, pad.cpp state 0x46).
+s32 scePadSetActDirect(s32 port, s32 slot, u32 data) {
+    if (!Valid(port, slot)) return 0;
+    const Port& p = g_ports[static_cast<size_t>(port)];
+    std::array<u8, 2> motors{};
+    for (u32 i = 0; i < 6; ++i) {
+        if (p.align[i] == 0) motors[0] = GRef<u8>(data + i) != 0 ? 1 : 0;
+        if (p.align[i] == 1) motors[1] = GRef<u8>(data + i);
+    }
+    ac04::sce::Host().pad_motors[static_cast<size_t>(port)] = motors;
+    return 1;
 }
 
-// PS2: maps the actuators (6 bytes at `data`); returns 1.
-s32 scePadSetActAlign(s32 port, s32 slot, u32) { return Valid(port, slot) ? 1 : 0; }
+// PS2: maps the actuators (6 bytes at `data`: per byte of scePadSetActDirect the actuator number,
+// 0xFF = unused); returns 1.
+s32 scePadSetActAlign(s32 port, s32 slot, u32 data) {
+    if (!Valid(port, slot)) return 0;
+    for (u32 i = 0; i < 6; ++i) g_ports[static_cast<size_t>(port)].align[i] = GRef<u8>(data + i);
+    return 1;
+}
 
 // PS2: 1 if the pad supports pressure mode (DualShock 2).
 s32 scePadInfoPressMode(s32 port, s32 slot) { return Valid(port, slot) ? 1 : 0; }

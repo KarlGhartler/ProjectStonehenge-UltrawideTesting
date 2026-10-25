@@ -12,6 +12,10 @@
 // +0x10 overlay on, +0x14 f32 tab levels[7], +0x30 s16 master request, +0x32 u16 tab requests.
 // Data load queue: +0 u16 read, +2 u16 write, +6 u16 loading, +8 f32 time, +0x10 entries[32]
 // {u16 DATA entry, u16 item count, u32 buffer at +8, u32 item table at +0xC}.
+//
+// Port baseline (User approval 2026-10-22): QUIT GAME is appended to the main menu's first column
+// (quit_item.h); it leaves through port state 9. The game's tables and ids are unchanged; the
+// "port:" lines are the only additions.
 #include "game/game.h"
 
 #include <cstddef>
@@ -20,6 +24,8 @@
 #include "common/debug_hooks.h"
 #include "common/ee_math.h"
 #include "common/guest_stack.h"
+#include "common/port_hooks.h"
+#include "game/quit_item.h"
 #include "platform/log.h"
 #include "sce/sce.h"
 
@@ -40,7 +46,6 @@ constexpr u32 kMenuBgm = 0x0042D1D0;       // u32 slot, u32, s16 track[2] (+8), 
 constexpr u32 kMainMenuColumns = 0x0039D5B0;
 constexpr u32 kProgressFlags = 0x002A0318;
 
-f32 K(u32 address) { return GRef<f32>(address); }
 u32 Progress() { return GRef<u32>(kProgressFlags); }
 u32& BgmSlot() { return GRef<u32>(kMenuBgm); }
 s16& BgmTrack(u32 slot) { return GRef<s16>(kMenuBgm + 8 + 2 * slot); }
@@ -457,8 +462,11 @@ void func_0022CC50(s64 mode) { D_00410E98() = mode == 0 ? 1u : 0u; }
 // states 1 and 4-8.
 void UpdateMainMenuHelp(u32 obj) {
     u32 state = GRef<u32>(obj + 0x67C);
-    if (state == 6) {
-        u32 id = static_cast<u32>(static_cast<s32>(GetMenuTreeSelection(obj + 0x250)));
+    if (state == 6 && MainMenuSelection(obj + 0x250) == kQuitItem) {  // port: QUIT GAME has no help text
+        if (GRef<s16>(obj + 0x664) != 0) SetMessageBoxText(obj + 0x658, -1);
+        GRef<s16>(obj + 0x666) = -1;  // the next item types its text again
+    } else if (state == 6) {
+        u32 id = static_cast<u32>(static_cast<s32>(MainMenuSelection(obj + 0x250)));  // port: QUIT GAME in the list
         if (id >= 0x24) id = 0;
         s16 msg = GRef<s16>(0x0039D6B8 + 2 * id);
         if (msg == 0 && !(g_MissionNo() < 2 && (Progress() & 1) == 0)) msg = 0x26;
@@ -481,6 +489,7 @@ void MainMenuExitWithFade(u32 obj, u32 page) {
     StartFade(0.5f, obj + 0x240, 1);
     GRef<u32>(obj + 0x684) = page;
     GRef<u32>(obj + 0x680) = 0;
+    const QuitItemPatch patch(kMainMenuColumns);  // port: QUIT GAME in the list
     StoreMenuTreeCursors(kMainMenuColumns, 6, obj + 0x250);
 }
 
@@ -491,6 +500,7 @@ void MainMenuExit(u32 obj, u32 sub) {
     StartFade(0.5f, obj + 0x240, 1);
     GRef<u32>(obj + 0x684) = sub;
     GRef<u32>(obj + 0x680) = 1;
+    const QuitItemPatch patch(kMainMenuColumns);  // port: QUIT GAME in the list
     StoreMenuTreeCursors(kMainMenuColumns, 6, obj + 0x250);
 }
 
@@ -514,6 +524,7 @@ void func_0022D030() {
 void MainMenuBack(u32 obj, u32 tree) {
     const s32 col = GRef<s32>(tree);
     if (col == 0) {
+        const QuitItemPatch patch(kMainMenuColumns);  // port: QUIT GAME in the list
         StoreMenuTreeCursors(kMainMenuColumns, 6, obj + 0x250);
         GRef<u32>(obj + 0x67C) = 1;
         StartFade(0.5f, obj + 0x240, 1);
@@ -527,7 +538,18 @@ void MainMenuBack(u32 obj, u32 tree) {
 // EE: 0x0022D100
 // Confirm in the menu tree (frontend.md "MainMenuSelect item ids"). SE 2.
 void MainMenuSelect(u32 obj, u32 tree) {
-    const u32 id = static_cast<u32>(static_cast<s32>(GetMenuTreeSelection(tree)));
+    const s16 selection = MainMenuSelection(tree);  // port: QUIT GAME in the list
+    if (selection == kQuitItem) {
+        // port: QUIT GAME leaves like the game's exits (menu and screen fade out, BGM fade) through
+        // state 9; the host ends the session when the screen is black.
+        GRef<u32>(obj + 0x67C) = 9;
+        FadeOutMenuBgm(0.5f);
+        StartFade(0.5f, g_pMenuFade(), 1);
+        StartFade(0.5f, obj + 0x240, 1);
+        PlayMenuSe(0, 2);
+        return;
+    }
+    const u32 id = static_cast<u32>(static_cast<s32>(selection));
     auto open_column = [tree](s32 col) {
         GRef<s32>(tree) = col;
         SetListWidgetState(tree + 8 + static_cast<u32>(col) * 0x18, 1);
@@ -643,7 +665,10 @@ void MainMenuSetup(u32 obj, s32 mode) {
     u32 m5 = (Ctx()->flags & 0x80000) == 0 ? 0x40u : 0u;
     if ((Progress() & 1) == 0) m5 |= 0x30;
     GRef<u32>(masks + 0x14) = m5;
-    InitMenuTree(obj + 0x250, 6, kMainMenuColumns, 0x0039D640, masks, 0x0039D6A8);
+    {
+        const QuitItemPatch patch(kMainMenuColumns);  // port: QUIT GAME in the list
+        InitMenuTree(obj + 0x250, 6, kMainMenuColumns, 0x0039D640, masks, 0x0039D6A8);
+    }
     if (mode == 4) {
         GRef<u32>(obj + 0x250) = 5;
         SetListWidgetState(obj + 0x2D0, 1);
@@ -754,6 +779,9 @@ void MainMenuUpdate(u32 obj) {
             break;
         case 8:
             if ((GRef<u32>(fade) & 8) != 0) MenuGoTo(GRef<s32>(obj + 0x680), static_cast<u16>(GRef<u32>(obj + 0x684)));
+            break;
+        case 9:  // port: QUIT GAME, the screen is black
+            if ((GRef<u32>(fade) & 8) != 0) port::Menu().quit = true;
             break;
         default:
             break;

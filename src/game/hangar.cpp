@@ -1,4 +1,4 @@
-// Hangar (scene 4 subs 27-36; docs/port/s4-inventory.md §1): aircraft and special weapon selection,
+// Hangar (scene 4 subs 27-36; docs/port/slices.md §A.1): aircraft and special weapon selection,
 // purchase and sale, drawn over the aircraft viewer (aircraft_viewer.cpp).
 //
 // Light parameters (0x40 bytes, used by the viewer): +0 three light colours (RGBA words, 0 = off),
@@ -25,19 +25,6 @@ AC04_GUEST_VAR(u32, g_AircraftViewer, 0x00410EDC)  // gp-0x4B14
 AC04_GUEST_VAR(u32, g_pMenuFade, 0x00410E88)       // gp-0x4B68
 
 constexpr u32 kSpr = 0x70000000;  // scratchpad work area
-
-f32 K(u32 address) { return GRef<f32>(address); }
-
-void StoreVf0(u32 a) {  // sqc2 vf0: (0, 0, 0, 1)
-    GRef<u32>(a) = 0;
-    GRef<u32>(a + 4) = 0;
-    GRef<u32>(a + 8) = 0;
-    GRef<u32>(a + 12) = 0x3F800000;
-}
-
-void CopyQword(u32 dst, u32 src) {
-    for (u32 i = 0; i < 16; i += 4) GRef<u32>(dst + i) = GRef<u32>(src + i);
-}
 
 f32 BitsToFloat(u32 b) {
     f32 f;

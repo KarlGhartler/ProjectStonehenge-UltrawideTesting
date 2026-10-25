@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -43,6 +44,37 @@ TEST_CASE("tick clock: 59.94 Hz steps, catch-up limit, dropped time") {
     CHECK(clock.DroppedTicks() == 6);
     CHECK(clock.Alpha() >= 0.0);
     CHECK(clock.Alpha() < 1.0);
+}
+
+TEST_CASE("refresh snap: one refresh per frame despite jitter, missed refreshes paid out") {
+    const double r = 1.0 / 60.0;
+    ac04::sce::RefreshSnap snap;
+    ac04::sce::TickClock clock(4);
+    // The measured pattern at 60 Hz with v-sync (frame times 10, 12.4, 27.5, 16.8 ms repeating):
+    // every frame gets one refresh, so the ticks come out 1 per frame (apart from the 59.94 / 60 Hz
+    // difference, one frame without a tick in about 1000).
+    const double pattern[4] = {0.0100, 0.0124, 0.0275, 0.016766};
+    u32 zero = 0, two = 0;
+    double measured = 0.0, counted = 0.0;
+    for (int i = 0; i < 400; ++i) {
+        const double e = pattern[i % 4];
+        measured += e;
+        const double c = snap.Step(e, r);
+        counted += c;
+        const u32 t = clock.Advance(c);
+        if (i > 0 && t == 0) ++zero;
+        if (t == 2) ++two;
+    }
+    CHECK(zero == 0);
+    CHECK(two == 0);
+    CHECK(std::fabs(measured - counted) <= r);  // the total follows the host clock
+    // A frame that really took three refreshes is paid out at once (its debt passes one refresh).
+    ac04::sce::RefreshSnap late;
+    double sum = 0.0;
+    for (int i = 0; i < 3; ++i) sum += late.Step(i == 0 ? 3 * r : r, r);
+    CHECK(std::fabs(sum - 5 * r) < 1e-9);
+    // V-sync off: unchanged.
+    CHECK(snap.Step(0.0123, 0.0) == 0.0123);
 }
 
 TEST_CASE("game runtime: lockstep ticks and alternating field") {

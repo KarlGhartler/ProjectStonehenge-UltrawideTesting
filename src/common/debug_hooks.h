@@ -1,4 +1,4 @@
-// Read-only hooks from translated game code into the optional debug layer (docs/port/debug-overlay.md).
+// Read-only hooks from translated game code into the optional debug layer (docs/port/port-features.md §8).
 // They only record what happened; they never change game state. The overlay reads them on the host
 // thread while the game thread is parked (ADR-002 lockstep), so no locking is needed.
 #pragma once

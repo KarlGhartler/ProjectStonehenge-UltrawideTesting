@@ -1,6 +1,6 @@
 // Scene 2 (SceneFlight): the frame dispatcher and the mission-load sub-states 0-8 and 0x1E, with
 // the loading screen and the system creation/reset helpers they call. Exact creation order and
-// allocation sizes: docs/subsystems/mission-load.md (the work heap is unchecked and 98 % full in
+// allocation sizes: docs/subsystems/mission-flow.md (the work heap is unchecked and 98 % full in
 // mission 1, so every size and order matters). Sub-state flow: docs/subsystems/mission-flow.md.
 //
 // S = flight scene object (gp 0x004104C4, 0x1810 bytes). Sub 9 (cameras and drawing) is here; the

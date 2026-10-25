@@ -10,6 +10,7 @@ class FramePacer {
 public:
     using Clock = std::chrono::steady_clock;
 
+    // 0 = no cap (with v-sync on the presentation engine paces the frames).
     void SetCap(int frames_per_second);
     int Cap() const { return cap_; }
 

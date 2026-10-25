@@ -1,4 +1,4 @@
-// Display and DMA helpers called every frame (docs/game/main-context.md, docs/subsystems/rendering.md):
+// Display and DMA helpers called every frame (docs/game/boot.md, docs/subsystems/rendering.md):
 // packet double buffer and lists, the draw/display environment, the field copy and the vsync wait.
 #include "game/game.h"
 

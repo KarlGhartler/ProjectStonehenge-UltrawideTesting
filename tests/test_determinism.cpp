@@ -1,4 +1,4 @@
-// Determinism tools (docs/port/s5-plan.md P1): per-tick input log and RAM hash log.
+// Determinism tools (docs/port/slices.md §B P1): per-tick input log and RAM hash log.
 #include <doctest/doctest.h>
 
 #include <cstdlib>
@@ -87,4 +87,26 @@ TEST_CASE("p2m2 reader: header checks and the 18 pad bytes of both ports (docs/f
     CHECK_FALSE(p[1].connected);
     CHECK_FALSE(r.Frame(2, p));
     std::filesystem::remove(path);
+}
+
+TEST_CASE("modern control types: L1/L2 and R1/R2 swapped, buttons and pressures, nothing else") {
+    using ac04::platform::PadState;
+    PadState p;
+    p.connected = true;
+    p.buttons = static_cast<std::uint16_t>(0xFFFF & ~(1u << 10) & ~(1u << 9));  // L1 and R2 held
+    for (std::size_t i = 0; i < p.pressure.size(); ++i) p.pressure[i] = static_cast<std::uint8_t>(i + 1);
+    ac04::platform::SwapShoulderButtons(p);
+    CHECK(p.buttons == static_cast<std::uint16_t>(0xFFFF & ~(1u << 8) & ~(1u << 11)));  // L2 and R1
+    CHECK(p.pressure[8] == 11);   // L1 <- L2
+    CHECK(p.pressure[10] == 9);   // L2 <- L1
+    CHECK(p.pressure[9] == 12);   // R1 <- R2
+    CHECK(p.pressure[11] == 10);  // R2 <- R1
+    CHECK(p.pressure[0] == 1);
+    CHECK(p.pressure[7] == 8);
+    ac04::platform::SwapShoulderButtons(p);
+    CHECK(p.buttons == static_cast<std::uint16_t>(0xFFFF & ~(1u << 10) & ~(1u << 9)));
+    PadState other;  // every other button keeps its bit
+    other.buttons = 0x00F0;
+    ac04::platform::SwapShoulderButtons(other);
+    CHECK(other.buttons == 0x00F0);
 }

@@ -339,7 +339,6 @@ void func_001132E0(u32 list, s32 bucket, s32 a) {
     LinkPacket(list, bucket, s, end);
 }
 
-
 // ---- Sky dome (docs/subsystems/sky.md "Sky dome") -------------------------------------------
 
 namespace {
@@ -902,7 +901,6 @@ void func_00111B28(u32 cam, u32 list) {
     func_001120E8(st, list, 0xC, cam, GRef<s16>(ksky + 0x18), 0xC0C0C0);
 }
 
-
 // ---- Full-screen post effects (docs/subsystems/sky.md "Full-screen post effects") -----------
 
 // EE: 0x00111C80
@@ -1168,7 +1166,6 @@ u32 func_00113988(u32 p, u32 fbp, s32 w, s32 h) {
     return q;
 }
 
-
 // ---- Stars (docs/subsystems/sky.md "Stars") ------------------------------------------------
 
 // EE: 0x00116060
@@ -1176,7 +1173,7 @@ u32 func_00113988(u32 p, u32 fbp, s32 w, s32 h) {
 // from the caller): xyz = (u16 x, u16 y, z word), q = 1 / w, st = src * q; returns -1 when off the
 // 0..4096 range, else clip & 0x303.
 // HYPOTHESIS: the MAC read after `vmulq.xyz vf9` (no PCSX2 GameDB patch) sees clear w flags, so
-// its "behind the camera" test never fires (docs/port/pcsx2-pending.md).
+// its "behind the camera" test never fires (docs/pcsx2/procedures.md).
 s32 func_00116060(u32 xyz, u32 st, u32 q, u32 p, u32 src, u32 z) {
     const SkyVu0& r = g_SkyVu0;
     vu0::Vec4 v9 = vu0::MulMatrix(r.vf4, r.vf5, r.vf6, r.vf7, LoadVec(p));
@@ -1365,7 +1362,6 @@ void func_00116918(u32 cam, u32 list) {
     Copy16(p + 0x30, g_pMainContext().addr + 0xF0);
     LinkPacket(list, 0xB, s, CloseDmaPacket(s, p + 0x40));
 }
-
 
 // ---- Clouds and cloud shadow (docs/subsystems/sky.md "Clouds and cloud shadow") ------------
 
@@ -1780,7 +1776,7 @@ f32 func_00114ED8(u32 p, u32 rec, u32 rect, u32 zmin, f32 size) {
 // faded by distance and cloud density, comb-sorted far to near, each a sprite strip textured from
 // its layer's work page. Returns the write pointer (p when nothing is kept).
 // HYPOTHESIS: vf2.zw (from the upper half of the GPR the 64-bit `ld` leaves unchanged) are 0, so the
-// sprite depth is the projected centre's (docs/port/pcsx2-pending.md).
+// sprite depth is the projected centre's (docs/pcsx2/procedures.md).
 // fpucheck: frame 4 sub/add, unsigned convert, 4 add; per sprite 1 sub (y), fade 1-2 sub, 6 sub/add
 u32 func_001152D8(u32 p, u32 cam, u32 s, u32 c, s32 layers) {
     s32 n = GRef<u16>(s + 0x50);
@@ -2106,8 +2102,6 @@ s32 Ftoi0(f32 v) {
     if (d <= -2147483648.0) return INT32_MIN;
     return static_cast<s32>(d);
 }
-
-u64 Sx(s32 v) { return static_cast<u64>(static_cast<s64>(v)); }
 
 s32 Wrap(s64 v) { return static_cast<s32>(static_cast<u32>(static_cast<u64>(v))); }
 

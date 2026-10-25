@@ -18,7 +18,7 @@ Original content (category 1): translated like the rest of the game. Sources: th
 | Target score | `MissionSelectAction` cases 0x10–0x12 | three options per stage; the choice (0..2) is stored per stage in 0x003AF180 and the target score (u16 points) is copied from table 0x003AEEF0 `[stage·3 + option]` into **`game[0x2E]`** (u16) |
 | Start | `MissionSelectAction` case 8 | `game[0x25] = 2` (players), `game[0x29] = 2` (free-mission path), `game[0x27] = GetMissionId(3, n + 1)`; then the hangar/aircraft select |
 | Aircraft per player | `CommitHangarSelection` 0x00233F10 | writes `game[slot·0x10 + 0/1/3]` (aircraft, colour, weapon) for player slot `slot` (+0xA0 of the hangar page): player 2 = `game[0x10/0x11/0x13]`. Only aircraft owned in the save are offered (shared by both players) |
-| Flight entry | `MenuGoTo` kind 2/3 → `RequestScene(2)` | as for any mission (`scenes.md` #10) |
+| Flight entry | `MenuGoTo` kind 2/3 → `RequestScene(2)` | as for any mission (`boot.md` #10) |
 
 `func_0022D030` (dead, no reference) sets a fixed two-player state (aircraft 2/0 for both): a debug VS setup (H), catalogued in `../port/dead-code.md`.
 
@@ -64,7 +64,7 @@ Flight model, collision, weapons and projectile pools, effects (and their random
 | Renderer | scissor and viewport per view (two views per frame, `SCISSOR_1/2` and XYOFFSET as packet data) | part of the GS subset already required for missions; nothing VS-specific beyond drawing two passes into halves of one target |
 | Presentation | the frame is still one 512×448 image; the ADR-006 output pass shows it at 4:3 (or anamorphic 16:9 when SCREEN RATIO is on), unchanged. On a wide host screen the picture is pillarboxed like any other screen | no change |
 | Sound | the shared engine voice and per-player SE positions work through the normal SOUND stand-in | no change |
-| Validation | a VS run in PCSX2 with two pads (the owner needs a second controller or a keyboard mapping for pad 2) | VS slice batch |
+| Validation | a VS run in PCSX2 with two pads (the User needs a second controller or a keyboard mapping for pad 2) | VS slice batch |
 
 Each half shows a 2:3 picture on a 4:3 screen (8:9 with SCREEN RATIO on); that is the original look. Showing one player's view full screen is not an original feature (only relevant to LAN play, ADR-008 §5).
 

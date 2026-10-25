@@ -7,7 +7,7 @@ start,end,category,reason
 0x002A0000,0x002A000C,timing,pad button map (as above)
 0x0033E574,0x0033E57C,timing,SOUND client current/previous batch buffer index: frame parity differs
 0x00353F88,0x00353F90,timing,VAG client current/previous batch buffer index: frame parity differs
-0x004121F4,0x004121F8,input,raw analog bytes of pad 1: the owner's stick in run 06 read 0x78-0x79 at some states; the port reads a centred 0x7F
+0x004121F4,0x004121F8,input,raw analog bytes of pad 1: the User's stick in run 06 read 0x78-0x79 at some states; the port reads a centred 0x7F
 0x00412214,0x00412218,input,converted analog values of pad 1 (from the raw bytes above)
 0x004121E8,0x00412230,timing,pad record (mode/id/raw data): libpad reaches DualShock 2 analog mode after ~60-80 frames on PCSX2
 0x004200D0,0x00420210,timing,field-copy GIF packet (DrawDisplayTransfer): the Y offset follows the field parity of the frame

@@ -1,4 +1,4 @@
-"""Compare two RAM hash logs of the port (--hash-log, docs/port/s5-plan.md P1).
+"""Compare two RAM hash logs of the port (--hash-log, docs/port/slices.md §B P1).
 
 Usage: python tools/research/hashdiff.py A.ac4h B.ac4h [--max N]
 

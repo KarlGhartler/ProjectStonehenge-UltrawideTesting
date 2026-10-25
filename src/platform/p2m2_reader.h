@@ -1,4 +1,4 @@
-// PCSX2 input recording reader (docs/formats/p2m2.md, file version 1; s5-plan.md P2). Each frame
+// PCSX2 input recording reader (docs/formats/p2m2.md, file version 1; slices.md §B P2). Each frame
 // record is the 18 DualShock 2 data bytes (scePadRead bytes 2-19) of ports 0 and 1. Recording frame
 // f is fed to the port's game tick `f - offset` (the offset covers PCSX2's power-on frames before
 // the executable starts and the pad latency; calibrated once, docs/port/validation-strategy.md §3.2).

@@ -26,8 +26,6 @@ AC04_GUEST_VAR(u16, g_MissionNo, 0x002A15B8)
 
 constexpr u32 kTitleSprite = 0x0039D8B0;  // sprite descriptor of the title image
 
-f32 K(u32 address) { return GRef<f32>(address); }
-
 }  // namespace
 
 // EE: 0x0022A478

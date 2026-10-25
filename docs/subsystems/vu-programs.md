@@ -1,6 +1,6 @@
 # VU programs (`.vutext`, `.vudata`)
 
-The VU1 and VU0 microcode blocks, how the game uploads them, and who uses them. Packet transport and bucket order: `rendering.md`. Rules for microcode analysis: `../../.claude/rules/vu-microcode.md` (never create functions or disassemble inside `.vutext`, `.vudata` or `.DVP.overlay.*` in Ghidra). Section addresses: `../platform/elf-sections.md`.
+The VU1 and VU0 microcode blocks, how the game uploads them, and who uses them. Packet transport and bucket order: `rendering.md`. Rules for microcode analysis: `../../.claude/rules/vu-microcode.md` (never create functions or disassemble inside `.vutext`, `.vudata` or `.DVP.overlay.*` in Ghidra). Section addresses: `../platform/executable.md`.
 
 ## Blocks
 
@@ -37,7 +37,7 @@ Used only by the sequence character engine: entries (micro pairs) 0x00/0x02/0x06
 
 Which entry runs depends on the part type (+0x140) in `FUN_002236A0`: type 0 (from the character data) → `FUN_00224180` → loop 0x002250E8 (entry 0x00); type 1 → `FUN_00224410` → loop 0x00225110 (entry 0x10); type 3 (morph track active, set by `FUN_00223F58`) → `FUN_00224848` → loop 0x00225140 (entry 0x30). The rigid path `FUN_00223830` → `FUN_00224D50` also uses 0x00225110. Each loop: `ctc2` a1 → VI01 and a2 → VI03 (VU0 data-memory pointers), then a3 times `vcallms`, `qmfc2.I`/`sqc2 vf1` to the buffer in a0 (one quadword per call).
 
-Test vectors: path 0x00225110 captured in PCSX2 (`../pcsx2/sessions-05.md`, states `vu0_00225110_before/after`); inputs are the VU0 registers (`tools/p2s_read.py STATE vu0`), `vu0Memory.bin`, scratchpad and EE RAM, output the a0 buffer. Paths 0x002250E8 and 0x00225140 are pending (`../pcsx2/procedures.md` check 1).
+Test vectors: path 0x00225110 captured in PCSX2 (`../pcsx2/sessions.md` run 05, states `vu0_00225110_before/after`); inputs are the VU0 registers (`tools/p2s_read.py STATE vu0`), `vu0Memory.bin`, scratchpad and EE RAM, output the a0 buffer. Paths 0x002250E8 and 0x00225140 are pending (`../pcsx2/procedures.md` check 1).
 
 ### Skinning program S (`.vutext` 0x0029C200, VU0 micro, 216 pairs)
 
@@ -60,7 +60,7 @@ Registers set by the EE (`func_00225048`, `func_00225088`, `func_002250A0`): vf1
 - **Tail P** (pairs 0x028–0x042): Q = 1/v.w; fog = clamp((vf7.w − v.w) × vf7.z, max vf7.x, min vf7.y) (`subw`, `mulz`, `minix`, `maxy` in that order); flags from `sub.xyw vf00, vf00, v` (sign of −x, −y, −w) and `sub.xyw vf00, v, vf9` (v − bounds); the `fmand` pair reads them four pairs after each `sub` (MAC flag latency): vi06 = MAC₁ & VI05, then vi06 = MAC₂ & vi06. Result vf1 = (ftoi4(x·Q, y·Q, z·Q), ftoi4(fog)) when vi06 = VI05, else (the same xyz, w = VI04 as an integer, `mfir`): the out-of-bounds vertex gets VI04 in w (the ADC/kick word).
 - **Tail L** (pairs 0x079–0x084): n.xyz = max(n, 0); c = colour matrix vf12–vf14 × n + vf15 (`maddw` with vf00.w = 1); c = c × vf11 per component; xyz clamped to 0…vf11.z, w = max(w, vf11.z); vf1 = ftoi0(c).
 - **Tail E** (pairs 0x0AC–0x0B0): u = (u + 1.0 in all four components) × vf9.z, vf1 = ftoi4(u).
-- Port (implemented 2026-10-18, `src/platform/vu0/vu0_hle.cpp`): a C++ rewrite of the nine entries with a VU0 register file (vf0–vf31, ACC, I, Q, VI01–VI06) and the 4 KB VU0 data memory, using `vu0::micro` arithmetic (chop) and the MAC-flag model above; I persists between calls as on the hardware. VU max / min order the float bit patterns (so -0 < +0). Verification against the PCSX2 vectors still to do (entry 0x02 captured, `../pcsx2/sessions-05.md`; 0x00 and 0x06 pending, `../pcsx2/procedures.md` section 1).
+- Port (implemented 2026-10-18, `src/platform/vu0/vu0_hle.cpp`): a C++ rewrite of the nine entries with a VU0 register file (vf0–vf31, ACC, I, Q, VI01–VI06) and the 4 KB VU0 data memory, using `vu0::micro` arithmetic (chop) and the MAC-flag model above; I persists between calls as on the hardware. VU max / min order the float bit patterns (so -0 < +0). Verification against the PCSX2 vectors still to do (entry 0x02 captured, `../pcsx2/sessions.md` run 05; 0x00 and 0x06 pending, `../pcsx2/procedures.md` section 1).
 
 ### VIF0 path
 
@@ -72,7 +72,7 @@ Registers set by the EE (`func_00225048`, `func_00225088`, `func_002250A0`): vf1
 
 ## Model programs B (0x00298AC0) and C (0x00299820)
 
-Disassembly: `python tools/research/vu_disasm.py 298AC0` (B, 0x1A4 pairs) and `299820` (C, 0x21A pairs); listings in `out/vu/` (never committed). Uploaded per menu/aircraft object by `UploadMenuObjectProgram` 0x0014B280 (`ref` to the block); run once per mesh strip by the `MSCNT` at the end of each strip packet (`../formats/SM-model.md`). The first `MSCAL` stops at the E bit of pair 0; every later `MSCNT` enters at pair 2 (`b 0x002` after the final E bit). C is B plus lighting, a second (reflection) pass and backface rejection.
+Disassembly: `python tools/research/vu_disasm.py 298AC0` (B, 0x1A4 pairs) and `299820` (C, 0x21A pairs); listings in `out/vu/` (never committed). Uploaded per menu/aircraft object by `UploadMenuObjectProgram` 0x0014B280 (`ref` to the block); run once per mesh strip by the `MSCNT` at the end of each strip packet (`../formats/MODEL.md`). The first `MSCAL` stops at the E bit of pair 0; every later `MSCNT` enters at pair 2 (`b 0x002` after the final E bit). C is B plus lighting, a second (reflection) pass and backface rejection.
 
 ### Input (VU1 data memory, relative to TOP = `xtop`)
 | QW | Written by | Content |
@@ -110,7 +110,7 @@ Disassembly: `python tools/research/vu_disasm.py 298AC0` (B, 0x1A4 pairs) and `2
 
 ## Generic model program A (0x00297C00) and aircraft program E (0x0029B0F0)
 
-Analysed 2026-10-16 (`s5-plan.md` P3) by an instruction-level diff against B and C (`out/vu/A.txt`, `E.txt`; branch targets masked). Both use the input layout and strip handling of B/C above.
+Analysed 2026-10-16 (`slices.md` §B P3) by an instruction-level diff against B and C (`out/vu/A.txt`, `E.txt`; branch targets masked). Both use the input layout and strip handling of B/C above.
 - **A** (0x1D0 pairs; view buckets 6 and 9: terrain and most world objects, menu lighting mode 1):
   - frame, clip set-up and clip-flag dispatch identical to C (the "all w > 8192" fast path included);
   - clipper identical to B: the intersection factor has **no** +0.001 (C adds it); the clipped polygon is copied without the `+ vf05` (zero) of C, so −0 components are not turned into +0;
@@ -152,4 +152,4 @@ Uploaded by `DrawGlowPass` 0x00142460 (MPG of 242 pairs at address 0). The packe
 
 - Program D: implemented 2026-10-18 as CPU HLE (`RunGlowFins` in `vu1_programs.cpp`; strips start at pair 2 or 0xDE, entry 0xE0 is refused and logged by the VIF); the MAC test of the edge facing is modelled as "z < 0 and not overflowed". Not yet compared with a PCSX2 GS dump of the glow pass.
 - Programs A (0x00297C00) and E (0x0029B0F0): analysed by diff (section above) and implemented 2026-10-16 as variants of the B/C HLE (`src/platform/render/vu1/vu1_programs.cpp`); the terrain program T is implemented there too. A, E and T are not yet compared with a PCSX2 GS dump (batch S5-A). B, C, D: analysed 2026-10-15 (sections above); their exact float behaviour (VU rounding) is not needed for RAM state (GS output only) but matters for pixel-exact screenshots.
-- VIF1 BASE = OFST = TOPS = 0 in the S4 PCSX2 states (`eeHwRegs.bin` at 0x3CA0/0x3CB0/0x3CC0): no double buffering, TOP is always 0. The model programs' clipper scratch at absolute 0x20/0x48 therefore overlaps the strip's own vertices (later triangles of a clipped strip read overwritten data); the HLE keeps this by working on a VU1 memory image.
+- VIF1 BASE = OFST = TOPS = 0 in the S4 PCSX2 states (`eeHwRegs.bin` at 0x3CA0/0x3CB0/0x3CC0): no double buffering in the menus, TOP is 0 there. In flight the game sets BASE 128 and OFST 448, so TOP alternates between 128 and 576 (seen 2026-10-22, `../port/validation.md` §2ac). The model programs' clipper scratch at absolute 0x20/0x48 therefore overlaps the strip's own vertices (later triangles of a clipped strip read overwritten data); the HLE keeps this by working on a VU1 memory image.
