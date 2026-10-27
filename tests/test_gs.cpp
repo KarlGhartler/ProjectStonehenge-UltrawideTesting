@@ -232,8 +232,8 @@ TEST_CASE("GIF: PACKED sprite, REGLIST, IMAGE upload and CLUT load") {
     CHECK(d.kind == PrimKind::kSprite);
     CHECK(d.textured);
     CHECK(d.fst);
-    REQUIRE(d.vertices.size() == 2);
-    CHECK(d.vertices[1].x == doctest::Approx(4.0f));
+    REQUIRE(draws.Vertices(d).size() == 2);
+    CHECK(draws.Vertices(d)[1].x == doctest::Approx(4.0f));
     REQUIRE(static_cast<bool>(d.texture));
     // The decoded texels are CLUT entries 1..4.
     std::uint32_t c;
@@ -279,9 +279,9 @@ TEST_CASE("GIF: XYOFFSET and triangle strip kicks") {
     gs.WriteRegister(0x05, xy(2058, 2058));
     auto draws = gs.TakeDraws();
     REQUIRE(draws.size() == 1);  // two triangles merged into one draw
-    CHECK(draws[0].vertices.size() == 6);
-    CHECK(draws[0].vertices[0].x == doctest::Approx(0.0f));
-    CHECK(draws[0].vertices[5].y == doctest::Approx(10.0f));
+    CHECK(draws.Vertices(0).size() == 6);
+    CHECK(draws.Vertices(0)[0].x == doctest::Approx(0.0f));
+    CHECK(draws.Vertices(0)[5].y == doctest::Approx(10.0f));
 }
 
 TEST_CASE("GIF: source marks name the guest origin of an upload (movie side path)") {
@@ -622,15 +622,131 @@ TEST_CASE("anti-aliasing point: a mark becomes a draw-list entry between the 3D 
     REQUIRE(draws.size() == 3);
     CHECK_FALSE(draws[0].aa_point);
     CHECK(draws[1].aa_point);
-    CHECK(draws[1].vertices.empty());
+    CHECK(draws.Vertices(1).empty());
     CHECK(draws[1].frame == 0x00080000ull);
     CHECK(draws[1].scissor == ((511ull << 16) | (447ull << 48)));
     CHECK_FALSE(draws[2].aa_point);
-    CHECK(draws[2].vertices.size() == 2);
+    CHECK(draws.Vertices(2).size() == 2);
     // A movie source mark (kSource) at the same place adds nothing to the draw list.
     marks[0].kind = SourceMark::kSource;
     marks[0].bytes = 16;
     GsState plain;
     plain.ProcessGif(p.Data(), p.Bytes(), &marks);
     CHECK(plain.TakeDraws().size() == 1);
+}
+
+TEST_CASE("GIF: a blended copy replayed from the traced one gives the draws of processing it") {
+    // A gouraud strip (RGBAQ + XYZ2 per vertex), then a flat sprite (XYZ2 only) that takes the
+    // strip's last colour: copies differ in positions and colours only.
+    auto stream = [](int shift, std::uint8_t red, int strip_vertices) {
+        Packet p;
+        p.Tag(1, false, 0, 1, 0xE);
+        p.Ad(0x18, 0x8000 | 0x8000ull << 32);  // XYOFFSET_1 = (2048, 2048)
+        p.Tag(static_cast<std::uint32_t>(strip_vertices), false, 0, 2, 0x51, true, 0x0C);  // RGBAQ, XYZ2; strip, gouraud
+        for (int i = 0; i < strip_vertices; ++i) {
+            p.w.push_back(static_cast<std::uint64_t>(red + i) | 0x20ull << 32);  // R, G
+            p.w.push_back(0x30 | 0x80ull << 32);                                    // B, A
+            const std::uint64_t x = static_cast<std::uint64_t>((2048 + shift + (i & 1) * 10) * 16);
+            const std::uint64_t y = static_cast<std::uint64_t>((2048 + (i >> 1) * 10) * 16);
+            p.w.push_back(x | y << 32);
+            p.w.push_back(5);  // Z
+        }
+        p.Tag(2, false, 0, 1, 0x5, true, 0x06);  // sprite, XYZ2 only
+        for (int i = 0; i < 2; ++i) {
+            p.w.push_back(static_cast<std::uint64_t>((2100 + shift + i * 8) * 16) | static_cast<std::uint64_t>(2100 * 16) << 32);
+            p.w.push_back(7);
+        }
+        return p;
+    };
+    auto same = [](const GsVertex& a, const GsVertex& b) {
+        return a.x == b.x && a.y == b.y && a.z == b.z && a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+    };
+    const Packet first = stream(0, 0x10, 4), second = stream(3, 0x40, 4), third = stream(-2, 0x60, 4);
+
+    GsState traced;
+    traced.ProcessGifTraced(first.Data(), first.Bytes(), nullptr);
+    REQUIRE(traced.Traced());
+    const DrawList t = traced.TakeDraws();
+    REQUIRE(t.size() == 2);
+
+    // Processing the copies one after another is the reference.
+    GsState plain;
+    plain.ProcessGif(first.Data(), first.Bytes());
+    (void)plain.TakeDraws();
+    for (const Packet* copy : {&second, &third}) {
+        plain.ProcessGif(copy->Data(), copy->Bytes());
+        const DrawList ref = plain.TakeDraws();
+        std::vector<GsVertex> out;
+        REQUIRE(traced.ReplayVertices(copy->Data(), copy->Bytes(), t, out));
+        REQUIRE(out.size() == ref.vertices.size());
+        REQUIRE(ref.size() == t.size());
+        for (std::size_t i = 0; i < out.size(); ++i) CHECK(same(out[i], ref.vertices[i]));
+    }
+    // The sprite has the strip's last colour of the copy.
+    std::vector<GsVertex> out;
+    REQUIRE(traced.ReplayVertices(second.Data(), second.Bytes(), t, out));
+    CHECK(out.back().r == 0x43);
+    CHECK(out.back().x == doctest::Approx(63.0f));
+
+    // Another number of strip vertices is not the same copy; nor is anything after other processing.
+    const Packet longer = stream(0, 0x10, 5);
+    CHECK_FALSE(traced.ReplayVertices(longer.Data(), longer.Bytes(), t, out));
+    traced.ProcessGif(first.Data(), first.Bytes());
+    (void)traced.TakeDraws();
+    CHECK_FALSE(traced.ReplayVertices(second.Data(), second.Bytes(), t, out));
+}
+
+TEST_CASE("GIF: a texel-copy sprite is drawn into local memory for a later local->local copy") {
+    // Mission 6 terrain tile: a T8H tile at 0x3E00 is flipped by a sprite into the alpha bytes of
+    // FBP 0x1E8 (block 0x3D00), then copied as T8H -> T8 into the atlas at 0x2900 (validation.md §2an).
+    GsState gs;
+    std::vector<std::uint8_t> tile(64 * 64);
+    for (std::size_t i = 0; i < tile.size(); ++i) tile[i] = static_cast<std::uint8_t>(i * 7 + 3);
+    gs.Memory().WriteImage(0x3E00, 1, kPsmT8H, 0, 0, 64, 64, 0, tile.data(), static_cast<std::uint32_t>(tile.size()));
+    gs.WriteRegister(0x19, 0);                                                  // XYOFFSET_2
+    gs.WriteRegister(0x41, 63ull << 16 | 63ull << 48);                          // SCISSOR_2 0..63
+    gs.WriteRegister(0x4D, 0x1E8 | 1ull << 16 | 0x00FFFFFFull << 32);           // FRAME_2: CT32, alpha only
+    gs.WriteRegister(0x48, 1ull << 16 | 1ull << 17);                            // TEST_2: depth ALWAYS
+    gs.WriteRegister(0x07, 0x3E00 | 1ull << 14 | 6ull << 26 | 6ull << 30 | 1ull << 34 | 1ull << 35);  // TEX0_2: decal
+    gs.WriteRegister(0x00, 6 | 1 << 4 | 1 << 8 | 1 << 9);                       // sprite, textured, UV, context 2
+    auto uv = [](int u, int v) { return static_cast<std::uint64_t>(u * 16) | static_cast<std::uint64_t>(v * 16) << 16; };
+    auto xy = [](int x, int y) { return static_cast<std::uint64_t>(x * 16) | static_cast<std::uint64_t>(y * 16) << 16; };
+    gs.WriteRegister(0x03, uv(0, 63));
+    gs.WriteRegister(0x05, xy(0, 0));
+    gs.WriteRegister(0x03, uv(64, 0));
+    gs.WriteRegister(0x05, xy(64, 64));
+    // Local -> local: 0x3D00 (T8H, width 64) to the atlas (T8, width 512) at (320, 192).
+    gs.WriteRegister(0x50, 0x3D00 | 1ull << 16 | static_cast<std::uint64_t>(kPsmT8H) << 24 | 0x2900ull << 32 | 8ull << 48 |
+                               static_cast<std::uint64_t>(kPsmT8) << 56);
+    gs.WriteRegister(0x51, 320ull << 32 | 192ull << 48);
+    gs.WriteRegister(0x52, 64 | 64ull << 32);
+    gs.WriteRegister(0x53, 2);
+    const GsMemory& m = gs.Memory();
+    for (std::uint32_t y : {0u, 1u, 31u, 32u, 62u, 63u}) {
+        for (std::uint32_t x : {0u, 5u, 63u}) {
+            CHECK(m.ReadPixel(kPsmT8, 0x2900, 8, 320 + x, 192 + y) == tile[(63 - y) * 64 + x]);  // flipped
+        }
+    }
+    // The sprite still goes to the draw list (the GPU draws it as before).
+    CHECK(gs.TakeDraws().size() == 1);
+    CHECK(gs.GpuOnlyReads() == 0);
+
+    // The same with blending on: the sprite is not a plain copy, local memory does not get it, and
+    // the transfer that reads it back is counted (and logged once).
+    gs.WriteRegister(0x00, 6 | 1 << 4 | 1 << 6 | 1 << 8 | 1 << 9);
+    gs.WriteRegister(0x03, uv(0, 63));
+    gs.WriteRegister(0x05, xy(0, 0));
+    gs.WriteRegister(0x03, uv(64, 0));
+    gs.WriteRegister(0x05, xy(64, 64));
+    gs.WriteRegister(0x53, 2);
+    CHECK(gs.GpuOnlyReads() == 1);
+    // A host->local upload into the page makes it local memory's again.
+    gs.WriteRegister(0x50, 0x3D00ull << 32 | 1ull << 48);  // destination 0x3D00, CT32
+    gs.WriteRegister(0x51, 0);
+    gs.WriteRegister(0x53, 0);
+    gs.WriteRegister(0x50, 0x3D00 | 1ull << 16 | static_cast<std::uint64_t>(kPsmT8H) << 24 | 0x2900ull << 32 | 8ull << 48 |
+                               static_cast<std::uint64_t>(kPsmT8) << 56);
+    gs.WriteRegister(0x51, 320ull << 32 | 192ull << 48);
+    gs.WriteRegister(0x53, 2);
+    CHECK(gs.GpuOnlyReads() == 1);
 }

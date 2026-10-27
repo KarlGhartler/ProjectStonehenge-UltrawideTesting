@@ -11,6 +11,7 @@
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -87,7 +88,9 @@ enum class PrimKind : std::uint8_t { kPoint, kLine, kTriangle, kSprite };
 
 struct DrawCommand {
     PrimKind kind = PrimKind::kTriangle;
-    std::vector<GsVertex> vertices;  // triangles: 3 per primitive; sprites: 2; lines: 2; points: 1
+    // The draw's vertices: [first_vertex, first_vertex + vertex_count) of its DrawList's vertices.
+    // Triangles: 3 per primitive; sprites: 2; lines: 2; points: 1.
+    std::uint32_t first_vertex = 0, vertex_count = 0;
     // Attributes (PRIM or PRMODE)
     bool gouraud = false, textured = false, fog = false, blend = false, aa1 = false, fst = false;
     // Context registers in force
@@ -120,6 +123,37 @@ struct DrawCommand {
     std::uint32_t Fbmsk() const { return static_cast<std::uint32_t>(frame >> 32); }
 };
 
+// A draw's vertices inside its DrawList.
+struct VertexSpan {
+    const GsVertex* data = nullptr;
+    std::size_t count = 0;
+    std::size_t size() const { return count; }
+    bool empty() const { return count == 0; }
+    const GsVertex& operator[](std::size_t i) const { return data[i]; }
+    const GsVertex* begin() const { return data; }
+    const GsVertex* end() const { return data + count; }
+};
+
+// Draws in stream order and their vertices in one buffer, each draw's after the previous draw's (a
+// primitive only ever goes to the newest draw). One buffer instead of one vector per draw: no
+// allocation per draw, and the buffers keep their capacity from frame to frame.
+struct DrawList {
+    std::vector<DrawCommand> draws;
+    std::vector<GsVertex> vertices;
+
+    void clear() {
+        draws.clear();
+        vertices.clear();
+    }
+    bool empty() const { return draws.empty(); }
+    std::size_t size() const { return draws.size(); }
+    const DrawCommand& operator[](std::size_t i) const { return draws[i]; }
+    VertexSpan Vertices(const DrawCommand& d) const { return {vertices.data() + d.first_vertex, d.vertex_count}; }
+    VertexSpan Vertices(std::size_t i) const { return Vertices(draws[i]); }
+    // Moves the draws of `other` to the end of this list (other is left empty, with its capacity).
+    void Append(DrawList& other);
+};
+
 class GsState {
 public:
     GsState();
@@ -132,11 +166,31 @@ public:
     // Processes GIF packets (a sequence of GIF tags with their data, 16-byte units).
     // `marks` (optional) name the blocks of `data` read from known guest addresses.
     void ProcessGif(const std::uint8_t* data, std::size_t bytes, const std::vector<SourceMark>* marks = nullptr);
-    // Takes the draws produced since the last call.
-    std::vector<DrawCommand> TakeDraws();
+
+    // Frame interpolation (FrameInterpolator::Build): the blended copies of one step differ, as a
+    // rule, only in vertex values (the repeated program runs write the same GIF packets with other
+    // positions, colours and texture coordinates). ProcessGifTraced processes a copy like ProcessGif
+    // and records which kick every vertex of the draw list came from (the draws are taken with
+    // TakeDraws right after). ReplayVertices takes a later copy of the same step instead of
+    // processing it: when its GIF data has the same size, the same GIF tags, the same register
+    // writes other than vertex values and the same kick kinds as the traced copy, and no decision of
+    // the traced pass depended on vertex values that changed (the texel range of a textured sprite,
+    // line or point), `out` gets the vertices processing the copy would give (`traced`'s draws with
+    // the copy's vertex values) and the vertex registers end as processing would leave them. Its
+    // draws are then `traced`'s with `out`. False (nothing changed) otherwise, or when anything was
+    // processed since the traced pass: the copy is then processed in full.
+    void ProcessGifTraced(const std::uint8_t* data, std::size_t bytes, const std::vector<SourceMark>* marks);
+    bool Traced() const { return trace_.valid; }
+    bool ReplayVertices(const std::uint8_t* data, std::size_t bytes, const DrawList& traced, std::vector<GsVertex>& out);
+    // Takes the draws produced since the last call; the second form appends them to `out`.
+    DrawList TakeDraws();
+    void TakeDraws(DrawList& out);
     // Takes the texture work produced since the last call (TextureOp).
     std::vector<TextureOp> TakeTextureOps();
-    void SetTextureDecode(TextureDecode mode) { decode_mode_ = mode; }
+    void SetTextureDecode(TextureDecode mode) {
+        decode_mode_ = mode;
+        trace_.valid = false;
+    }
     TextureDecode Decode() const { return decode_mode_; }
     // RGBA bytes of the textures held by the decoded-texture cache (their images on the GPU, and
     // their rgba with CPU decoding), bounded by kTextureCacheBytes.
@@ -151,17 +205,43 @@ public:
     GsMemory& Memory() { return mem_; }
     std::uint64_t Reg(std::uint32_t reg) const { return regs_[reg & 0x7F]; }
     const std::array<std::uint32_t, 512>& Clut() const { return clut_; }
+    // Local->local transfers and CLUT loads that read pages only the GPU holds (logged once each;
+    // NoteGpuDraw).
+    std::uint64_t GpuOnlyReads() const { return gpu_only_reads_; }
 
 private:
     void Kick(bool draw);
-    void EmitPrimitive(const GsVertex* v, int count);
+    // A sprite the GS draws as a plain copy of texels (decal, or modulate by 128; no blending,
+    // alpha test, fog or filtering; depth test ALWAYS) into a CT32 frame buffer is also drawn into
+    // local memory: the game copies such drawings on with local->local transfers (mission 6 and
+    // others: terrain tiles flipped through FBP 0x1E8, then moved into the terrain atlas;
+    // validation.md §2an). Every other draw reaches only the GPU's targets. True when the sprite is
+    // such a copy (with `write`, when it wrote).
+    bool SpriteToMemory(const GsVertex& a, const GsVertex& b, bool write);
+    // Pages of local memory (8 KiB) whose contents only the GPU holds: a frame buffer drawn by a
+    // primitive that SpriteToMemory did not also draw, since the last transfer into the page. A
+    // local->local transfer or a CLUT load that reads one gets stale bytes: logged once each, the
+    // sign of another GPU drawing the game reads back through local memory (validation.md §2an).
+    void NoteGpuDraw();
+    bool GpuOnly(std::uint32_t first_page, std::uint32_t last_page) const;
+    void ClearGpuOnly(std::uint32_t first_page, std::uint32_t last_page);
+    std::bitset<GsMemory::kSize / 8192> gpu_pages_;
+    std::uint64_t gpu_only_reads_ = 0;
+    bool gpu_key_valid_ = false;
+    std::uint64_t gpu_key_frame_ = 0, gpu_key_scissor_ = 0;  // the last frame buffer and scissor marked
+    // TEX0 reads a frame buffer drawn earlier (the GPU's target) rather than local memory.
+    bool TextureFromFrame(std::uint64_t tex0) const;
+    // `src` (tracing only, else null): per vertex, its kick (Trace). `memory`: a sprite that
+    // SpriteToMemory also draws into local memory.
+    void EmitPrimitive(const GsVertex* v, int count, const std::int32_t* src = nullptr, bool memory = false);
     void LoadClut(std::uint64_t tex);
     std::shared_ptr<const DecodedTexture> DecodeTexture(const DrawCommand& d, const GsVertex* v, int count);
     // The palette of a paletted texture as RGBA8 (DrawCommand::frame_clut).
     std::shared_ptr<const std::array<std::uint32_t, 256>> ClutRgba(const DrawCommand& d) const;
     // Texel rectangle [u0, u1) x [v0, v1) that the primitive can reach (DecodeTexture's footprint).
     void TexelRange(const DrawCommand& d, const GsVertex* v, int count, std::uint32_t r[4]) const;
-    void AppendVertices(std::vector<GsVertex>& out, const DrawCommand& d, const GsVertex* v, int count);
+    // Adds the primitive's vertices to the newest draw `d` (draws_.draws.back()).
+    void AppendVertices(DrawCommand& d, const GsVertex* v, int count, const std::int32_t* src);
     void ImageData(const std::uint8_t* data, std::uint32_t bytes);
     // Emits the anti-aliasing points of marks_ at or before byte `pos` of the step's GIF data.
     void EmitAntiAliasPoints(std::size_t pos);
@@ -209,7 +289,7 @@ private:
     const std::uint8_t* gif_base_ = nullptr;
     const std::vector<SourceMark>* marks_ = nullptr;
     std::map<std::uint32_t, std::pair<std::uint32_t, std::uint32_t>> upload_source_;
-    std::vector<DrawCommand> draws_;
+    DrawList draws_;
     FrameQuery frame_query_;
     // Frame buffers drawn so far, in stream order (FBP -> pages covered by FBW x scissor height), and
     // those a later host->local or local->local transfer wrote over: a texture at such an address is
@@ -261,6 +341,42 @@ private:
     TextureKey last_key_{};
     std::uint64_t last_valid_at_ = 0;
     std::shared_ptr<const DecodedTexture> last_texture_;
+
+    // Traced pass of a blended copy (ProcessGifTraced). Kicks: the vertices of the XYZ writes in
+    // stream order, after kKickBase entries for what the vertex queue held at the start (queue_[0-2],
+    // fan_first_).
+    static constexpr std::uint32_t kKickBase = 4;
+    struct Trace {
+        bool valid = false;
+        std::uint64_t serial = 0;  // process_serial_ after the traced pass
+        std::vector<std::uint8_t> gif;
+        std::vector<GsVertex> kicks;
+        std::vector<std::int32_t> offsets;  // per kick: XYOFFSET x, y (1/16 pixels) in force
+        // Per vertex of the draw list: its kick, and the kick of its colour (flat shading: the
+        // primitive's last vertex).
+        std::vector<std::uint32_t> src, colour;
+        // A textured sprite, line or point: its texel range decided the draw it went to and its
+        // texture.
+        struct RangeCheck {
+            std::uint32_t draw;
+            std::int32_t count;
+            std::uint32_t src[3];
+            std::uint32_t range[4];
+        };
+        std::vector<RangeCheck> ranges;
+        // Sprites drawn into local memory (SpriteToMemory): their two kicks.
+        std::vector<std::array<std::uint32_t, 2>> memory_sprites;
+        std::uint32_t queue_src[3] = {0, 1, 2};  // at the end
+        std::uint32_t fan_first_src = 3;
+    };
+    void TraceRange(int count, const std::int32_t* src, const std::uint32_t r[4]);
+    Trace trace_;
+    std::uint64_t process_serial_ = 0;
+    bool tracing_ = false;
+    std::int32_t kick_src_ = -1;  // the kick of cur_ while tracing
+    std::array<std::int32_t, 3> queue_src_{-1, -1, -1};
+    std::int32_t fan_first_src_ = -1;
+    std::vector<GsVertex> replay_kicks_;  // ReplayVertices
 };
 
 }  // namespace ac04::render::gs

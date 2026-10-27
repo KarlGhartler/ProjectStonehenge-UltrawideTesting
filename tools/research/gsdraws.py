@@ -8,7 +8,10 @@ Usage: python -I tools/research/gsdraws.py FILE [--gs] [--region X0 Y0 X1 Y1] [-
   --region  only draws whose screen box (pixels, after XYOFFSET) overlaps this box
   --date    only draws with the destination alpha test on
   --from/--count  index range of the listing
-  --verts   also print each listed draw's vertices (x, y in pixels; u, v in texels for FST = 1)
+  --images  also list the host->local transfers (BITBLTBUF destination, TRXPOS, TRXREG) with the
+            number of draws begun before each
+  --verts   also print each listed draw's vertices (x, y in pixels; u, v in texels for FST = 1; the
+            RGBA and S, T, Q in force at the kick)
 
 Prints register values and counts only; nothing from the dump is written anywhere.
 """
@@ -18,6 +21,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gifstrips import bits, gs_stream  # noqa: E402
+
+def f32(w):
+    return struct.unpack("<f", struct.pack("<I", w & 0xFFFFFFFF))[0]
+
 
 PRIM_NAMES = ["pt", "line", "lstrip", "tri", "tstrip", "tfan", "sprite", "prim7"]
 PSM = {0x00: "CT32", 0x01: "CT24", 0x02: "CT16", 0x0A: "CT16S", 0x13: "T8", 0x14: "T4", 0x1B: "T8H",
@@ -44,6 +51,11 @@ class Gs:
         self.draws = []
         self.cur = None
         self.uv = (0, 0)
+        self.rgba = (0, 0, 0, 0)
+        self.trx = {0x50: 0, 0x51: 0, 0x52: 0}
+        self.miptbp = [[0, 0], [0, 0]]  # MIPTBP1, MIPTBP2 per context
+        self.images = []
+        self.stq = (0.0, 0.0, 1.0)
 
     def key(self):
         c = self.ctx[bits(self.prim, 9, 1)]
@@ -56,11 +68,12 @@ class Gs:
         px, py = (x - ox) / 16.0, (y - oy) / 16.0
         k = self.key()
         if self.cur is None or self.cur["key"] != k:
-            self.cur = {"key": k, "kicks": 0, "verts": 0, "box": [1e9, 1e9, -1e9, -1e9], "scissor": c["SCISSOR"]}
+            self.cur = {"key": k, "kicks": 0, "verts": 0, "box": [1e9, 1e9, -1e9, -1e9], "scissor": c["SCISSOR"],
+                        "tex1": c["TEX1"], "miptbp": tuple(self.miptbp[bits(self.prim, 9, 1)])}
             self.draws.append(self.cur)
         d = self.cur
         d["verts"] += 1
-        d.setdefault("xy", []).append((px, py, self.uv[0], self.uv[1]))
+        d.setdefault("xy", []).append((px, py, self.uv[0], self.uv[1], self.rgba, self.stq))
         if kick:
             d["kicks"] += 1
         b = d["box"]
@@ -78,6 +91,18 @@ class Gs:
             self.colclamp = v & 1
         elif addr == 0x03:
             self.uv = (bits(v, 0, 14) / 16.0, bits(v, 16, 14) / 16.0)
+        elif addr in (0x34, 0x35, 0x36, 0x37):
+            self.miptbp[addr & 1][(addr - 0x34) >> 1] = v
+        elif addr in (0x50, 0x51, 0x52):
+            self.trx[addr] = v
+        elif addr == 0x53:
+            if v & 3 == 0:
+                self.cur = None  # a draw after the transfer is listed as a new one
+                self.images.append((len(self.draws), self.trx[0x50], self.trx[0x51], self.trx[0x52]))
+        elif addr == 0x01:
+            self.rgba = (bits(v, 0, 8), bits(v, 8, 8), bits(v, 16, 8), bits(v, 24, 8))
+        elif addr == 0x02:
+            self.stq = (f32(v & 0xFFFFFFFF), f32(v >> 32), self.stq[2])
         elif addr == 0x05:
             self.vertex(bits(v, 0, 16), bits(v, 16, 16), True)
         elif addr == 0x04:
@@ -114,6 +139,10 @@ def parse(data):
                         gs.prim = a & 0x7FF
                     elif r == 3:
                         gs.uv = ((a & 0x3FFF) / 16.0, ((a >> 32) & 0x3FFF) / 16.0)
+                    elif r == 1:
+                        gs.rgba = (a & 0xFF, (a >> 32) & 0xFF, b & 0xFF, (b >> 32) & 0xFF)
+                    elif r == 2:
+                        gs.stq = (f32(a & 0xFFFFFFFF), f32(a >> 32), f32(b & 0xFFFFFFFF))
                     elif r in (6, 7, 8, 9):
                         gs.write(r, a)
         elif flg == 1:
@@ -177,9 +206,20 @@ def main():
             continue
         print(describe(i, d))
         if "--verts" in args:
-            for x, y, u, v in d.get("xy", []):
-                print(f"        xy {x:8.4f} {y:8.4f}  uv {u:8.4f} {v:8.4f}")
+            t1 = d["tex1"]
+            m1, m2 = d["miptbp"]
+            print(f"        TEX1 lcm {bits(t1, 0, 1)} mxl {bits(t1, 2, 3)} mmag {bits(t1, 5, 1)} mmin {bits(t1, 6, 3)} "
+                  f"mtba {bits(t1, 9, 1)} l {bits(t1, 19, 2)} k {bits(t1, 32, 12)} (raw {t1:#x})  "
+                  f"MIPTBP1 {m1:#x} MIPTBP2 {m2:#x}")
+            for x, y, u, v, c, stq in d.get("xy", []):
+                print(f"        xy {x:8.4f} {y:8.4f}  uv {u:8.4f} {v:8.4f}  rgba {c[0]:3d} {c[1]:3d} {c[2]:3d} {c[3]:3d}"
+                      f"  stq {stq[0]:9.5f} {stq[1]:9.5f} {stq[2]:9.5f}")
         shown += 1
+    if "--images" in args:
+        for n, bb, tp, tr in gs.images:
+            print(f"image before draw {n:5d}: dbp {bits(bb, 32, 14):#x} dbw {bits(bb, 48, 6)} "
+                  f"{PSM.get(bits(bb, 56, 6), hex(bits(bb, 56, 6)))} at {bits(tp, 32, 11)},{bits(tp, 48, 11)} "
+                  f"size {bits(tr, 0, 12)}x{bits(tr, 32, 12)}")
     print(f"{len(gs.draws)} draws, {shown} listed")
 
 

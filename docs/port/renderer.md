@@ -246,3 +246,13 @@ Differences from §2.3:
 - Palettes drawn on the GPU (2026-10-22, `validation.md` §2z): an 8-bit CT32 CLUT loaded from a frame buffer drawn earlier (the sun flare's palette at FBP 0x190) is not in local memory. The texture is decoded with the identity palette (indices) and the draw looks the indices up in a 16 × 16 copy of the buffer's palette pixels taken right before it (`gs.frag` flag 29).
 
 Measured (GD-3): the no-save intro at 1× has 4 frames with more than 16 ms of CPU work instead of 200 (worst 21 ms instead of 92); the stretch at vblank 2390–2460 peaks at 12.5 ms instead of 41. Mission 4 combat: 245 instead of 621 such frames, worst 21 ms instead of 39. In the hangar viewer the CPU cost is a little lower, but recording costs about 0.7 ms more per frame, because textures cycled through shared memory are now decoded again each time (about 158 GPU decodes per frame) instead of being found by content hash.
+
+### 2.8 GS processing per frame (2026-10-27)
+
+`validation.md` §2am (GP-1 to GP-4). With frame interpolation each game step is presented several times; GS processing had been done again for every presented frame.
+
+| Item | Code | Notes |
+|---|---|---|
+| Draw list with one vertex buffer | `DrawList`, `DrawCommand::first_vertex` / `vertex_count`, `GsState::TakeDraws(DrawList&)` | A primitive only ever goes to the newest draw, so each draw's vertices are contiguous. No allocation per draw; buffers keep their capacity |
+| Pipeline reuse | `GsBackend::Record` (`pipeline` lambda) | Consecutive draws with the same key skip `GetPipeline` |
+| Blended copies replayed | `Renderer::SubmitBlendedStep`, `GsState::ProcessGifTraced` / `ReplayVertices`, `FrameInterpolator::StepSerial` | The first copy of a step is processed and traced (the kick of every draw-list vertex and of its colour, the XYOFFSET of every kick, the texel ranges of textured sprites, lines and points). A later copy of the same step is parsed for vertex writes only; everything else must be the traced bytes, and the texel ranges must not change. Its draws are the traced ones with the new vertices; no texture work (textures and the GPU's copy of local memory stay as the traced frame left them). Any other case processes the copy again |

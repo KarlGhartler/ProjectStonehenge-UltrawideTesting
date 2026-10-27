@@ -122,6 +122,7 @@ FrameInterpolator::~FrameInterpolator() {
 }
 
 void FrameInterpolator::Reset() {
+    ++step_serial_;
     prev_.valid = false;
     cur_.valid = false;
     cut_ = false;
@@ -130,6 +131,7 @@ void FrameInterpolator::Reset() {
 void FrameInterpolator::PushStep(const std::vector<std::uint8_t>& gif, const std::vector<gs::SourceMark>& marks,
                                  vu1::RunLog& runs) {
     std::swap(prev_, cur_);
+    ++step_serial_;
     cur_.valid = true;
     cur_.gif.assign(gif.begin(), gif.end());
     cur_.marks = marks;

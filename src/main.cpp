@@ -909,9 +909,8 @@ int Run(int argc, char** argv) {
     render::FrameInterpolator interpolator;
     bool interpolating = false;
     bool interpolation_reset = false;
-    std::vector<std::vector<u8>> blended(1);
-    std::vector<std::vector<render::gs::SourceMark>> blended_marks(1);
-    std::vector<std::vector<u8>> blended_pool;
+    std::vector<u8> blended;
+    std::vector<render::gs::SourceMark> blended_marks;
     // Session statistics (log at exit): frames presented at normal speed, and the blended copies
     // (render thread; read after it has stopped).
     u64 normal_frames = 0, blended_frames = 0;
@@ -958,7 +957,7 @@ int Run(int argc, char** argv) {
             if (!current) interpolator.Reset();
             else if (job.ticks_run <= 1) {
                 const auto build_start = std::chrono::steady_clock::now();
-                blend = interpolator.Build(job.alpha, blended[0], blended_marks[0]);
+                blend = interpolator.Build(job.alpha, blended, blended_marks);
                 build_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - build_start).count();
                 if (blend) ++blended_frames;
             }
@@ -974,15 +973,7 @@ int Run(int argc, char** argv) {
             if (marks.size() > steps.size()) marks.resize(steps.size());
         }
         renderer.SubmitGsSteps(steps, marks, pool);
-        if (blend) {
-            renderer.SubmitGsSteps(blended, blended_marks, blended_pool);
-            blended.resize(1);
-            blended_marks.resize(1);
-            if (!blended_pool.empty()) {
-                blended[0] = std::move(blended_pool.back());
-                blended_pool.pop_back();
-            }
-        }
+        if (blend) renderer.SubmitBlendedStep(blended, blended_marks, interpolator.StepSerial());
         // The run logs go back to the game side's pool, cleared (PushStep hands back the log of
         // the step it dropped).
         for (render::vu1::RunLog& log : job.runs) log.Clear();

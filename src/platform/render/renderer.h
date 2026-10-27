@@ -6,6 +6,7 @@
 // - An overlay hook draws after the output pass (debug overlay, milestone D).
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <filesystem>
 #include <functional>
@@ -63,6 +64,14 @@ public:
     // Processes the steps' GIF data; the emptied step buffers go to `pool` (kept for reuse).
     void SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps, std::vector<std::vector<gs::SourceMark>>& marks,
                        std::vector<std::vector<uint8_t>>& pool);
+    // Frame interpolation: the blended copy of the newest step (FrameInterpolator::Build, with its
+    // step serial), drawn with the next frame. The first copy of a step is processed and its draws
+    // kept; a later copy of the same step that differs only in vertex values reuses them with the
+    // new vertices (GsState::ReplayVertices) and adds no texture work: the textures and the GPU's
+    // copy of local memory are as the first copy left them, and repeating its memory updates would
+    // leave them so. Otherwise the copy is processed again.
+    void SubmitBlendedStep(const std::vector<uint8_t>& gif, const std::vector<gs::SourceMark>& marks,
+                           std::uint64_t step_serial);
     // Off: submitted steps update GS registers and local memory but produce no draws (--fast-until:
     // steps that are never shown).
     void SetGsDrawsEnabled(bool on) { gs_state_.SetDrawsEnabled(on); }
@@ -116,6 +125,7 @@ public:
         double record_ms = 0.0;  // GsBackend::Record of the last frame
         double wait_ms = 0.0;    // waiting for the GPU to finish the frame before last (its fence)
         gs::GsBackend::TextureStats textures;
+        gs::GsBackend::PassStats passes;  // render passes, barriers and frame-buffer copies of the last frame
     };
     const Stats& LastStats() const { return last_stats_; }
 
@@ -174,11 +184,18 @@ private:
     std::uint64_t stat_presented_ = 0;
     std::uint64_t stat_upload_bytes_ = 0, stat_uploads_ = 0, stat_decodes_ = 0, stat_memory_updates_ = 0,
                   stat_textures_ = 0;
+    std::uint64_t stat_render_passes_ = 0, stat_barriers_ = 0, stat_copies_ = 0, stat_copy_pixels_ = 0;
+    std::array<std::uint64_t, 7> stat_kind_copies_{}, stat_kind_pixels_{};
+    std::uint64_t stat_blend_processed_ = 0, stat_blend_replayed_ = 0;
 
     gs::GsState gs_state_;
     gs::GsBackend gs_backend_;
     bool gs_ready_ = false;
-    std::vector<gs::DrawCommand> gs_pending_;
+    gs::DrawList gs_pending_;
+    // SubmitBlendedStep: the draws of the step's processed copy, and the list handed to gs_pending_.
+    bool blended_valid_ = false;
+    std::uint64_t blended_step_ = 0;
+    gs::DrawList blended_draws_, blended_copy_;
     std::vector<gs::TextureOp> gs_ops_;  // texture work of the pending draws (all of it reaches Record, in order)
     int native_request_w_ = 0, native_request_h_ = 0;
     float present_scale_[3] = {1.0f, 1.0f, 1.0f};  // field-copy colour scale (brightness option)

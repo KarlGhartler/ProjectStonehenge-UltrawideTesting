@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 #include "output_frag_spv.h"
@@ -101,11 +102,15 @@ void Renderer::SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps,
                              std::vector<std::vector<gs::SourceMark>>& marks,
                              std::vector<std::vector<uint8_t>>& pool) {
     const auto start = std::chrono::steady_clock::now();
+    if (!steps.empty()) {
+        // A processed step ends the reuse of a blended copy; its draws (and textures) are let go.
+        blended_valid_ = false;
+        blended_draws_.clear();
+    }
     for (size_t i = 0; i < steps.size(); ++i) {
         const std::vector<uint8_t>& s = steps[i];
         gs_state_.ProcessGif(s.data(), s.size(), i < marks.size() ? &marks[i] : nullptr);
-        auto draws = gs_state_.TakeDraws();
-        gs_pending_.insert(gs_pending_.end(), std::make_move_iterator(draws.begin()), std::make_move_iterator(draws.end()));
+        gs_state_.TakeDraws(gs_pending_);
         auto ops = gs_state_.TakeTextureOps();
         if (gs_ready_) gs_ops_.insert(gs_ops_.end(), std::make_move_iterator(ops.begin()), std::make_move_iterator(ops.end()));
     }
@@ -116,6 +121,30 @@ void Renderer::SubmitGsSteps(std::vector<std::vector<uint8_t>>& steps,
     }
     steps.clear();
     marks.clear();
+    pending_gs_ms_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+}
+
+void Renderer::SubmitBlendedStep(const std::vector<uint8_t>& gif, const std::vector<gs::SourceMark>& marks,
+                                 std::uint64_t step_serial) {
+    const auto start = std::chrono::steady_clock::now();
+    if (blended_valid_ && blended_step_ == step_serial &&
+        gs_state_.ReplayVertices(gif.data(), gif.size(), blended_draws_, blended_copy_.vertices)) {
+        blended_copy_.draws = blended_draws_.draws;
+        gs_pending_.Append(blended_copy_);
+        ++stat_blend_replayed_;
+    } else {
+        gs_state_.ProcessGifTraced(gif.data(), gif.size(), &marks);
+        blended_draws_.clear();
+        gs_state_.TakeDraws(blended_draws_);
+        auto ops = gs_state_.TakeTextureOps();
+        if (gs_ready_) gs_ops_.insert(gs_ops_.end(), std::make_move_iterator(ops.begin()), std::make_move_iterator(ops.end()));
+        blended_valid_ = gs_state_.Traced();
+        blended_step_ = step_serial;
+        blended_copy_.draws = blended_draws_.draws;
+        blended_copy_.vertices = blended_draws_.vertices;
+        gs_pending_.Append(blended_copy_);
+        ++stat_blend_processed_;
+    }
     pending_gs_ms_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 }
 
@@ -596,6 +625,15 @@ bool Renderer::DrawFrame() {
             gs_backend_.CopyPresent(cmd, native_image_, native_width_, native_height_);
             gs_backend_.PresentScale(present_scale_);
         }
+        last_stats_.passes = gs_backend_.LastPassStats();  // after CopyPresent: its barriers count too
+        stat_render_passes_ += last_stats_.passes.render_passes;
+        stat_barriers_ += last_stats_.passes.barriers;
+        stat_copies_ += last_stats_.passes.copies;
+        stat_copy_pixels_ += last_stats_.passes.copy_pixels;
+        for (std::size_t k = 0; k < stat_kind_copies_.size(); ++k) {
+            stat_kind_copies_[k] += last_stats_.passes.kind_copies[k];
+            stat_kind_pixels_[k] += last_stats_.passes.kind_pixels[k];
+        }
     }
 
     VkClearValue clear{};
@@ -680,6 +718,25 @@ void Renderer::Shutdown() {
                       static_cast<double>(stat_textures_) / n, static_cast<double>(stat_decodes_) / n,
                       static_cast<double>(stat_uploads_) / n, static_cast<double>(stat_memory_updates_) / n,
                       static_cast<double>(stat_upload_bytes_) / n / 1024.0);
+        AC04_LOG_INFO("renderer",
+                      "GPU work per frame on average: %.1f render passes, %.1f pipeline barriers, %.1f frame-buffer "
+                      "copies (%.2f Mpixels)",
+                      static_cast<double>(stat_render_passes_) / n, static_cast<double>(stat_barriers_) / n,
+                      static_cast<double>(stat_copies_) / n, static_cast<double>(stat_copy_pixels_) / n / 1e6);
+        std::string kinds;
+        for (std::size_t k = 0; k < stat_kind_copies_.size(); ++k) {
+            if (stat_kind_copies_[k] == 0) continue;
+            char part[96];
+            std::snprintf(part, sizeof(part), "%s%s %.1f (%.2f Mpixels)", kinds.empty() ? "" : ", ",
+                          gs::GsBackend::CopyKindName(static_cast<int>(k)), static_cast<double>(stat_kind_copies_[k]) / n,
+                          static_cast<double>(stat_kind_pixels_[k]) / n / 1e6);
+            kinds += part;
+        }
+        if (!kinds.empty()) AC04_LOG_INFO("renderer", "frame-buffer copies per frame by kind: %s", kinds.c_str());
+        if (stat_blend_processed_ + stat_blend_replayed_ > 0)
+            AC04_LOG_INFO("renderer", "blended copies: %llu processed, %llu reused from the copy before (new vertices)",
+                          static_cast<unsigned long long>(stat_blend_processed_),
+                          static_cast<unsigned long long>(stat_blend_replayed_));
         AC04_LOG_INFO("renderer", "%llu frames presented; waiting for the GPU %.2f ms per frame on average",
                       static_cast<unsigned long long>(stat_presented_),
                       stat_wait_ms_ / static_cast<double>(stat_presented_));

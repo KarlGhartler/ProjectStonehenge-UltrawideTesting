@@ -16,6 +16,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <initializer_list>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -67,7 +68,7 @@ public:
     // selects the per-frame buffers. Every op of `ops` must reach Record once, in stream order (the
     // GPU copy of local memory follows them); draws may only use textures whose decode op came in
     // this or an earlier call, or that carry their CPU-decoded rgba.
-    void Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCommand>& draws, const std::vector<TextureOp>& ops);
+    void Record(VkCommandBuffer cmd, int frame, const DrawList& list, const std::vector<TextureOp>& ops);
 
     // --verify-texture-decode (development builds): every GPU decode is read back and compared with
     // the CPU decode the texture carries (GsState in TextureDecode::kBoth); differences are logged
@@ -105,6 +106,21 @@ public:
         std::uint64_t image_bytes = 0;     // their size
     };
     const TextureStats& LastTextureStats() const { return texture_stats_; }
+    // GPU work structure of the last frame (Record and CopyPresent; debug overlay, session summary):
+    // what breaks the GPU's work into small dependent pieces (validation.md §2al).
+    struct PassStats {
+        std::uint32_t render_passes = 0;  // GS render passes begun (draw targets, depth copies, anti-aliasing)
+        std::uint32_t barriers = 0;       // pipeline barriers (each waits for the earlier work of its source stages)
+        std::uint32_t copies = 0;         // frame-buffer copies: frame read as a texture, field copy, DATE /
+                                          // shader-blend regions, GPU palettes, view syncs, conversions, anti-aliasing
+        std::uint64_t copy_pixels = 0;    // host pixels those copies wrote
+        // The same by kind (CopyKind).
+        std::array<std::uint32_t, 7> kind_copies{};
+        std::array<std::uint64_t, 7> kind_pixels{};
+    };
+    enum CopyKind { kCopyFrameTexture, kCopyField, kCopyDstRegion, kCopyPalette, kCopySync, kCopyConvert, kCopyAntiAlias };
+    static const char* CopyKindName(int k);
+    const PassStats& LastPassStats() const { return pass_stats_; }
     // --verify-texture-decode results so far: textures compared, and those that differed.
     std::uint64_t VerifiedDecodes() const { return verify_count_; }
     std::uint64_t VerifyMismatches() const { return verify_mismatches_; }
@@ -151,6 +167,18 @@ private:
     bool EnsureBuffer(Buffer& b, std::size_t size, VkBufferUsageFlags usage, bool readback = false);
     void DestroyBuffer(Buffer& b);
     void Transition(VkCommandBuffer cmd, Image& img, VkImageLayout layout);
+    // Several images (at most 4) to new layouts with one barrier; images already there are skipped.
+    void Transitions(VkCommandBuffer cmd, std::initializer_list<std::pair<Image*, VkImageLayout>> images);
+    // vkCmdPipelineBarrier, counted in pass_stats_.
+    void Barrier(VkCommandBuffer cmd, VkPipelineStageFlags src, VkPipelineStageFlags dst, std::uint32_t buffer_count,
+                 const VkBufferMemoryBarrier* buffers, std::uint32_t image_count, const VkImageMemoryBarrier* images);
+    // One frame-buffer copy of w x h host pixels, counted in pass_stats_.
+    void CountCopy(CopyKind kind, std::uint64_t w, std::uint64_t h) {
+        ++pass_stats_.copies;
+        pass_stats_.copy_pixels += w * h;
+        ++pass_stats_.kind_copies[kind];
+        pass_stats_.kind_pixels[kind] += w * h;
+    }
     // The target for (fbp, fbw, psm), created or grown so that it holds at least `rows` native rows.
     Target* GetTarget(VkCommandBuffer cmd, int frame, std::uint32_t fbp, std::uint32_t fbw, std::uint32_t psm,
                       int rows = 0);
@@ -179,7 +207,8 @@ private:
     void CheckVerifyReadback(int frame);
     // Builds the texture of draw `d` (TEX0 format, address, width) from target `src`, which holds
     // that memory in another format or width, into feedback_ (gs_conv.comp).
-    void Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawCommand& d);
+    // `box`: the texels [u0, u1) x [v0, v1) the draw can read (only those are converted).
+    void Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawCommand& d, const std::array<int, 4>& box);
     // One conversion (gs_conv.comp) of `src` into feedback_: texels [u0, u1) x [v0, v1) of the
     // buffer (psm, tbp, tbw), with TEXA (TA0 bits 0-7, AEM 15, TA1 16-23) and an optional CLUT.
     struct ConvRequest {
@@ -253,6 +282,7 @@ private:
     TexImage dummy_texture_;                   // 1 x 1, bound for draws without a texture image
     std::uint64_t record_count_ = 0;
     TextureStats texture_stats_;
+    PassStats pass_stats_;
     // GPU decode (gs_decode.comp): the GPU's copy of GS local memory, the pipeline, per-frame
     // descriptor pools (one set per decoded rectangle's texture) and palette buffers.
     Buffer gs_memory_;  // device local, 4 MiB
@@ -271,6 +301,15 @@ private:
     Buffer verify_buffer_[kFrames];
     std::uint64_t verify_count_ = 0, verify_mismatches_ = 0;
     Image feedback_;
+    // The frame-buffer region feedback_ holds (host pixels [x0, x1) x [y0, y1), at the same position as
+    // in the source): reused by later draws that read inside it while the source image is not drawn
+    // into (last_write unchanged). Cleared at each Record and when feedback_ is used otherwise.
+    struct FeedbackCopy {
+        VkImage image = VK_NULL_HANDLE;
+        std::uint64_t write = 0;
+        int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    };
+    FeedbackCopy feedback_copy_;
     Image date_;  // destination alpha test: copy of the target region a DATE draw covers
     Image clut_img_;  // 16x16 palette drawn on the GPU, copied before the draw that uses it (flag 29)
     Image present_;

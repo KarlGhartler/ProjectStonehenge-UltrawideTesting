@@ -310,10 +310,10 @@ void GsBackend::ApplyAntiAlias(VkCommandBuffer cmd, Target& t, const DrawCommand
     c.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     c.dstSubresource = c.srcSubresource;
     c.extent = {static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1};
-    Transition(cmd, t.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    Transition(cmd, aa_color_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    Transitions(cmd, {{&t.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL}, {&aa_color_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}});
     vkCmdCopyImage(cmd, t.img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, aa_color_.image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+    CountCopy(kCopyAntiAlias, c.extent.width, c.extent.height);
     Transition(cmd, aa_color_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     const float metrics[4] = {1.0f / static_cast<float>(w), 1.0f / static_cast<float>(h), static_cast<float>(w),
                               static_cast<float>(h)};
@@ -328,6 +328,7 @@ void GsBackend::ApplyAntiAlias(VkCommandBuffer cmd, Target& t, const DrawCommand
         rbi.clearValueCount = 1;
         rbi.pClearValues = &clear;
         vkCmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+        ++pass_stats_.render_passes;
         const VkViewport vp{0.0f, 0.0f, static_cast<float>(w), static_cast<float>(h), 0.0f, 1.0f};
         vkCmdSetViewport(cmd, 0, 1, &vp);
         vkCmdSetScissor(cmd, 0, 1, &rect);
@@ -350,10 +351,10 @@ void GsBackend::ApplyAntiAlias(VkCommandBuffer cmd, Target& t, const DrawCommand
     c.srcOffset = {x0, y0, 0};
     c.dstOffset = c.srcOffset;
     c.extent = {static_cast<uint32_t>(x1 - x0), static_cast<uint32_t>(y1 - y0), 1};
-    Transition(cmd, aa_out_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    Transition(cmd, t.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    Transitions(cmd, {{&aa_out_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL}, {&t.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}});
     vkCmdCopyImage(cmd, aa_out_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, t.img.image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+    CountCopy(kCopyAntiAlias, c.extent.width, c.extent.height);
     Transition(cmd, t.img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     t.last_write = ++write_clock_;
 }

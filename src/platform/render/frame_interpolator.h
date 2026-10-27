@@ -47,6 +47,9 @@ public:
     // step's matrices, 1 = the newest step's). False when there is nothing to blend (fewer than two
     // steps, no matched run, or a camera cut); the caller then draws the step as it is.
     bool Build(double alpha, std::vector<std::uint8_t>& gif, std::vector<gs::SourceMark>& marks);
+    // Changes with every PushStep and Reset: blended copies with the same serial come from the same
+    // two steps.
+    std::uint64_t StepSerial() const { return step_serial_; }
 
     // Statistics of the last Build (debug overlay, logs): runs blended, runs in the step.
     std::uint32_t BlendedRuns() const { return blended_; }
@@ -67,6 +70,7 @@ private:
 
     Step prev_, cur_;
     bool cut_ = false;  // the camera jumped between the two steps
+    std::uint64_t step_serial_ = 0;
     std::unique_ptr<vu1::Vu1State> vu_;
     std::uint32_t blended_ = 0;
     // Build: the matched runs repeated (indices into cur_.runs.runs, stream order), the output of

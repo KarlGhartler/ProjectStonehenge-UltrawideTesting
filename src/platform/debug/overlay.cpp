@@ -332,6 +332,9 @@ void DebugOverlay::DrawPerformance(const OverlayFrameData& data) {
                     static_cast<double>(rs.textures.upload_bytes) / 1024.0);
         ImGui::Text("Texture images: %u (%.0f MiB)", rs.textures.images,
                     static_cast<double>(rs.textures.image_bytes) / (1024.0 * 1024.0));
+        ImGui::Text("GPU work: %u render passes, %u barriers, %u frame-buffer copies (%.2f Mpixels)",
+                    rs.passes.render_passes, rs.passes.barriers, rs.passes.copies,
+                    static_cast<double>(rs.passes.copy_pixels) / 1e6);
     }
     ImGui::Separator();
     ImGui::Text("Simulation: %s, 59.94 Hz fixed step", data.game_running ? "running" : "stopped");

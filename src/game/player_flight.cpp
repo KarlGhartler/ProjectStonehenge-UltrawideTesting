@@ -1041,9 +1041,9 @@ void UpdatePlayerSound(s32 p) {
     const s32 d = static_cast<s32>(GRef<u8>(pe + 0x16)) - static_cast<s32>(GRef<u8>(pe + 0x17));
     const u16 sub = Sub();
     if (sub == 0x14 || sub == 0x19 || sub == 0x1B)
-        GRef<u32>(0x00420620) = 1;
-    else
-        GRef<u32>(0x00420620) = W(0x002A2538 + 16u * static_cast<u32>(static_cast<s32>(GRef<s8>(P + 0x149))));
+        GRef<u8>(0x00420620) = 1;
+    else  // u8 view table 0x002A2538 (4-byte stride): the column of the engine layer volumes by view
+        GRef<u8>(0x00420620) = GRef<u8>(0x002A2538 + 4u * static_cast<u32>(static_cast<s32>(GRef<s8>(P + 0x149))));
     GRef<f32>(0x00420624) = fpu::Add(F(P + 0x240), F(P + 0x244) * F(0x0040DE94));
     GRef<f32>(0x00420628) = GetVectorLength(vel);
     GRef<u32>(0x00420630) = 0;

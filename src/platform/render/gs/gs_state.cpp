@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <iterator>
 #include <string>
 
 #include "platform/log.h"
@@ -65,14 +66,34 @@ void GsState::LogOnce(const char* key, const char* fmt, std::uint64_t a, std::ui
                    static_cast<unsigned long long>(b));
 }
 
-std::vector<DrawCommand> GsState::TakeDraws() {
-    state_dirty_ = true;
-    std::vector<DrawCommand> out;
-    out.swap(draws_);
+void DrawList::Append(DrawList& other) {
+    if (draws.empty()) {
+        std::swap(draws, other.draws);
+        std::swap(vertices, other.vertices);
+    } else {
+        const std::uint32_t base = static_cast<std::uint32_t>(vertices.size());
+        const std::size_t first = draws.size();
+        draws.insert(draws.end(), std::make_move_iterator(other.draws.begin()), std::make_move_iterator(other.draws.end()));
+        for (std::size_t i = first; i < draws.size(); ++i) draws[i].first_vertex += base;
+        vertices.insert(vertices.end(), other.vertices.begin(), other.vertices.end());
+    }
+    other.clear();
+}
+
+DrawList GsState::TakeDraws() {
+    DrawList out;
+    TakeDraws(out);
     return out;
 }
 
+void GsState::TakeDraws(DrawList& out) {
+    state_dirty_ = true;
+    out.Append(draws_);
+}
+
 void GsState::ProcessGif(const std::uint8_t* data, std::size_t bytes, const std::vector<SourceMark>* marks) {
+    ++process_serial_;
+    if (!tracing_) trace_.valid = false;
     gif_base_ = data;
     marks_ = marks != nullptr && !marks->empty() ? marks : nullptr;
     next_mark_ = 0;
@@ -181,6 +202,230 @@ void GsState::ProcessGif(const std::uint8_t* data, std::size_t bytes, const std:
     if (marks_ != nullptr) EmitAntiAliasPoints(bytes);
 }
 
+void GsState::ProcessGifTraced(const std::uint8_t* data, std::size_t bytes, const std::vector<SourceMark>* marks) {
+    Trace& t = trace_;
+    t.valid = false;
+    t.gif.assign(data, data + bytes);
+    t.kicks.assign({queue_[0], queue_[1], queue_[2], fan_first_});
+    t.offsets.assign(2 * kKickBase, 0);
+    t.src.clear();
+    t.colour.clear();
+    t.ranges.clear();
+    t.memory_sprites.clear();
+    // The recorded vertex indices count from the start of the draw list.
+    tracing_ = draws_.draws.empty() && draws_.vertices.empty();
+    queue_src_ = {0, 1, 2};
+    fan_first_src_ = 3;
+    ProcessGif(data, bytes, marks);
+    const bool ok = tracing_ && t.src.size() == draws_.vertices.size();
+    tracing_ = false;
+    kick_src_ = -1;
+    if (!ok) return;
+    for (int i = 0; i < 3; ++i) t.queue_src[i] = static_cast<std::uint32_t>(queue_src_[static_cast<std::size_t>(i)]);
+    t.fan_first_src = static_cast<std::uint32_t>(fan_first_src_);
+    t.serial = process_serial_;
+    t.valid = true;
+}
+
+void GsState::TraceRange(int count, const std::int32_t* src, const std::uint32_t r[4]) {
+    Trace::RangeCheck c{};
+    c.draw = static_cast<std::uint32_t>(draws_.draws.size() - 1);
+    c.count = count;
+    for (int i = 0; i < count; ++i) c.src[i] = static_cast<std::uint32_t>(src[i]);
+    std::copy(r, r + 4, c.range);
+    trace_.ranges.push_back(c);
+}
+
+namespace {
+
+bool VertexRegister(std::uint32_t reg) {
+    return reg == kRgbaq || reg == kSt || reg == kUv || reg == kFog || reg == kXyzf2 || reg == kXyz2 || reg == kXyzf3 ||
+           reg == kXyz3;
+}
+
+bool SameVertex(const GsVertex& a, const GsVertex& b) {
+    return std::memcmp(&a.x, &b.x, 4) == 0 && std::memcmp(&a.y, &b.y, 4) == 0 && a.z == b.z && a.r == b.r &&
+           a.g == b.g && a.b == b.b && a.a == b.a && std::memcmp(&a.s, &b.s, 4) == 0 && std::memcmp(&a.t, &b.t, 4) == 0 &&
+           std::memcmp(&a.q, &b.q, 4) == 0 && std::memcmp(&a.u, &b.u, 4) == 0 && std::memcmp(&a.v, &b.v, 4) == 0 &&
+           a.fog == b.fog;
+}
+
+}  // namespace
+
+// The GIF parsing of ProcessGif, keeping only what the vertex writes do (WriteRegister); every
+// other byte must be the traced one.
+bool GsState::ReplayVertices(const std::uint8_t* data, std::size_t bytes, const DrawList& traced, std::vector<GsVertex>& out) {
+    const Trace& t = trace_;
+    if (!t.valid || t.serial != process_serial_ || bytes != t.gif.size() || traced.vertices.size() != t.src.size())
+        return false;
+    const std::uint8_t* old = t.gif.data();
+    const std::uint8_t* now = data;
+    const std::vector<std::int32_t>& offsets = t.offsets;
+    std::vector<GsVertex>& kicks = replay_kicks_;
+    kicks.assign({queue_[0], queue_[1], queue_[2], fan_first_});
+    GsVertex cur = cur_;
+    float q = q_;
+    std::uint64_t xyz[4] = {regs_[kXyzf2], regs_[kXyz2], regs_[kXyzf3], regs_[kXyz3]};
+    auto write = [&](std::uint32_t reg, std::uint64_t value) {
+        switch (reg) {
+            case kRgbaq:
+                cur.r = static_cast<std::uint8_t>(value);
+                cur.g = static_cast<std::uint8_t>(value >> 8);
+                cur.b = static_cast<std::uint8_t>(value >> 16);
+                cur.a = static_cast<std::uint8_t>(value >> 24);
+                cur.q = AsFloat(static_cast<std::uint32_t>(value >> 32));
+                return true;
+            case kSt:
+                cur.s = AsFloat(static_cast<std::uint32_t>(value));
+                cur.t = AsFloat(static_cast<std::uint32_t>(value >> 32));
+                return true;
+            case kUv:
+                cur.u = static_cast<float>(value & 0x3FFF) / 16.0f;
+                cur.v = static_cast<float>((value >> 16) & 0x3FFF) / 16.0f;
+                return true;
+            case kFog: cur.fog = static_cast<std::uint8_t>(value >> 56); return true;
+            default: {  // XYZF2, XYZ2, XYZF3, XYZ3: a kick
+                const std::size_t k = kicks.size();
+                if (k >= t.kicks.size()) return false;
+                const bool f = reg == kXyzf2 || reg == kXyzf3;
+                const std::int32_t x = static_cast<std::int32_t>(value & 0xFFFF) - offsets[2 * k];
+                const std::int32_t y = static_cast<std::int32_t>((value >> 16) & 0xFFFF) - offsets[2 * k + 1];
+                cur.x = static_cast<float>(x) / 16.0f;
+                cur.y = static_cast<float>(y) / 16.0f;
+                cur.z = f ? static_cast<std::uint32_t>(Bits(value, 32, 24)) : static_cast<std::uint32_t>(value >> 32);
+                if (f) cur.fog = static_cast<std::uint8_t>(value >> 56);
+                xyz[reg == kXyzf2 ? 0 : reg == kXyz2 ? 1 : reg == kXyzf3 ? 2 : 3] = value;
+                kicks.push_back(cur);
+                return true;
+            }
+        }
+    };
+    std::size_t pos = 0;
+    while (pos + 16 <= bytes) {
+        if (std::memcmp(old + pos, now + pos, 16) != 0) return false;  // the GIF tag
+        std::uint64_t lo, hi;
+        std::memcpy(&lo, now + pos, 8);
+        std::memcpy(&hi, now + pos + 8, 8);
+        pos += 16;
+        const std::uint32_t nloop = static_cast<std::uint32_t>(Bits(lo, 0, 15));
+        const std::uint32_t flg = static_cast<std::uint32_t>(Bits(lo, 58, 2));
+        std::uint32_t nreg = static_cast<std::uint32_t>(Bits(lo, 60, 4));
+        if (nreg == 0) nreg = 16;
+        q = 1.0f;
+        if (flg == 0) {
+            for (std::uint32_t i = 0; i < nloop; ++i) {
+                for (std::uint32_t r = 0; r < nreg; ++r) {
+                    if (pos + 16 > bytes) return false;
+                    std::uint64_t dlo, dhi, olo, ohi;
+                    std::memcpy(&dlo, now + pos, 8);
+                    std::memcpy(&dhi, now + pos + 8, 8);
+                    std::memcpy(&olo, old + pos, 8);
+                    std::memcpy(&ohi, old + pos + 8, 8);
+                    pos += 16;
+                    const std::uint32_t desc = static_cast<std::uint32_t>(Bits(hi, static_cast<int>(r * 4), 4));
+                    bool ok = true;
+                    switch (desc) {
+                        case 0x1:
+                            cur.r = static_cast<std::uint8_t>(dlo);
+                            cur.g = static_cast<std::uint8_t>(dlo >> 32);
+                            cur.b = static_cast<std::uint8_t>(dhi);
+                            cur.a = static_cast<std::uint8_t>(dhi >> 32);
+                            cur.q = q;
+                            break;
+                        case 0x2:
+                            cur.s = AsFloat(static_cast<std::uint32_t>(dlo));
+                            cur.t = AsFloat(static_cast<std::uint32_t>(dlo >> 32));
+                            q = AsFloat(static_cast<std::uint32_t>(dhi));
+                            break;
+                        case 0x3: ok = write(kUv, (dlo & 0x3FFF) | ((dlo >> 32) & 0x3FFF) << 16); break;
+                        case 0x4: case 0xC: {
+                            // XYZF2 with ADC set does not draw (XYZF3): the kick kind must not change.
+                            const bool adc = Bits(dhi, 47, 1) != 0;
+                            if (adc != (Bits(ohi, 47, 1) != 0)) return false;
+                            const std::uint64_t v = (dlo & 0xFFFF) | ((dlo >> 32) & 0xFFFF) << 16 |
+                                                    ((dhi >> 4) & 0xFFFFFF) << 32 | ((dhi >> 36) & 0xFF) << 56;
+                            ok = write(adc || desc == 0xC ? kXyzf3 : kXyzf2, v);
+                            break;
+                        }
+                        case 0x5: case 0xD: {
+                            const bool adc = Bits(dhi, 47, 1) != 0;
+                            if (adc != (Bits(ohi, 47, 1) != 0)) return false;
+                            const std::uint64_t v = (dlo & 0xFFFF) | ((dlo >> 32) & 0xFFFF) << 16 | (dhi & 0xFFFFFFFF) << 32;
+                            ok = write(adc || desc == 0xD ? kXyz3 : kXyz2, v);
+                            break;
+                        }
+                        case 0xA: ok = write(kFog, ((dhi >> 36) & 0xFF) << 56); break;
+                        case 0xE: {
+                            const std::uint32_t reg = static_cast<std::uint32_t>(dhi & 0x7F);
+                            if (reg != static_cast<std::uint32_t>(ohi & 0x7F)) return false;
+                            ok = VertexRegister(reg) ? write(reg, dlo) : dlo == olo && dhi == ohi;
+                            break;
+                        }
+                        case 0xF: break;
+                        default: ok = dlo == olo && dhi == ohi; break;
+                    }
+                    if (!ok) return false;
+                }
+            }
+        } else if (flg == 1) {
+            const std::uint64_t count = static_cast<std::uint64_t>(nloop) * nreg;
+            for (std::uint32_t i = 0; i < nloop; ++i) {
+                for (std::uint32_t r = 0; r < nreg; ++r) {
+                    if (pos + 8 > bytes) return false;
+                    std::uint64_t v, o;
+                    std::memcpy(&v, now + pos, 8);
+                    std::memcpy(&o, old + pos, 8);
+                    pos += 8;
+                    const std::uint32_t desc = static_cast<std::uint32_t>(Bits(hi, static_cast<int>(r * 4), 4));
+                    if (desc == 0xE || desc == 0xF) continue;
+                    if (VertexRegister(desc) ? !write(desc, v) : v != o) return false;
+                }
+            }
+            if ((count & 1) != 0) pos += 8;
+        } else {
+            const std::size_t n = std::min<std::size_t>(static_cast<std::size_t>(nloop) * 16, bytes - pos);
+            if (std::memcmp(old + pos, now + pos, n) != 0) return false;
+            pos += n;
+        }
+    }
+    if (pos != bytes || kicks.size() != t.kicks.size()) return false;
+    // A sprite drawn into local memory with other vertices would have written other texels.
+    for (const auto& s : t.memory_sprites) {
+        if (!SameVertex(kicks[s[0]], t.kicks[s[0]]) || !SameVertex(kicks[s[1]], t.kicks[s[1]])) return false;
+    }
+    // The texel ranges that decided draws and textures must come out the same.
+    for (const Trace::RangeCheck& c : t.ranges) {
+        bool changed = false;
+        for (int i = 0; i < c.count && !changed; ++i) changed = !SameVertex(kicks[c.src[i]], t.kicks[c.src[i]]);
+        if (!changed) continue;
+        GsVertex v[3];
+        for (int i = 0; i < c.count; ++i) v[i] = kicks[c.src[i]];
+        std::uint32_t r[4];
+        TexelRange(traced.draws[c.draw], v, c.count, r);
+        if (!std::equal(r, r + 4, c.range)) return false;
+    }
+    out.resize(t.src.size());
+    for (std::size_t i = 0; i < t.src.size(); ++i) {
+        GsVertex n = kicks[t.src[i]];
+        const GsVertex& col = kicks[t.colour[i]];
+        n.r = col.r;
+        n.g = col.g;
+        n.b = col.b;
+        n.a = col.a;
+        out[i] = n;
+    }
+    // The vertex registers and queue as processing the copy leaves them.
+    cur_ = cur;
+    q_ = q;
+    regs_[kXyzf2] = xyz[0];
+    regs_[kXyz2] = xyz[1];
+    regs_[kXyzf3] = xyz[2];
+    regs_[kXyz3] = xyz[3];
+    for (int i = 0; i < 3; ++i) queue_[static_cast<std::size_t>(i)] = kicks[t.queue_src[i]];
+    fan_first_ = kicks[t.fan_first_src];
+    return true;
+}
+
 void GsState::EmitAntiAliasPoints(std::size_t pos) {
     for (; next_mark_ < marks_->size() && (*marks_)[next_mark_].offset <= pos; ++next_mark_) {
         const SourceMark& m = (*marks_)[next_mark_];
@@ -190,7 +435,8 @@ void GsState::EmitAntiAliasPoints(std::size_t pos) {
         d.frame = regs_[kFrame1];
         d.scissor = static_cast<std::uint64_t>(m.rect[0] & 0x7FF) | static_cast<std::uint64_t>(m.rect[2] & 0x7FF) << 16 |
                     static_cast<std::uint64_t>(m.rect[1] & 0x7FF) << 32 | static_cast<std::uint64_t>(m.rect[3] & 0x7FF) << 48;
-        draws_.push_back(std::move(d));
+        d.first_vertex = static_cast<std::uint32_t>(draws_.vertices.size());
+        draws_.draws.push_back(std::move(d));
         state_dirty_ = true;  // the next primitive starts a new draw after the point
     }
 }
@@ -293,6 +539,11 @@ void GsState::LoadClut(std::uint64_t tex) {
         for (ClutSource& c : clut_src_) c.valid = false;
         for (std::uint32_t e = 0; e < 256; ++e) clut_[e] = e;
         return;
+    }
+    if (gpu_pages_.test((cbp >> 5) % gpu_pages_.size())) {
+        ++gpu_only_reads_;
+        LogOnce("clut-gpu", "CLUT loaded from a frame buffer drawn on the GPU only (CBP 0x%llx, CPSM 0x%llx): stale entries",
+                cbp, cpsm);
     }
     // The source is contiguous in local memory: a 16x16 CT32 image is blocks cbp..cbp+3 (1 KiB), a
     // 16x16 CT16 one blocks cbp..cbp+1, and the 8x2 image of a 4-bit palette lies in the first 64
@@ -402,6 +653,12 @@ void GsState::WriteRegister(std::uint32_t reg, std::uint64_t value) {
             cur_.z = f ? static_cast<std::uint32_t>(Bits(value, 32, 24)) : static_cast<std::uint32_t>(value >> 32);
             if (f) cur_.fog = static_cast<std::uint8_t>(value >> 56);
             regs_[reg] = value;
+            if (tracing_) {
+                kick_src_ = static_cast<std::int32_t>(trace_.kicks.size());
+                trace_.kicks.push_back(cur_);
+                trace_.offsets.push_back(static_cast<std::int32_t>(Bits(ofs, 0, 16)));
+                trace_.offsets.push_back(static_cast<std::int32_t>(Bits(ofs, 32, 16)));
+            }
             Kick(reg == kXyzf2 || reg == kXyz2);
             return;
         }
@@ -421,7 +678,38 @@ void GsState::WriteRegister(std::uint32_t reg, std::uint64_t value) {
         case kTrxdir: {
             regs_[reg] = value;
             const std::uint32_t dir = static_cast<std::uint32_t>(value & 3);
-            if (dir == 0 || dir == 2) NoteTransferDestination();
+            if (dir == 0 || dir == 2) {
+                const std::uint64_t bb = regs_[kBitbltbuf], tp = regs_[kTrxpos], tr = regs_[kTrxreg];
+                const std::uint32_t w = static_cast<std::uint32_t>(Bits(tr, 0, 12));
+                const std::uint32_t h = static_cast<std::uint32_t>(Bits(tr, 32, 12));
+                if (w != 0 && h != 0) {
+                    auto pages = [&](std::uint32_t psm, std::uint32_t bp, std::uint32_t bw, std::uint32_t x, std::uint32_t y,
+                                     std::uint32_t& first, std::uint32_t& last) {
+                        if (BitsPerPixel(psm) == 0) return false;
+                        first = GsMemory::PixelAddress(psm, bp, bw, x, y) >> 13;
+                        last = GsMemory::PixelAddress(psm, bp, bw, x + w - 1, y + h - 1) >> 13;
+                        if (last < first) std::swap(first, last);
+                        return true;
+                    };
+                    std::uint32_t first = 0, last = 0;
+                    if (dir == 2 &&
+                        pages(static_cast<std::uint32_t>(Bits(bb, 24, 6)), static_cast<std::uint32_t>(Bits(bb, 0, 14)),
+                              static_cast<std::uint32_t>(Bits(bb, 16, 6)), static_cast<std::uint32_t>(Bits(tp, 0, 11)),
+                              static_cast<std::uint32_t>(Bits(tp, 16, 11)), first, last) &&
+                        GpuOnly(first, last)) {
+                        ++gpu_only_reads_;
+                        LogOnce("l2l-gpu",
+                                "local->local transfer reads a frame buffer drawn on the GPU only (source block 0x%llx, "
+                                "PSM 0x%llx): it copies stale bytes",
+                                Bits(bb, 0, 14), Bits(bb, 24, 6));
+                    }
+                    if (pages(static_cast<std::uint32_t>(Bits(bb, 56, 6)), static_cast<std::uint32_t>(Bits(bb, 32, 14)),
+                              static_cast<std::uint32_t>(Bits(bb, 48, 6)), static_cast<std::uint32_t>(Bits(tp, 32, 11)),
+                              static_cast<std::uint32_t>(Bits(tp, 48, 11)), first, last))
+                        ClearGpuOnly(first, last);
+                }
+                NoteTransferDestination();
+            }
             transfer_pos_ = 0;
             transfer_rest_n_ = 0;
             transfer_active_ = dir == 0;
@@ -487,53 +775,75 @@ void GsState::NoteTransferDestination() {
 void GsState::Kick(bool draw) {
     const std::uint32_t prim = static_cast<std::uint32_t>(regs_[kPrim] & 7);
     GsVertex v = cur_;
+    // The vertices' kicks when tracing (ProcessGifTraced), along with the queue.
+    const std::int32_t s = kick_src_;
+    const std::int32_t* qs = tracing_ ? queue_src_.data() : nullptr;
+    auto push = [&] {
+        queue_src_[static_cast<std::size_t>(queued_)] = s;
+        queue_[static_cast<std::size_t>(queued_++)] = v;
+    };
     switch (prim) {
         case 0:  // point
-            if (draw) EmitPrimitive(&v, 1);
+            if (draw) EmitPrimitive(&v, 1, tracing_ ? &s : nullptr);
             return;
         case 1:  // line
         case 6:  // sprite
-            queue_[queued_++] = v;
+            push();
             if (queued_ == 2) {
-                if (draw) EmitPrimitive(queue_.data(), 2);
+                if (draw) {
+                    const bool memory = prim == 6 && SpriteToMemory(queue_[0], queue_[1], false);
+                    EmitPrimitive(queue_.data(), 2, qs, memory);
+                    if (memory) {
+                        SpriteToMemory(queue_[0], queue_[1], true);
+                        if (tracing_)
+                            trace_.memory_sprites.push_back({static_cast<std::uint32_t>(queue_src_[0]),
+                                                             static_cast<std::uint32_t>(queue_src_[1])});
+                    }
+                }
                 queued_ = 0;
             }
             return;
         case 2:  // line strip
-            queue_[queued_++] = v;
+            push();
             if (queued_ == 2) {
-                if (draw) EmitPrimitive(queue_.data(), 2);
+                if (draw) EmitPrimitive(queue_.data(), 2, qs);
                 queue_[0] = queue_[1];
+                queue_src_[0] = queue_src_[1];
                 queued_ = 1;
             }
             return;
         case 3:  // triangle
-            queue_[queued_++] = v;
+            push();
             if (queued_ == 3) {
-                if (draw) EmitPrimitive(queue_.data(), 3);
+                if (draw) EmitPrimitive(queue_.data(), 3, qs);
                 queued_ = 0;
             }
             return;
         case 4:  // triangle strip
-            queue_[queued_++] = v;
+            push();
             if (queued_ == 3) {
-                if (draw) EmitPrimitive(queue_.data(), 3);
+                if (draw) EmitPrimitive(queue_.data(), 3, qs);
                 queue_[0] = queue_[1];
                 queue_[1] = queue_[2];
+                queue_src_[0] = queue_src_[1];
+                queue_src_[1] = queue_src_[2];
                 queued_ = 2;
             }
             return;
         case 5:  // triangle fan
             if (queued_ == 0 && strip_count_ == 0) {
                 fan_first_ = v;
+                fan_first_src_ = s;
                 strip_count_ = 1;
                 return;
             }
-            queue_[queued_++] = v;
+            push();
             if (queued_ == 2) {
                 const GsVertex tri[3] = {fan_first_, queue_[0], queue_[1]};
-                if (draw) EmitPrimitive(tri, 3);
+                const std::int32_t tri_src[3] = {fan_first_src_, queue_src_[0], queue_src_[1]};
+                if (draw) EmitPrimitive(tri, 3, tracing_ ? tri_src : nullptr);
                 queue_[0] = queue_[1];
+                queue_src_[0] = queue_src_[1];
                 queued_ = 1;
             }
             return;
@@ -543,11 +853,19 @@ void GsState::Kick(bool draw) {
     }
 }
 
-void GsState::AppendVertices(std::vector<GsVertex>& out, const DrawCommand& d, const GsVertex* v, int count) {
+void GsState::AppendVertices(DrawCommand& d, const GsVertex* v, int count, const std::int32_t* src) {
     // Flat shading (and sprites): every vertex takes the colour of the last one.
     const bool flat = !d.gouraud || d.kind == PrimKind::kSprite;
+    std::vector<GsVertex>& out = draws_.vertices;
     const std::size_t first = out.size();
     out.insert(out.end(), v, v + count);
+    d.vertex_count += static_cast<std::uint32_t>(count);
+    if (src != nullptr) {
+        for (int i = 0; i < count; ++i) {
+            trace_.src.push_back(static_cast<std::uint32_t>(src[i]));
+            trace_.colour.push_back(static_cast<std::uint32_t>(flat ? src[count - 1] : src[i]));
+        }
+    }
     if (flat) {
         for (std::size_t i = first; i < out.size(); ++i) {
             out[i].r = v[count - 1].r;
@@ -558,21 +876,23 @@ void GsState::AppendVertices(std::vector<GsVertex>& out, const DrawCommand& d, c
     }
 }
 
-void GsState::EmitPrimitive(const GsVertex* v, int count) {
+void GsState::EmitPrimitive(const GsVertex* v, int count, const std::int32_t* src, bool memory) {
     if (!draws_enabled_) {
         state_dirty_ = true;
         return;
     }
-    if (!state_dirty_ && !draws_.empty()) {
-        DrawCommand& last = draws_.back();
+    if (!memory) NoteGpuDraw();
+    if (!state_dirty_ && !draws_.draws.empty()) {
+        DrawCommand& last = draws_.draws.back();
         bool same = true;
         if (last.textured && last.texture_from_frame < 0) {
             std::uint32_t r[4];
             TexelRange(last, v, count, r);
             same = r[0] == fast_range_[0] && r[1] == fast_range_[1] && r[2] == fast_range_[2] && r[3] == fast_range_[3];
+            if (same && src != nullptr && last.kind != PrimKind::kTriangle) TraceRange(count, src, r);
         }
         if (same) {
-            AppendVertices(last.vertices, last, v, count);
+            AppendVertices(last, v, count, src);
             return;
         }
     }
@@ -615,15 +935,8 @@ void GsState::EmitPrimitive(const GsVertex* v, int count) {
         // A frame buffer drawn earlier in this frame counts too: the backend creates its targets
         // only when the frame is recorded (mission 4: the cloud-cover texture at FBP 0x128 is drawn
         // at the start of the frame and sampled by the terrain's second pass in the same frame).
-        const bool page = (tbp & 31) == 0;
-        const bool drawn = page && fb_pages_.count(tbp >> 5) != 0;
         const std::uint32_t tpsm = static_cast<std::uint32_t>(Bits(d.tex0, 20, 6));
-        const std::uint32_t read_bits = tpsm == kPsmT8H ? 0xFF000000u : tpsm == kPsmT4HL ? 0x0F000000u
-                                      : tpsm == kPsmT4HH ? 0xF0000000u : 0xFFFFFFFFu;
-        const auto written = page ? fb_written_bits_.find(tbp >> 5) : fb_written_bits_.end();
-        const bool untouched = written != fb_written_bits_.end() && (written->second & read_bits) == 0;
-        if (!untouched && !(page && fb_overwritten_.count(tbp >> 5) != 0) &&
-            (drawn || (frame_query_ && frame_query_(tbp)))) {
+        if (TextureFromFrame(d.tex0)) {
             d.texture_from_frame = static_cast<std::int32_t>(tbp);
             const std::uint32_t psm = static_cast<std::uint32_t>(Bits(d.tex0, 20, 6));
             if (psm == kPsmT8 || psm == kPsmT8H || psm == kPsmT4 || psm == kPsmT4HL || psm == kPsmT4HH) d.frame_clut = ClutRgba(d);
@@ -632,24 +945,184 @@ void GsState::EmitPrimitive(const GsVertex* v, int count) {
         }
         if (clut_frame_cbp_ >= 0 && (tpsm == kPsmT8 || tpsm == kPsmT8H)) d.clut_from_frame = clut_frame_cbp_;
         if (!upload_source_.empty()) {
-            const auto src = upload_source_.find(tbp);
-            if (src != upload_source_.end()) {
-                d.texture_guest_source = src->second.first;
-                d.texture_guest_width = src->second.second;
+            const auto up = upload_source_.find(tbp);
+            if (up != upload_source_.end()) {
+                d.texture_guest_source = up->second.first;
+                d.texture_guest_width = up->second.second;
             }
         }
     }
-    if (d.textured && d.texture_from_frame < 0) TexelRange(d, v, count, fast_range_);
-    const bool merge = !draws_.empty() && SameState(draws_.back(), d);
+    const bool ranged = d.textured && d.texture_from_frame < 0;
+    if (ranged) TexelRange(d, v, count, fast_range_);
+    const bool check = ranged && src != nullptr && d.kind != PrimKind::kTriangle;
+    const bool merge = !draws_.draws.empty() && SameState(draws_.draws.back(), d);
     if (merge) {
-        AppendVertices(draws_.back().vertices, d, v, count);
+        AppendVertices(draws_.draws.back(), v, count, src);
     } else {
-        d.vertices.clear();
-        AppendVertices(d.vertices, d, v, count);
-        draws_.push_back(std::move(d));
+        d.first_vertex = static_cast<std::uint32_t>(draws_.vertices.size());
+        d.vertex_count = 0;
+        draws_.draws.push_back(std::move(d));
+        AppendVertices(draws_.draws.back(), v, count, src);
         d = DrawCommand{};
     }
+    if (check) TraceRange(count, src, fast_range_);
     state_dirty_ = false;
+}
+
+bool GsState::TextureFromFrame(std::uint64_t tex0) const {
+    const std::uint32_t tbp = static_cast<std::uint32_t>(Bits(tex0, 0, 14));
+    // A frame buffer drawn earlier in this frame counts too: the backend creates its targets
+    // only when the frame is recorded (mission 4: the cloud-cover texture at FBP 0x128 is drawn
+    // at the start of the frame and sampled by the terrain's second pass in the same frame).
+    const bool page = (tbp & 31) == 0;
+    const bool drawn = page && fb_pages_.count(tbp >> 5) != 0;
+    const std::uint32_t tpsm = static_cast<std::uint32_t>(Bits(tex0, 20, 6));
+    const std::uint32_t read_bits = tpsm == kPsmT8H ? 0xFF000000u : tpsm == kPsmT4HL ? 0x0F000000u
+                                  : tpsm == kPsmT4HH ? 0xF0000000u : 0xFFFFFFFFu;
+    const auto written = page ? fb_written_bits_.find(tbp >> 5) : fb_written_bits_.end();
+    const bool untouched = written != fb_written_bits_.end() && (written->second & read_bits) == 0;
+    return !untouched && !(page && fb_overwritten_.count(tbp >> 5) != 0) && (drawn || (frame_query_ && frame_query_(tbp)));
+}
+
+void GsState::NoteGpuDraw() {
+    const std::uint64_t attr = Bits(regs_[kPrmodecont], 0, 1) ? regs_[kPrim] : regs_[kPrmode];
+    const bool ctxt = Bits(attr, 9, 1) != 0;
+    const std::uint64_t frame = regs_[ctxt ? kFrame2 : kFrame1];
+    const std::uint64_t scissor = regs_[ctxt ? kScissor2 : kScissor1];
+    if (gpu_key_valid_ && frame == gpu_key_frame_ && scissor == gpu_key_scissor_) return;
+    // The pages NoteFrameBuffer counts: FBW x the scissor's height.
+    const std::uint32_t fbp = static_cast<std::uint32_t>(frame & 0x1FF);
+    const std::uint32_t fbw = std::max<std::uint32_t>(static_cast<std::uint32_t>(Bits(frame, 16, 6)), 1);
+    const std::uint32_t h = static_cast<std::uint32_t>(Bits(scissor, 48, 11)) + 1;
+    const std::uint32_t page_h = BitsPerPixel(static_cast<std::uint32_t>(Bits(frame, 24, 6))) == 16 ? 64 : 32;
+    const std::uint32_t pages = fbw * ((h + page_h - 1) / page_h);
+    for (std::uint32_t p = 0; p < pages; ++p) gpu_pages_.set((fbp + p) % gpu_pages_.size());
+    gpu_key_valid_ = true;
+    gpu_key_frame_ = frame;
+    gpu_key_scissor_ = scissor;
+}
+
+bool GsState::GpuOnly(std::uint32_t first_page, std::uint32_t last_page) const {
+    for (std::uint32_t p = first_page; p <= last_page && p < gpu_pages_.size(); ++p) {
+        if (gpu_pages_.test(p)) return true;
+    }
+    return false;
+}
+
+void GsState::ClearGpuOnly(std::uint32_t first_page, std::uint32_t last_page) {
+    for (std::uint32_t p = first_page; p <= last_page && p < gpu_pages_.size(); ++p) gpu_pages_.reset(p);
+    gpu_key_valid_ = false;
+}
+
+bool GsState::SpriteToMemory(const GsVertex& a, const GsVertex& b, bool write) {
+    const std::uint64_t attr = Bits(regs_[kPrmodecont], 0, 1) ? regs_[kPrim] : regs_[kPrmode];
+    const bool ctxt = Bits(attr, 9, 1) != 0;
+    // Textured, UV, no fog, blending or anti-aliasing.
+    if (Bits(attr, 4, 1) == 0 || Bits(attr, 8, 1) == 0 || Bits(attr, 5, 3) != 0) return false;
+    const std::uint64_t frame = regs_[ctxt ? kFrame2 : kFrame1];
+    const std::uint64_t test = regs_[ctxt ? kTest2 : kTest1];
+    const std::uint64_t tex0 = regs_[ctxt ? kTex0_2 : kTex0_1];
+    const std::uint64_t tex1 = regs_[ctxt ? kTex1_2 : kTex1_1];
+    if (Bits(frame, 24, 6) != kPsmCt32) return false;
+    // Alpha test off or ALWAYS, no destination alpha test, depth test ALWAYS.
+    if ((Bits(test, 0, 1) != 0 && Bits(test, 1, 3) != 1) || Bits(test, 14, 1) != 0 || Bits(test, 17, 2) != 1) return false;
+    // Nearest sampling, no mip levels.
+    if (Bits(tex1, 5, 1) != 0 || (Bits(tex1, 2, 3) != 0 && Bits(tex1, 6, 3) != 0)) return false;
+    // Decal, or modulate by 128 (the texel unchanged). Sprites take the colour of their second vertex.
+    const std::uint32_t tfx = static_cast<std::uint32_t>(Bits(tex0, 35, 2));
+    const bool tcc = Bits(tex0, 34, 1) != 0;
+    if (tfx != 1 && !(tfx == 0 && b.r == 128 && b.g == 128 && b.b == 128 && (!tcc || b.a == 128))) return false;
+    const std::uint32_t psm = static_cast<std::uint32_t>(Bits(tex0, 20, 6));
+    if (BitsPerPixel(psm) == 0 || psm >= kPsmZ32) return false;
+    const bool eight = psm == kPsmT8 || psm == kPsmT8H;
+    const bool paletted = eight || psm == kPsmT4 || psm == kPsmT4HL || psm == kPsmT4HH;
+    // Texels the CPU does not hold: a texture or palette drawn on the GPU.
+    if (TextureFromFrame(tex0) || (paletted && eight && clut_frame_cbp_ >= 0)) return false;
+    // Whole pixels only (the coordinates and the coverage are then exact).
+    const float x0f = std::min(a.x, b.x), x1f = std::max(a.x, b.x), y0f = std::min(a.y, b.y), y1f = std::max(a.y, b.y);
+    if (x0f != std::floor(x0f) || x1f != std::floor(x1f) || y0f != std::floor(y0f) || y1f != std::floor(y1f) || x0f == x1f ||
+        y0f == y1f)
+        return false;
+    const std::uint64_t sc = regs_[ctxt ? kScissor2 : kScissor1];
+    // The vertices have XYOFFSET applied; SCISSOR is in the same pixel coordinates.
+    const std::int64_t sx0 = static_cast<std::int64_t>(Bits(sc, 0, 11)), sx1 = static_cast<std::int64_t>(Bits(sc, 16, 11));
+    const std::int64_t sy0 = static_cast<std::int64_t>(Bits(sc, 32, 11)), sy1 = static_cast<std::int64_t>(Bits(sc, 48, 11));
+    const std::int64_t px0 = std::max<std::int64_t>(static_cast<std::int64_t>(x0f), sx0);
+    const std::int64_t px1 = std::min<std::int64_t>(static_cast<std::int64_t>(x1f) - 1, sx1);
+    const std::int64_t py0 = std::max<std::int64_t>(static_cast<std::int64_t>(y0f), sy0);
+    const std::int64_t py1 = std::min<std::int64_t>(static_cast<std::int64_t>(y1f) - 1, sy1);
+    if (px0 > px1 || py0 > py1 || px0 < 0 || py0 < 0) return false;
+    // Texture coordinates at each pixel's own position (as PCSX2's software renderer: the GS
+    // flips a 64-texel tile with V from 63 to 0 over 64 rows texel for texel).
+    const float du = (b.u - a.u) / (b.x - a.x), dv = (b.v - a.v) / (b.y - a.y);
+    const std::uint32_t tw = 1u << std::min<std::uint32_t>(static_cast<std::uint32_t>(Bits(tex0, 26, 4)), 10);
+    const std::uint32_t th = 1u << std::min<std::uint32_t>(static_cast<std::uint32_t>(Bits(tex0, 30, 4)), 10);
+    const std::uint64_t clamp = regs_[ctxt ? kClamp2 : kClamp1];
+    auto wrap = [](std::int64_t c, std::uint32_t size, std::uint32_t mode, std::uint32_t mn, std::uint32_t mx) {
+        switch (mode) {
+            case 0: return static_cast<std::uint32_t>(c) & (size - 1);
+            case 1: return static_cast<std::uint32_t>(std::clamp<std::int64_t>(c, 0, size - 1));
+            case 2: return static_cast<std::uint32_t>(std::clamp<std::int64_t>(c, mn, std::max(mn, mx)));
+            default: return (static_cast<std::uint32_t>(c) & mn) | mx;
+        }
+    };
+    const std::uint32_t tbp = static_cast<std::uint32_t>(Bits(tex0, 0, 14));
+    const std::uint32_t tbw = static_cast<std::uint32_t>(Bits(tex0, 14, 6));
+    const std::uint64_t texa = regs_[kTexa];
+    const std::uint32_t ta0 = static_cast<std::uint32_t>(Bits(texa, 0, 8)), ta1 = static_cast<std::uint32_t>(Bits(texa, 32, 8));
+    const bool aem = Bits(texa, 15, 1) != 0;
+    std::shared_ptr<const std::array<std::uint32_t, 256>> pal;
+    if (paletted) {
+        DrawCommand d;
+        d.tex0 = tex0;
+        d.texa = texa;
+        pal = ClutRgba(d);
+    }
+    auto colour = [&](std::uint32_t v) -> std::uint32_t {
+        switch (psm) {
+            case kPsmCt32: return v;
+            case kPsmCt24: return (v & 0xFFFFFF) | ((aem && (v & 0xFFFFFF) == 0) ? 0u : ta0) << 24;
+            case kPsmCt16: case kPsmCt16S: {
+                const std::uint32_t r = (v & 0x1F) << 3, g = ((v >> 5) & 0x1F) << 3, bl = ((v >> 10) & 0x1F) << 3;
+                std::uint32_t al = (v & 0x8000) ? ta1 : ta0;
+                if (aem && (v & 0x7FFF) == 0) al = 0;
+                return r | g << 8 | bl << 16 | al << 24;
+            }
+            default: return (*pal)[v & 255];
+        }
+    };
+    const std::uint32_t fbp = static_cast<std::uint32_t>(Bits(frame, 0, 9)) * 32;
+    const std::uint32_t fbw = static_cast<std::uint32_t>(Bits(frame, 16, 6));
+    const std::uint32_t fbmsk = static_cast<std::uint32_t>(frame >> 32);
+    const bool fba = (regs_[ctxt ? kFba2 : kFba1] & 1) != 0;
+    if (!write) return true;
+    // All texels first: the sprite may read what it writes.
+    std::vector<std::uint32_t> out(static_cast<std::size_t>(px1 - px0 + 1) * static_cast<std::size_t>(py1 - py0 + 1));
+    std::size_t k = 0;
+    for (std::int64_t y = py0; y <= py1; ++y) {
+        const std::int64_t tv = static_cast<std::int64_t>(std::floor(a.v + (static_cast<float>(y) - a.y) * dv));
+        const std::uint32_t vv = wrap(tv, th, static_cast<std::uint32_t>(Bits(clamp, 2, 2)), static_cast<std::uint32_t>(Bits(clamp, 24, 10)),
+                                      static_cast<std::uint32_t>(Bits(clamp, 34, 10)));
+        for (std::int64_t x = px0; x <= px1; ++x) {
+            const std::int64_t tu = static_cast<std::int64_t>(std::floor(a.u + (static_cast<float>(x) - a.x) * du));
+            const std::uint32_t uu = wrap(tu, tw, static_cast<std::uint32_t>(Bits(clamp, 0, 2)), static_cast<std::uint32_t>(Bits(clamp, 4, 10)),
+                                          static_cast<std::uint32_t>(Bits(clamp, 14, 10)));
+            std::uint32_t c = colour(mem_.ReadPixel(psm, tbp, tbw, uu, vv));
+            if (!tcc) c = (c & 0xFFFFFF) | static_cast<std::uint32_t>(b.a) << 24;
+            if (fba) c |= 0x80000000u;
+            out[k++] = c;
+        }
+    }
+    k = 0;
+    for (std::int64_t y = py0; y <= py1; ++y) {
+        for (std::int64_t x = px0; x <= px1; ++x) {
+            const std::uint32_t xx = static_cast<std::uint32_t>(x), yy = static_cast<std::uint32_t>(y);
+            const std::uint32_t old = mem_.ReadPixel(kPsmCt32, fbp, fbw, xx, yy);
+            mem_.WritePixel(kPsmCt32, fbp, fbw, xx, yy, (old & fbmsk) | (out[k++] & ~fbmsk));
+        }
+    }
+    state_dirty_ = true;
+    return true;
 }
 
 std::shared_ptr<const std::array<std::uint32_t, 256>> GsState::ClutRgba(const DrawCommand& d) const {

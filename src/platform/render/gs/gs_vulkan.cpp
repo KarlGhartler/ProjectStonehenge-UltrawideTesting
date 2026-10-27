@@ -219,6 +219,38 @@ std::uint64_t PipelineKey(const BlendState& b, std::uint32_t write_mask) {
            static_cast<std::uint64_t>(write_mask) << 20;
 }
 
+// Pipeline stages and accesses of an image in each layout, as this backend uses the layouts: the
+// scope of the barriers that move images between them (GsBackend::Transitions).
+struct LayoutUse {
+    VkPipelineStageFlags stages;
+    VkAccessFlags reads, writes;
+};
+
+LayoutUse UseOf(VkImageLayout layout) {
+    constexpr VkPipelineStageFlags kTests =
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    constexpr VkPipelineStageFlags kShaders = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    switch (layout) {
+        case VK_IMAGE_LAYOUT_UNDEFINED: return {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0};
+        case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:  // render passes load, draw and clear (vkCmdClearAttachments)
+            return {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
+        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+            return {kTests, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT};
+        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:  // sampled by gs_depth_copy.frag
+            return {kTests | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT, 0};
+        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:  // sampled by the draws, conversions and anti-aliasing
+            return {kShaders, VK_ACCESS_SHADER_READ_BIT, 0};
+        case VK_IMAGE_LAYOUT_GENERAL:  // storage images of gs_conv.comp and gs_decode.comp
+            return {kShaders, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT};
+        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL: return {VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT, 0};
+        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: return {VK_PIPELINE_STAGE_TRANSFER_BIT, 0, VK_ACCESS_TRANSFER_WRITE_BIT};
+        default:
+            return {VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT, VK_ACCESS_MEMORY_WRITE_BIT};
+    }
+}
+
 }  // namespace
 
 struct GsBackend::RecordScratch {
@@ -244,6 +276,12 @@ struct GsBackend::RecordScratch {
     std::vector<std::pair<std::size_t, std::size_t>> ranges;  // first, count per draw
     std::vector<std::array<float, 4>> boxes;                   // x0, y0, x1, y1 of each draw's vertices
 };
+
+const char* GsBackend::CopyKindName(int k) {
+    static const char* const kNames[] = {"frame as texture", "field copy", "DATE / shader-blend regions", "GPU palettes",
+                                         "view syncs", "conversions", "anti-aliasing"};
+    return k >= 0 && k < 7 ? kNames[k] : "?";
+}
 
 GsBackend::GsBackend() = default;
 GsBackend::~GsBackend() { Shutdown(); }
@@ -310,19 +348,39 @@ void GsBackend::DestroyBuffer(Buffer& b) {
     b = Buffer{};
 }
 
-void GsBackend::Transition(VkCommandBuffer cmd, Image& img, VkImageLayout layout) {
-    if (img.layout == layout) return;
-    VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-    b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    b.image = img.image;
-    b.subresourceRange = {img.aspect, 0, 1, 0, 1};
-    b.oldLayout = img.layout;
-    b.newLayout = layout;
-    b.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-    b.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
-                         0, nullptr, 1, &b);
-    img.layout = layout;
+void GsBackend::Transition(VkCommandBuffer cmd, Image& img, VkImageLayout layout) { Transitions(cmd, {{&img, layout}}); }
+
+void GsBackend::Transitions(VkCommandBuffer cmd, std::initializer_list<std::pair<Image*, VkImageLayout>> images) {
+    // One barrier for all of them. It waits only for the stages that used each image in its old
+    // layout and makes only their writes visible, to the stages of the new layout (validation.md
+    // §2al: the earlier ALL_COMMANDS barriers drained the whole GPU at every transition).
+    VkImageMemoryBarrier b[4];
+    std::uint32_t n = 0;
+    VkPipelineStageFlags src = 0, dst = 0;
+    for (const auto& [img, layout] : images) {
+        if (img->layout == layout || n == 4) continue;
+        const LayoutUse from = UseOf(img->layout), to = UseOf(layout);
+        VkImageMemoryBarrier& x = b[n++];
+        x = VkImageMemoryBarrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        x.srcQueueFamilyIndex = x.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        x.image = img->image;
+        x.subresourceRange = {img->aspect, 0, 1, 0, 1};
+        x.oldLayout = img->layout;
+        x.newLayout = layout;
+        x.srcAccessMask = from.writes;
+        x.dstAccessMask = to.reads | to.writes;
+        src |= from.stages;
+        dst |= to.stages;
+        img->layout = layout;
+    }
+    if (n > 0) Barrier(cmd, src, dst, 0, nullptr, n, b);
+}
+
+void GsBackend::Barrier(VkCommandBuffer cmd, VkPipelineStageFlags src, VkPipelineStageFlags dst,
+                        std::uint32_t buffer_count, const VkBufferMemoryBarrier* buffers, std::uint32_t image_count,
+                        const VkImageMemoryBarrier* images) {
+    vkCmdPipelineBarrier(cmd, src, dst, 0, 0, nullptr, buffer_count, buffers, image_count, images);
+    ++pass_stats_.barriers;
 }
 
 bool GsBackend::Init(VkContext& ctx, std::string& error) {
@@ -935,8 +993,7 @@ void GsBackend::RecordTextureWork(VkCommandBuffer cmd, int frame, const std::vec
     };
     auto flush_barriers = [&](VkPipelineStageFlags src, VkPipelineStageFlags dst) {
         if (barriers.empty()) return;
-        vkCmdPipelineBarrier(cmd, src, dst, 0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(barriers.size()),
-                             barriers.data());
+        Barrier(cmd, src, dst, 0, nullptr, static_cast<uint32_t>(barriers.size()), barriers.data());
         barriers.clear();
     };
     for (const RecordScratch::Step& s : steps) {
@@ -986,7 +1043,7 @@ void GsBackend::RecordTextureWork(VkCommandBuffer cmd, int frame, const std::vec
             b.size = VK_WHOLE_SIZE;
             b.srcAccessMask = src;
             b.dstAccessMask = dst;
-            vkCmdPipelineBarrier(cmd, src_stage, dst_stage, 0, 0, nullptr, 1, &b, 0, nullptr);
+            Barrier(cmd, src_stage, dst_stage, 1, &b, 0, nullptr);
         };
         for (const RecordScratch::Step& s : steps) {
             if (s.copies > 0) {
@@ -1143,41 +1200,25 @@ bool GsBackend::ConvertCore(VkCommandBuffer cmd, int frame, Target& src, const C
     cp.texa = static_cast<std::int32_t>(r.texa);
     cp.src_scale = src.scale;
 
-    Transition(cmd, src.img, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    Transition(cmd, feedback_, VK_IMAGE_LAYOUT_GENERAL);
+    Transitions(cmd, {{&src.img, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}, {&feedback_, VK_IMAGE_LAYOUT_GENERAL}});
+    feedback_copy_ = FeedbackCopy{};  // feedback_ no longer holds a frame-buffer copy
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, conv_pipeline_);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, conv_layout_, 0, 1, &set, 0, nullptr);
     vkCmdPushConstants(cmd, conv_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(cp), &cp);
     vkCmdDispatch(cmd, static_cast<uint32_t>((cp.size[0] + 7) / 8), static_cast<uint32_t>((cp.size[1] + 7) / 8), 1);
+    CountCopy(kCopyConvert, static_cast<std::uint64_t>(cp.size[0]), static_cast<std::uint64_t>(cp.size[1]));
+    // The source stays sampled until it is drawn into again (begin_pass).
     Transition(cmd, feedback_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    Transition(cmd, src.img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     return true;
 }
 
-void GsBackend::Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawCommand& d) {
-    // Texels to convert: the whole texture (at most the feedback image), or for sprites with texel
-    // coordinates (FST) and no repeat wrap the rectangle their vertices reach, with margin for bilinear.
-    const std::int32_t tw = 1 << std::min<int>(static_cast<int>(Bits(d.tex0, 26, 4)), 10);
-    const std::int32_t th = 1 << std::min<int>(static_cast<int>(Bits(d.tex0, 30, 4)), 10);
+void GsBackend::Convert(VkCommandBuffer cmd, int frame, Target& src, const DrawCommand& d, const std::array<int, 4>& box) {
+    // Texels to convert: the ones the draw can read (Record's read_box), within the feedback image.
     ConvRequest r;
-    r.u1 = std::min(tw, kFeedbackWidth);
-    r.v1 = std::min(th, kTargetHeight);
-    const std::uint64_t wms = Bits(d.clamp, 0, 2), wmt = Bits(d.clamp, 2, 2);
-    const bool repeat = wms == 0 || wms == 3 || wmt == 0 || wmt == 3;
-    if (d.fst && !repeat && !d.vertices.empty()) {
-        float a = 1e9f, b = 1e9f, c = -1e9f, e = -1e9f;
-        for (const GsVertex& v : d.vertices) {
-            a = std::min(a, v.u);
-            b = std::min(b, v.v);
-            c = std::max(c, v.u);
-            e = std::max(e, v.v);
-        }
-        const std::int32_t umax = r.u1, vmax = r.v1;
-        r.u0 = std::clamp(static_cast<std::int32_t>(std::floor(a)) - 1, 0, umax);
-        r.v0 = std::clamp(static_cast<std::int32_t>(std::floor(b)) - 1, 0, vmax);
-        r.u1 = std::clamp(static_cast<std::int32_t>(std::ceil(c)) + 2, r.u0, umax);
-        r.v1 = std::clamp(static_cast<std::int32_t>(std::ceil(e)) + 2, r.v0, vmax);
-    }
+    r.u0 = std::clamp(box[0], 0, kFeedbackWidth);
+    r.v0 = std::clamp(box[1], 0, kTargetHeight);
+    r.u1 = std::clamp(box[2], r.u0, kFeedbackWidth);
+    r.v1 = std::clamp(box[3], r.v0, kTargetHeight);
     r.psm = static_cast<std::uint32_t>(Bits(d.tex0, 20, 6));
     r.tbp = static_cast<std::uint32_t>(Bits(d.tex0, 0, 14));
     r.tbw = static_cast<std::uint32_t>(Bits(d.tex0, 14, 6));
@@ -1219,8 +1260,7 @@ void GsBackend::Sync(VkCommandBuffer cmd, int frame, Target& t, Target& newer) {
     if (!ConvertCore(cmd, frame, *newest, r)) return;
     // The conversion is native; a scaled target gets each converted pixel as a block of
     // scale x scale host pixels (nearest).
-    Transition(cmd, feedback_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    Transition(cmd, t.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    Transitions(cmd, {{&feedback_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL}, {&t.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}});
     if (t.scale == 1) {
         VkImageCopy c{};
         c.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -1228,6 +1268,7 @@ void GsBackend::Sync(VkCommandBuffer cmd, int frame, Target& t, Target& newer) {
         c.extent = {static_cast<uint32_t>(r.u1), static_cast<uint32_t>(r.v1), 1};
         vkCmdCopyImage(cmd, feedback_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, t.img.image,
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+        CountCopy(kCopySync, c.extent.width, c.extent.height);
     } else {
         VkImageBlit b{};
         b.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -1236,9 +1277,9 @@ void GsBackend::Sync(VkCommandBuffer cmd, int frame, Target& t, Target& newer) {
         b.dstOffsets[1] = {r.u1 * t.scale, r.v1 * t.scale, 1};
         vkCmdBlitImage(cmd, feedback_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, t.img.image,
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b, VK_FILTER_NEAREST);
+        CountCopy(kCopySync, static_cast<std::uint64_t>(r.u1) * t.scale, static_cast<std::uint64_t>(r.v1) * t.scale);
     }
-    Transition(cmd, feedback_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    Transition(cmd, t.img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    Transitions(cmd, {{&feedback_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}, {&t.img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}});
     // used_height stays the drawn height: it sizes the presented image (ADR-006 Â§4: 448 lines).
     t.last_write = newest->last_write;
 }
@@ -1407,6 +1448,9 @@ bool GsBackend::CreateTargetImages(Target& t, int frame, VkCommandBuffer cmd) {
     VkImageSubresourceRange drange{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
     Transition(cmd, t.depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     vkCmdClearDepthStencilImage(cmd, t.depth.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero_depth, 1, &drange);
+    // The clears complete before anything else writes the images (a grown or downscaled target's
+    // copy, validation.md §2al).
+    Transitions(cmd, {{&t.img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}, {&t.depth, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}});
     return true;
 }
 
@@ -1437,7 +1481,7 @@ GsBackend::Target* GsBackend::GetTarget(VkCommandBuffer cmd, int frame, std::uin
             c.srcSubresource = {from.aspect, 0, 0, 1};
             c.dstSubresource = c.srcSubresource;
             c.extent = old_extent;
-            Transition(cmd, from, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+            Transitions(cmd, {{&from, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL}, {&to, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}});
             vkCmdCopyImage(cmd, from.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, to.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
         }
@@ -1491,7 +1535,7 @@ void GsBackend::DownscaleTarget(VkCommandBuffer cmd, int frame, Target& t) {
     b.dstSubresource = b.srcSubresource;
     b.srcOffsets[1] = {t.img.width, t.img.height, 1};
     b.dstOffsets[1] = {t.native_w, t.native_h, 1};
-    Transition(cmd, t.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    Transitions(cmd, {{&t.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL}, {&n.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}});
     vkCmdBlitImage(cmd, t.img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, n.img.image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b, VK_FILTER_NEAREST);
     Transition(cmd, n.img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -1531,6 +1575,7 @@ bool GsBackend::EnsureScratch(int frame, VkCommandBuffer cmd, int w, int h) {
     Transition(cmd, date_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     Transition(cmd, present_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     present_valid_ = false;
+    feedback_copy_ = FeedbackCopy{};
     return true;
 }
 
@@ -1684,14 +1729,16 @@ void GsBackend::StopPipelineWarmUp() {
     warm_threads_.clear();
 }
 
-void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCommand>& draws,
-                       const std::vector<TextureOp>& ops) {
+void GsBackend::Record(VkCommandBuffer cmd, int frame, const DrawList& list, const std::vector<TextureOp>& ops) {
+    const std::vector<DrawCommand>& draws = list.draws;
     // Images replaced while this frame slot was last recorded: its commands have completed.
     for (Image& img : retired_[frame]) DestroyImage(img);
     for (VkFramebuffer fb : retired_fb_[frame]) vkDestroyFramebuffer(ctx_->device, fb, nullptr);
     retired_[frame].clear();
     retired_fb_[frame].clear();
     ++record_count_;
+    pass_stats_ = PassStats{};
+    feedback_copy_ = FeedbackCopy{};
     if (!scratch_) scratch_ = std::make_unique<RecordScratch>();
     // 1. Textures: the GPU copy of local memory brought up to date and the textures decoded from
     // it, in stream order (also without draws: the copy must follow every op), and the textures
@@ -1706,8 +1753,11 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
     verts.clear();
     ranges.clear();
     boxes.clear();
+    // Room for the usual case (triangles keep their vertices; a sprite or line pair becomes 6).
+    verts.reserve(list.vertices.size() * 3);
     for (const DrawCommand& d : draws) {
         const std::size_t first = verts.size();
+        const VertexSpan dv = list.Vertices(d);
         // Sprites, lines and points take the Z of the vertex that gives their colour (`g`).
         auto vtx = [&](const GsVertex& g, float x, float y, float s, float t, float q) {
             verts.push_back(Vertex{x, y, DepthValue(g.z, d.zbuf), g.r, g.g, g.b, g.a, s, t, q, static_cast<float>(g.fog)});
@@ -1716,9 +1766,9 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             if (d.fst) s = g.u, t = g.v, q = 1.0f;
             else s = g.s, t = g.t, q = g.q;
         };
-        const std::size_t n = d.vertices.size();
+        const std::size_t n = dv.size();
         if (d.kind == PrimKind::kTriangle) {
-            for (const GsVertex& g : d.vertices) {
+            for (const GsVertex& g : dv) {
                 float s, t, q;
                 tex(g, s, t, q);
                 vtx(g, g.x, g.y, s, t, q);
@@ -1732,8 +1782,8 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             const int ds = found != targets_.end() ? found->second.scale
                                                    : TargetScale(std::max<int>(64, static_cast<int>(d.Fbw()) * 64));
             for (std::size_t i = 0; i + 1 < n; i += 2) {
-                const GsVertex& a = d.vertices[i];
-                const GsVertex& b = d.vertices[i + 1];
+                const GsVertex& a = dv[i];
+                const GsVertex& b = dv[i + 1];
                 float s0, t0, q0, s1, t1, q1;
                 tex(a, s0, t0, q0);
                 tex(b, s1, t1, q1);
@@ -1760,8 +1810,8 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             }
         } else if (d.kind == PrimKind::kLine) {
             for (std::size_t i = 0; i + 1 < n; i += 2) {
-                const GsVertex& a = d.vertices[i];
-                const GsVertex& b = d.vertices[i + 1];
+                const GsVertex& a = dv[i];
+                const GsVertex& b = dv[i + 1];
                 float dx = b.x - a.x, dy = b.y - a.y;
                 const float len = std::sqrt(dx * dx + dy * dy);
                 if (len <= 0.0f) continue;
@@ -1779,7 +1829,7 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
                 vtx(a, a.x - nx, a.y - ny, s0, t0, q0);
             }
         } else {
-            for (const GsVertex& g : d.vertices) {
+            for (const GsVertex& g : dv) {
                 float s, t, q;
                 tex(g, s, t, q);
                 vtx(g, g.x, g.y, s, t, q);
@@ -1818,6 +1868,57 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
         const std::uint32_t tbp = static_cast<std::uint32_t>(Bits(d.tex0, 0, 14));
         return d.kind == PrimKind::kSprite && z_texture(d) && (tbp & 31) == 0 && zbuf_owner_.count(tbp >> 5) != 0 &&
                zbuf_owner_.count(d.Fbp()) != 0;
+    };
+    // Texels of draw i's texture that its pixels can read, [u0, u1) x [v0, v1): the box of its
+    // vertices' texture coordinates with the bilinear margin, through the wrap mode (repeat: the whole
+    // texture; region repeat: MAX up to MIN | MAX; clamp and region clamp: the box within the
+    // texture or the region). Used to copy or convert only that part of a frame buffer read as a
+    // texture (validation.md §2al).
+    auto read_box = [&](std::size_t i, const DrawCommand& d) {
+        const int size[2] = {1 << std::min<int>(static_cast<int>(Bits(d.tex0, 26, 4)), 10),
+                             1 << std::min<int>(static_cast<int>(Bits(d.tex0, 30, 4)), 10)};
+        float lo[2] = {1e9f, 1e9f}, hi[2] = {-1e9f, -1e9f};
+        bool known = ranges[i].second > 0;
+        for (std::size_t k = ranges[i].first; known && k < ranges[i].first + ranges[i].second; ++k) {
+            const Vertex& v = verts[k];
+            float c[2] = {v.s, v.t};
+            if (!d.fst) {
+                if (!(v.q > 0.0f)) {
+                    known = false;  // the perspective divide can leave the vertices' range
+                    break;
+                }
+                c[0] = v.s / v.q * static_cast<float>(size[0]);
+                c[1] = v.t / v.q * static_cast<float>(size[1]);
+            }
+            for (int a = 0; a < 2; ++a) {
+                lo[a] = std::min(lo[a], std::clamp(c[a], -1e6f, 1e6f));
+                hi[a] = std::max(hi[a], std::clamp(c[a], -1e6f, 1e6f));
+            }
+        }
+        std::array<int, 4> box{};
+        for (int a = 0; a < 2; ++a) {
+            const int mode = static_cast<int>(Bits(d.clamp, a == 0 ? 0 : 2, 2));
+            const int mn = static_cast<int>(Bits(d.clamp, a == 0 ? 4 : 24, 10));
+            const int mx = static_cast<int>(Bits(d.clamp, a == 0 ? 14 : 34, 10));
+            int b0 = 0, b1 = size[a];
+            if (mode == 3) {
+                // (c & MIN) | MAX for any c: from MAX up to MIN | MAX.
+                b0 = mx;
+                b1 = (mn | mx) + 1;
+            } else if (mode != 0) {
+                const int c0 = mode == 2 ? mn : 0;
+                const int c1 = mode == 2 ? std::max(mx + 1, mn + 1) : size[a];
+                b0 = c0;
+                b1 = c1;
+                if (known) {
+                    b0 = std::clamp(static_cast<int>(std::floor(lo[a])) - 1, c0, c1 - 1);
+                    b1 = std::clamp(static_cast<int>(std::ceil(hi[a])) + 2, b0 + 1, c1);
+                }
+            }
+            box[a] = b0;
+            box[a + 2] = b1;
+        }
+        return box;
     };
     {
         // Native rows each target needs this frame (its scissors), then the scratch images for the
@@ -1879,6 +1980,17 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
     Params bound_params{};
     bool params_valid = false;
     VkDescriptorSet bound_texture = VK_NULL_HANDLE;  // set 1
+    // The pipeline of the last key: consecutive draws mostly share one, and GetPipeline locks and
+    // looks it up in the map.
+    std::uint64_t last_key = 0;
+    VkPipeline last_pipeline = VK_NULL_HANDLE;
+    auto pipeline = [&](std::uint64_t key) {
+        if (last_pipeline == VK_NULL_HANDLE || key != last_key) {
+            last_pipeline = GetPipeline(key);
+            last_key = key;
+        }
+        return last_pipeline;
+    };
     auto end_pass = [&]() {
         if (open) vkCmdEndRenderPass(cmd);
         open = nullptr;
@@ -1892,6 +2004,7 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
         rbi.framebuffer = target->fb;
         rbi.renderArea.extent = {static_cast<uint32_t>(target->img.width), static_cast<uint32_t>(target->img.height)};
         vkCmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+        ++pass_stats_.render_passes;
         open = target;
         bound_pipeline = VK_NULL_HANDLE;
         bound_scissor = VkRect2D{{-1, -1}, {0, 0}};
@@ -1933,9 +2046,10 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             begin_pass(owner);
             const int x0 = static_cast<int>(Bits(d.scissor, 0, 11)), x1 = static_cast<int>(Bits(d.scissor, 16, 11)) + 1;
             const int y0 = static_cast<int>(Bits(d.scissor, 32, 11)), y1 = static_cast<int>(Bits(d.scissor, 48, 11)) + 1;
-            for (std::size_t v = 0; v + 1 < d.vertices.size(); v += 2) {
-                const GsVertex& a = d.vertices[v];
-                const GsVertex& b = d.vertices[v + 1];
+            const VertexSpan dv = list.Vertices(d);
+            for (std::size_t v = 0; v + 1 < dv.size(); v += 2) {
+                const GsVertex& a = dv[v];
+                const GsVertex& b = dv[v + 1];
                 const int rx0 = std::clamp(static_cast<int>(std::ceil(std::min(a.x, b.x))), std::max(x0, 0), std::min(x1, owner->native_w));
                 const int rx1 = std::clamp(static_cast<int>(std::ceil(std::max(a.x, b.x))), std::max(x0, 0), std::min(x1, owner->native_w));
                 const int ry0 = std::clamp(static_cast<int>(std::ceil(std::min(a.y, b.y))), std::max(y0, 0), std::min(y1, owner->native_h));
@@ -2025,9 +2139,10 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
         }
         int tex_scale = 1;  // host texels per GS texel of what feedback_ holds for this draw
         if (d.texture_from_frame >= 0) {
-            // Frame buffer read as a texture (field copy, heat haze): copy it first. The first copy of
-            // the draw buffer in a frame is also the image to present (ADR-006 Â§4).
-            end_pass();
+            // Frame buffer read as a texture (field copy, heat haze, glow): the part the draw reads is
+            // copied into feedback_ first, unless feedback_ still holds it from an earlier draw (same
+            // image, not drawn into since). The first copy of the draw buffer in a frame is also the
+            // image to present (ADR-006 §4), copied whole.
             // Several targets can share a block pointer (the menus' 640-wide and the flight's 512-wide
             // buffers both sit at FBP 0; the sky's work pages are drawn as CT32 and as CT16S): the one
             // drawn last holds the memory. Read in its own layout and width, it is copied as it is;
@@ -2044,40 +2159,67 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             }
             const bool direct = src && src->psm == 0 && (tpsm == kPsmCt32 || tpsm == kPsmCt24) && src->fbw == tbw;
             if (src && !direct) {
-                Convert(cmd, frame, *src, d);
+                end_pass();
+                Convert(cmd, frame, *src, d, read_box(i, d));
             } else if (src) {
                 tex_scale = src->scale;
                 // The copy keeps the source's scale: the draw samples it at tex_scale host texels per
-                // GS texel (gs.frag flag 16).
-                VkImageCopy c{};
-                c.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-                c.dstSubresource = c.srcSubresource;
-                c.extent = {static_cast<uint32_t>(std::min(src->img.width, feedback_.width)),
-                            static_cast<uint32_t>(std::min(src->img.height, feedback_.height)), 1};
-                Transition(cmd, src->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-                Transition(cmd, feedback_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-                vkCmdCopyImage(cmd, src->img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, feedback_.image,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+                // GS texel (gs.frag flag 16), at the same host pixel position as in the source.
+                const int s = src->scale;
+                const int w = std::min(src->img.width, feedback_.width), h = std::min(src->img.height, feedback_.height);
+                const std::array<int, 4> box = read_box(i, d);
+                const int cx0 = std::clamp(box[0] * s, 0, w), cx1 = std::clamp(box[2] * s, cx0, w);
+                const int cy0 = std::clamp(box[1] * s, 0, h), cy1 = std::clamp(box[3] * s, cy0, h);
+                const FeedbackCopy& fc = feedback_copy_;
+                const bool held = fc.image == src->img.image && fc.write == src->last_write && fc.x0 <= cx0 &&
+                                  fc.y0 <= cy0 && cx1 <= fc.x1 && cy1 <= fc.y1;
+                const bool copy = !held && cx1 > cx0 && cy1 > cy0;
                 const bool field_copy = dispfb_ == 0 || static_cast<std::uint32_t>(dispfb_ & 0x1FF) == d.Fbp();
-                if (!present_valid_ && field_copy) {
-                    Transition(cmd, present_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-                    vkCmdCopyImage(cmd, src->img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, present_.image,
-                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
-                    Transition(cmd, present_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-                    present_valid_ = true;
-                    present_fbp_ = src->fbp;
-                    present_w_ = src->native_w;
-                    present_h_ = std::max(src->used_height, 1);
-                    present_src_scale_ = src->scale;
-                    // Field copy (DrawDisplayTransfer): MODULATE by the vertex colour LerpRgba(0, 0x808080,
-                    // brightness), so the brightness option scales the displayed image.
-                    const bool modulate = d.textured && Bits(d.tex0, 35, 2) == 0 && !d.vertices.empty();
-                    present_scale_[0] = modulate ? d.vertices[0].r / 128.0f : 1.0f;
-                    present_scale_[1] = modulate ? d.vertices[0].g / 128.0f : 1.0f;
-                    present_scale_[2] = modulate ? d.vertices[0].b / 128.0f : 1.0f;
+                const bool present = !present_valid_ && field_copy;
+                if (copy || present) {
+                    end_pass();
+                    Transitions(cmd, {{&src->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
+                                      {&feedback_, copy ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : feedback_.layout},
+                                      {&present_, present ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : present_.layout}});
+                    if (copy) {
+                        VkImageCopy c{};
+                        c.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                        c.dstSubresource = c.srcSubresource;
+                        c.srcOffset = {cx0, cy0, 0};
+                        c.dstOffset = c.srcOffset;
+                        c.extent = {static_cast<uint32_t>(cx1 - cx0), static_cast<uint32_t>(cy1 - cy0), 1};
+                        vkCmdCopyImage(cmd, src->img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, feedback_.image,
+                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+                        CountCopy(kCopyFrameTexture, c.extent.width, c.extent.height);
+                        feedback_copy_ = FeedbackCopy{src->img.image, src->last_write, cx0, cy0, cx1, cy1};
+                    }
+                    if (present) {
+                        VkImageCopy c{};
+                        c.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                        c.dstSubresource = c.srcSubresource;
+                        c.extent = {static_cast<uint32_t>(w), static_cast<uint32_t>(h), 1};
+                        vkCmdCopyImage(cmd, src->img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, present_.image,
+                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+                        CountCopy(kCopyField, c.extent.width, c.extent.height);
+                        present_valid_ = true;
+                        present_fbp_ = src->fbp;
+                        present_w_ = src->native_w;
+                        present_h_ = std::max(src->used_height, 1);
+                        present_src_scale_ = src->scale;
+                        // Field copy (DrawDisplayTransfer): MODULATE by the vertex colour LerpRgba(0, 0x808080,
+                        // brightness), so the brightness option scales the displayed image.
+                        const VertexSpan dv = list.Vertices(d);
+                        const bool modulate = d.textured && Bits(d.tex0, 35, 2) == 0 && !dv.empty();
+                        present_scale_[0] = modulate ? dv[0].r / 128.0f : 1.0f;
+                        present_scale_[1] = modulate ? dv[0].g / 128.0f : 1.0f;
+                        present_scale_[2] = modulate ? dv[0].b / 128.0f : 1.0f;
+                    }
+                    // The source stays a transfer source until it is drawn into again (begin_pass); the
+                    // draw's own target becomes an attachment in the same barrier.
+                    Transitions(cmd, {{&feedback_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                      {&present_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
+                                      {&target->img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}});
                 }
-                Transition(cmd, feedback_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                Transition(cmd, src->img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
             }
         }
         // Palette drawn on the GPU (gs_state.h DrawCommand::clut_from_frame): its 16x16 CT32 image
@@ -2110,12 +2252,13 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
                 b.srcOffsets[0] = {bx * s, by * s, 0};
                 b.srcOffsets[1] = {(bx + 16) * s, (by + 16) * s, 1};
                 b.dstOffsets[1] = {16, 16, 1};
-                Transition(cmd, src->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-                Transition(cmd, clut_img_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                Transitions(cmd, {{&src->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
+                                  {&clut_img_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}});
                 vkCmdBlitImage(cmd, src->img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, clut_img_.image,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b, VK_FILTER_NEAREST);
-                Transition(cmd, clut_img_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                Transition(cmd, src->img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+                CountCopy(kCopyPalette, 16, 16);
+                Transitions(cmd, {{&clut_img_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                  {&target->img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}});
                 frame_clut_ready = true;
             } else {
                 LogOnce("clut-frame", "palette drawn on the GPU without a 32-bit frame buffer at its CBP (drawn with indices)");
@@ -2158,11 +2301,13 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             c.srcOffset = {bx0 * ts, by0 * ts, 0};
             c.dstOffset = c.srcOffset;
             c.extent = {static_cast<uint32_t>((bx1 - bx0) * ts), static_cast<uint32_t>((by1 - by0) * ts), 1};
-            Transition(cmd, target->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-            Transition(cmd, date_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            Transitions(cmd, {{&target->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL},
+                              {&date_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}});
             vkCmdCopyImage(cmd, target->img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, date_.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
-            Transition(cmd, date_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            CountCopy(kCopyDstRegion, c.extent.width, c.extent.height);
+            Transitions(cmd, {{&date_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                              {&target->img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}});
             begin_pass(target);
         }
         VkRect2D sc{{sx0 * ts, sy0 * ts}, {static_cast<uint32_t>((sx1 - sx0) * ts), static_cast<uint32_t>((sy1 - sy0) * ts)}};
@@ -2292,11 +2437,11 @@ void GsBackend::Record(VkCommandBuffer cmd, int frame, const std::vector<DrawCom
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 1, 1, &texture_set, 0, nullptr);
             bound_texture = texture_set;
         }
-        bind(GetPipeline(PipelineKey(blend, write) | depth));
+        bind(pipeline(PipelineKey(blend, write) | depth));
         vkCmdDraw(cmd, static_cast<uint32_t>(ranges[i].second), 1, static_cast<uint32_t>(ranges[i].first), 0);
         if ((flags & (1 << 6)) != 0 && afail == 3 && (write & 7) != 0) {
             p.flags = flags | 1 << 19;  // keep only the pixels that fail the test
-            bind(GetPipeline(PipelineKey(blend, write & 7) | depth));
+            bind(pipeline(PipelineKey(blend, write & 7) | depth));
             vkCmdDraw(cmd, static_cast<uint32_t>(ranges[i].second), 1, static_cast<uint32_t>(ranges[i].first), 0);
         }
     }
@@ -2355,8 +2500,7 @@ void GsBackend::CopyPresent(VkCommandBuffer cmd, VkImage dst, int dst_w, int dst
     b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     b.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
-                         nullptr, 1, &b);
+    Barrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, nullptr, 1, &b);
     if (src_scale == scale_) {
         VkImageCopy c{};
         c.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -2377,8 +2521,7 @@ void GsBackend::CopyPresent(VkCommandBuffer cmd, VkImage dst, int dst_w, int dst
     b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
-                         nullptr, 1, &b);
+    Barrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, nullptr, 1, &b);
     Transition(cmd, *src, restore);
 }
 

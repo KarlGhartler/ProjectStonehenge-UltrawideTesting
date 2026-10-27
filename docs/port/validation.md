@@ -31,6 +31,10 @@ Every validation run of the project, newest last. How slices are validated: `val
 | §2ah | third mission 6 crash, recorded: an inverted unit test in the track stream overran the radio header; fixed (2026-10-25; CR-3) |
 | §2ai | GS pipeline hitches on a new GPU driver: warm-up at startup and a pipeline cache file; where the game tick's time goes (2026-10-25; PC-1, RT-1) |
 | §2aj | render thread: GS processing, interpolation and presentation beside the game ticks (2026-10-25; RT-2) |
+| §2ak | engine sound missing in the external view (2026-10-26; ES-1) |
+| §2al | GPU work structure: counters, narrow barriers, partial frame-buffer copies (2026-10-26; GW-1 to GW-3) |
+| §2am | GS processing: one vertex buffer per draw list, pipeline reuse, blended copies replayed (2026-10-27; GP-1 to GP-4) |
+| §2an | terrain cells black or patched with other tiles up close: mirrored tiles flipped through a GPU-only sprite; warning for other reads of GPU-only drawings (2026-10-27; TT-1, TT-2) |
 | §2o | new memory card and first save, startup messages (2026-10-20; NS-1, NS-2) |
 | §2n | anti-aliasing (FXAA, SMAA) before the HUD (2026-10-20; AA-1 to AA-4) |
 | §2m | settings tests (GRAPHICS page, live combinations, controller and save round trip), texture residency, sprite edges at N×, defaults and the frame-rate overlay (2026-10-20; ST-1 to ST-8) |
@@ -1321,3 +1325,118 @@ User request after RT-1 (§2ai): move the renderer's CPU work to a second thread
 - Vulkan validation layer (`--vk-validation`, mission 1 with interpolation and a screenshot at 1400): no validation message; the screenshot was written; clean exit.
 - Latency: with the frame in flight the picture trails the game by at most one presented frame.
 - Version raised to **0.9.5** after the pipeline warm-up and cache (§2ai) and the render thread (User request).
+
+## 2ak. Engine sound missing in the external view (2026-10-26)
+
+User report: the engine sound plays in the first-person views but not in the external (third-person) view.
+
+### ES-1. View column read with the wrong stride
+- `UpdatePlayerSound` 0x001270B8 stores byte 0 of the engine input (0x00420620) from the u8 view table 0x002A2538 (`sll v0,v0,2`, `lbu`, `sb` at 0x00127260–0x00127274): views 0 / 1 / 2 → columns 0 / 2 / 1 of the 9 × 3 layer volume tables (0x0033D448 …). The translation read a u32 at 0x002A2538 + 16 · view and stored a word. View 0 was right by chance; view 1 (cockpit) got column 4 (the next layer's column 1) and view 2 (external) column 100, past the table, so its layers were silent. The word store also cleared bytes 0x00420621–23, which the original leaves alone.
+- Fix: `src/game/player_flight.cpp`, u8 load with a 4-byte stride and a byte store (also for subs 0x14 / 0x19 / 0x1B). Docs: `../subsystems/sound.md` "Engine and ambient sounds".
+- Development build and tests pass (2026-10-26). Pending: a listen in all three views (mission 1); a RAM checkpoint in the external view should now match PCSX2 at 0x00420620 and 0x00423EB0.
+
+## 2al. GPU work structure: counters, narrow barriers, partial frame-buffer copies (2026-10-26)
+
+User report: very low frame rates in mission gameplay on NVIDIA GPUs. User approval (2026-10-26): exit-log counters of render passes, barriers and frame-buffer copies; narrower barriers; copy only the area a draw reads.
+
+### GW-1. Counters
+- `GsBackend::PassStats` per frame (Record and CopyPresent): render passes begun, pipeline barriers, frame-buffer copies and the host pixels they write, also by kind (frame as texture, field copy, DATE / shader-blend regions, GPU palettes, view syncs, conversions, anti-aliasing). Session averages at exit (`renderer: GPU work per frame on average: …`, `frame-buffer copies per frame by kind: …`); the last frame in the debug overlay's Performance panel.
+- Mission 1, the User's input log, before the changes, 8x: **555 render passes, 2,296 barriers and 569 copies (186 Mpixels, ~745 MB) per frame**. 522 of the copies (151 Mpixels) were frames read as textures (glow and shadow chains, heat haze): each copied the whole source image (a 1x work target is 1024 rows tall) and was wrapped in four barriers that each waited for the whole GPU (`ALL_COMMANDS` → `ALL_COMMANDS`, all memory). A GPU with less bandwidth than the RX 9070 XT, or a driver that serialises such barriers harder, spends most of the frame there.
+
+### GW-2. Changes (`gs_vulkan.cpp`, `gs_antialias.cpp`)
+- **Narrow, batched barriers**: `Transitions` moves up to 4 images with one barrier whose scope is the stages and accesses of the old and new layouts (`UseOf`: colour attachment output, fragment tests, fragment/compute shaders, transfer). The paired transitions around each copy (source + destination before, destination + the draw's target after) are one barrier each.
+- **Lazy restore**: a target read by a copy or a conversion keeps that layout until it is drawn into again (`begin_pass` transitions it); every target path already tracks and transitions from the current layout.
+- **Partial frame-as-texture copies**: `read_box` gives the texels a draw can read (its vertices' UV box, through the perspective divide when every q > 0, with the bilinear margin, wrapped by CLAMP: repeat = whole texture, region repeat = MAX up to MIN | MAX, clamp / region clamp = the box inside the texture or region). Only that rectangle is copied (same position in `feedback_`); conversions (`Convert`) use the same box.
+- **Copy reuse**: `feedback_copy_` records the source image, its `last_write` and the rectangle `feedback_` holds; a later draw that reads inside it while the source has not been drawn into skips the copy, its barriers and the render-pass break. Cleared at each Record, by conversions and when the scratch images are recreated.
+- The field copy into `present_` stays a copy of the whole image.
+- Fixed on the way (found by synchronization validation, present before the changes): a new target image's clears had no barrier before the copy or blit into it when a target grows or is downscaled (3 WRITE_AFTER_WRITE hazards).
+
+### GW-3. Results (RX 9070 XT, development build, windowed, v-sync off, cap 360, no interpolation, no anti-aliasing; mission 1 input log, `--fast-until 1500 --exit-at 8000`, fps = frames presented at normal speed)
+
+| Scale | Build | fps | render passes | barriers | copies (Mpixels) | recording ms | waiting for the GPU ms |
+|---|---|---|---|---|---|---|---|
+| 8x | before (2 runs) | 196.9 / 197.4 | 555.2 | 2,296.0 | 568.6 (186.2) | 2.89 / 2.56 | 2.55 / 2.53 |
+| 8x | after (2 runs) | 312.6 / 317.6 | 56.0 | 175.8 | 69.5 (52.7) | 1.53 / 1.54 | 1.14 / 1.13 |
+| 4x | before | 225.2 | 555.2 | 2,296.0 | 568.6 (156.6) | 2.60 | 2.06 |
+| 4x | after | 339.9 | 56.0 | 175.8 | 69.4 (24.6) | 1.51 | 0.54 |
+| 4x, FXAA | before | 224.9 | 557.1 | 2,303.0 | 570.6 (164.5) | – | 2.10 |
+| 4x, FXAA | after | 339.9 | 57.9 | 180.8 | 71.4 (32.2) | – | 0.55 |
+| 8x | after, final build (region repeat box) | 317.1 | 56.1 | 175.9 | 69.5 (52.5) | – | – |
+
+- With frame interpolation on (`--frame-interpolation on`, same runs otherwise; about 92 % of the presented frames are blended copies):
+
+| Scale | Build | fps | render passes | barriers | copies (Mpixels) | GS processing ms | recording ms | waiting for the GPU ms |
+|---|---|---|---|---|---|---|---|---|
+| 8x | before | 154.2 | 557.9 | 2,306.5 | 571.2 (186.9) | 1.93 | 2.62 | 1.55 |
+| 8x | after | 245.6 | 54.9 | 172.7 | 68.1 (52.4) | 1.90 | 1.56 | 0.10 |
+| 4x | before | 181.3 | 559.1 | 2,310.8 | 572.4 (157.6) | 1.92 | 2.97 | 0.21 |
+| 4x | after | 249.4 | 55.0 | 172.8 | 68.2 (24.3) | 1.87 | 1.57 | 0.00 |
+
+  +59 % at 8x, +38 % at 4x. After the change both scales run at about 250 fps with almost no wait for the GPU: the limit is now the render thread's CPU time per frame (GS processing about 1.9 ms, unchanged by this work, plus recording about 1.6 ms and the blend about 0.33 ms).
+- Without interpolation (table above): +60 % at 8x, +51 % at 4x (4x after is close to the 360 cap). Frame-as-texture copies 521.6 → 22.5 per frame (150.9 → 17.4 Mpixels). Conversions (25 per frame, 12 Mpixels) did not shrink: their draws repeat-wrap or use STQ without a usable box.
+- Pictures: 14 screenshots over the mission (vblanks 1600–7450, including the missile hit at 7370–7400) byte-identical before and after at 4x (native and scaled files) and at 1x.
+- Vulkan validation with synchronization validation (`VK_KHRONOS_VALIDATION_VALIDATE_SYNC=1`): 0 messages at 4x to vblank 2600 and at 8x with SMAA to vblank 6300 (before: the 3 hazards above).
+- Regression (`full.json`, run `al1`, against `rt1`; built before the last change, the region-repeat box): all 30 jobs exit cleanly with no warning; every RAM checkpoint identical; 108 of 110 files identical, `m3_route` / `m4_route` screenshot 5300 differ only in the loading-fade column x = 409 (IR-1). The final build's mission screenshots are again identical to the "before" build's. Development tests pass.
+- Not changed, still open: field copy of the whole draw buffer (1 per frame, 16.8 Mpixels at 8x); conversions (25 per frame); the anti-aliasing copy of the whole target; view syncs (14 per frame, 3 barriers each); DATE / shader-blend copies could become fragment-shader interlock or rasterization-order attachment access (vendor support differs); no GPU timestamps yet (the "waiting for the GPU" figure is the only GPU-side measure).
+- Pending: the User's NVIDIA check (session log of a mission: the new counter lines and fps).
+
+## 2am. GS processing: one vertex buffer per draw list, pipeline reuse, blended copies replayed (2026-10-27)
+
+User approval 2026-10-27 (items 1, 2 and 4 of the GS proposal). With the GPU work of §2al reduced, frame interpolation was limited by the render thread's CPU time: about 250 fps at 4x and 8x with almost no wait for the GPU.
+
+### GP-1. Profile (CPU sampling, VS collector, 8x with interpolation, 15,150 frames drawn)
+- Render thread busy almost all the time. Per frame: GS processing 1.74 ms (building draws 0.74, of which memory allocation about 0.2 and texture lookups 0.23; IMAGE uploads into the local-memory model 0.68, nearly all the swizzle loop; register writes and parsing 0.23), recording 1.53 ms (of which 0.26 the pipeline lookup per draw), the blended copy 0.25 ms.
+- At 250 fps each game step is presented about 4 times, and every blended copy was processed in full (about 1.4 MB of GIF data, all its texture uploads and GPU decodes), although only vertex values differ between the copies of one step.
+- Measured before building the replay (temporary probe): over 18,306 repeated copies (17 million run outputs), the repeated runs' output sizes stayed the same in 99.8 % of the copies; 415 runs changed size (clipping).
+
+### GP-2. Changes
+- **One vertex buffer per draw list** (`gs_state.h` `DrawList`): draws hold `first_vertex` / `vertex_count` into the list's vertices instead of a vector each (a primitive only ever goes to the newest draw, so each draw's vertices are contiguous). No allocation per draw; the buffers keep their capacity from frame to frame (`GsState::TakeDraws(DrawList&)` appends). `Record` reserves its host vertex buffer.
+- **Pipeline reuse in Record**: consecutive draws with the same pipeline key skip `GetPipeline` (mutex, map lookup).
+- **Blended copies replayed** (`Renderer::SubmitBlendedStep`, `GsState::ProcessGifTraced` / `ReplayVertices`, `FrameInterpolator::StepSerial`): the first blended copy of a step is processed with a trace: every kick (with its XYOFFSET), the kick each draw-list vertex came from and the kick of its colour (flat shading), the texel range of every textured sprite, line and point. A later copy of the same step (same step serial, nothing processed since) is parsed for vertex writes only: GIF tags, every register write other than RGBAQ / ST / UV / FOG / XYZ*, the kick kinds (ADC) and IMAGE data must be the traced bytes; the vertex registers are followed through the whole copy (a run's colour or texture coordinates carry into later packets), the texel ranges whose vertices changed must come out the same. Then the copy's draws are the traced draws with the new vertices, and the vertex registers and queue end as processing would leave them. The copy adds no texture work: the traced frame's textures stay held by its draws, and the GPU's copy of local memory is as its memory updates left it (repeating them would leave it the same; repeating a decode would also replace a held texture image). Otherwise the copy is processed again and traced.
+- Development tests: `DrawList` in the GS tests; new test "a blended copy replayed from the traced one gives the draws of processing it" (positions and colours changed, a flat sprite taking the strip's colour across packets, a structural change and processing in between refused).
+
+### GP-3. Correctness
+- Temporary comparison in the running port (mission 1, 8x, interpolation on): every replayed copy was also processed in full from the same state and the draw lists compared field by field (texture contents by rectangles, format, TEXA, palette). 11,668 replayed copies: **0 vertex differences**. First version (runs only): 1.3 million vertex differences in 14,814 frames, because vertex values written by a run carry into later packets; fixed by following the vertex registers through the whole copy.
+- 16 of the 11,668 copies differed in the state of their first 3 draws (drawn before the copy sets the registers they use, so their state comes from the processing before). A replayed copy has the state of the step's first copy, which starts where the previous step ended, as on the PS2; processing a copy again started it where the same step's previous copy ended. Not a replay error; the replay is the more faithful of the two.
+- Interpolation off (the default for validation runs): 14 screenshots over the mission (vblanks 1600–7450) byte-identical to the §2al build at 4x (native and scaled files) and at 1x.
+- Interpolation on: screenshots at vblanks 2800, 5200, 7400 against the build before the replay: 2800 identical, 5200 and 7400 differ in 0.6 % / 1.3 % of the bytes (the blend factor depends on presentation timing), no visible difference.
+- Regression (`full.json`, run `gs1`, against `al1`): all 30 jobs exit cleanly with no warning; every RAM checkpoint and hash log identical; 108 of 110 files identical, `m3_route` / `m4_route` screenshot 5300 differ only in the loading-fade column x = 409 (IR-1). Development tests pass.
+- Vulkan synchronization validation (4x, interpolation on, to vblank 2600): no message. Under the layer the port runs at about 3 fps, so no blended copy is drawn there; a replayed copy records only draws (no texture work), the same commands as any frame's draws.
+
+### GP-4. Results (RX 9070 XT, development build, windowed, v-sync off, cap 360, no anti-aliasing; mission 1 input log, `--fast-until 1500 --exit-at 8000`)
+
+| Case | Build | fps | GS processing ms | recording ms | GPU decodes | KiB uploaded | waiting for the GPU ms |
+|---|---|---|---|---|---|---|---|
+| 8x, interpolation | §2al | 245.6 | 1.90 | 1.56 | 69.5 | 781 | 0.10 |
+| 8x, interpolation | + vertex buffer, pipeline reuse | 254.5 | 1.60 | 1.56 | 69.6 | 786 | 0.30 |
+| 8x, interpolation | + replay | 261.8 | 0.75 | 1.50 | 17.2 | 201 | 0.93 |
+| 4x, interpolation | §2al | 249.4 | 1.87 | 1.57 | 69.5 | 778 | 0.00 |
+| 4x, interpolation | + replay | 320.6 | 0.67 | 1.35 | 13.9 | 162 | 0.15 |
+| 8x | §2al | 317.1 | – | – | – | – | – |
+| 8x | + all | 323.8 | 1.75 | 1.42 | 69.7 | 811 | 1.10 |
+| 4x | §2al | 339.9 | – | 1.51 | – | – | 0.54 |
+| 4x | + all | 342.9 | 1.73 | 1.41 | 69.7 | 811 | 0.52 |
+
+- Blended copies: about 6,200 processed (one per game step) and 20,000–26,500 replayed per run (`renderer: blended copies: … processed, … reused from the copy before`).
+- With interpolation: +7 % at 8x (now limited by the GPU again: 0.93 ms waiting per frame), +29 % at 4x. Without interpolation the GS work happens once per step, so the gain is small (+2 % at 8x; 4x is near the 360 cap).
+- Not done: the IMAGE upload swizzle (0.68 ms per processed step; table-driven block rows); GS processing on its own thread (ADR-002 change, not approved).
+
+## 2an. Terrain cells black up close: mirrored tiles flipped through a sprite (2026-10-27)
+
+User report (mission 6, also other missions, present in earlier versions): whole terrain cells disappear (black, with stray pieces) when the camera is close; always the same cells after a restart. Reproduced from the User's input log of 2026-10-27 (boot → mission 6, 10,446 ticks; not committed: `out/terrain/input.ac4i`, card copy `out/terrain/card`, `--memcard <copy> --replay-input`): vblank 10030, a cell over the harbour drawn black with pieces of piers, at 1× and 8×, with the CPU and the GPU texture decoder alike.
+
+### TT-1. Cause and fix
+- All terrain cells sample one 512 × 512 T8 atlas (TBP 0x2900, mip levels at 0x2D00 / 0x2E00 / 0x2E40) whose 64 × 64 slots the game fills per bucket (`../subsystems/rendering.md`, terrain tile upload). A near cell whose tile is mirrored (attr flags 0x400 / 0x800) and close (d < 2 · cam+0x168 + 4096) does not get a plain upload: the tile goes as T8H to 0x3E00, a sprite (decal, context 2) draws it flipped into the alpha bytes of FBP 0x1E8 (block 0x3D00, FBMSK 0x00FFFFFF), and a local→local transfer (TRXDIR 2) copies 0x3D00 as T8H into the slot as T8.
+- The port draws sprites only on the GPU; its local-memory model never got the flipped tile, so the transfer copied stale bytes into the slot (capture of the step at vblank 10029: tile (5,3) of the atlas, read by draws 91–180, filled by that copy at GIF offset 532944).
+- Fix (`gs_state.cpp` `GsState::SpriteToMemory`): a sprite the GS draws as a plain texel copy is also drawn into local memory: textured with UV, no fog, blending or anti-aliasing, alpha test off or ALWAYS, no destination alpha test, depth test ALWAYS, nearest sampling without mip levels, decal or modulate by 128, a CT32 frame buffer (FBMSK and FBA applied), whole-pixel coordinates inside SCISSOR, a texture in local memory (not a frame buffer drawn earlier; the CLUT not drawn on the GPU). The texel of a pixel is at the pixel's own position (V from 63 to 0 over 64 rows flips the tile texel for texel, as PCSX2's software renderer does), wrapped by CLAMP. The GPU still draws the sprite. A blended copy whose such sprite's vertices changed is processed again rather than replayed (§2am).
+
+### Results
+- Vblank 10030: the cell shows the harbour water and piers continuing from its neighbours, at 1× and at 8× with interpolation; the other screenshots of the stretch (vblanks 9600–10000) are unchanged.
+- Use and cost: the mission 6 replay draws 773 such sprites (2.9 Mpixels) over 9,644 frames, mission 1 339; GS processing per frame unchanged (1.76 ms at 8×).
+- Mission 1 screenshots (14, vblanks 1600–7450, 1×) byte-identical. Regression (`full.json`, run `tf1`, against `gs1`): all 30 jobs exit cleanly, all 110 files identical. New test "a texel-copy sprite is drawn into local memory for a later local->local copy"; development tests pass.
+
+### TT-2. Warning for other reads of GPU-only drawings (User approval 2026-10-27)
+- `GsState` keeps the 8 KiB pages of local memory whose contents only the GPU holds (`gpu_pages_`, `NoteGpuDraw`): the frame buffer pages (FBW × scissor height, as `NoteFrameBuffer`) of every primitive that `SpriteToMemory` does not also draw, marked once per frame buffer and scissor, cleared by a host→local or local→local transfer into the page.
+- A local→local transfer whose source touches such a page logs once `renderer: local->local transfer reads a frame buffer drawn on the GPU only (source block …, PSM …): it copies stale bytes`; a CLUT load from such a page (other than the palette drawn on the GPU, §2z) logs once `CLUT loaded from a frame buffer drawn on the GPU only …`. Counted in `GsState::GpuOnlyReads`. The picture is unchanged.
+- Test: the texel-copy test also draws the sprite with blending (not a plain copy): the transfer that reads it back is counted; after an upload into the page it is not.
+- Runs: the mission 6 replay (to vblank 10446), the mission 1 input log and all 30 jobs of `full.json` (run `sn1`, against `tf1`): no such warning. `sn1`: all jobs exit cleanly, 108 of 110 files identical, `m3_route` / `m4_route` screenshot 5300 differ only in the loading-fade column x = 409 (IR-1). Development tests pass.
