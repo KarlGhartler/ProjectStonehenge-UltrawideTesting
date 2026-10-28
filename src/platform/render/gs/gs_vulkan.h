@@ -131,6 +131,9 @@ public:
     // the GS alpha in the frame buffer is kept.
     enum class AntiAlias { kOff, kFxaa, kSmaa };
     void SetAntiAlias(AntiAlias mode) { aa_mode_ = mode; }
+    // Horizontal scale of 2D draws after each flight view's 3D/HUD boundary. 1 disables the
+    // ultrawide compensation; split-screen views use their own marked rectangle and centre.
+    void SetHudXScale(float scale) { hud_x_scale_ = scale; }
 
 private:
     struct Image {
@@ -357,6 +360,7 @@ private:
     std::set<std::uint32_t> native_fbps_;
     // Anti-aliasing state (gs_antialias.cpp).
     AntiAlias aa_mode_ = AntiAlias::kOff;
+    float hud_x_scale_ = 1.0f;
     bool aa_ready_ = false;
     Image aa_color_, aa_edges_, aa_weights_, aa_out_, aa_area_, aa_search_;
     VkRenderPass aa_pass_rg_ = VK_NULL_HANDLE, aa_pass_rgba_ = VK_NULL_HANDLE;
